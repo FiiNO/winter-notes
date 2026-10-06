@@ -58,7 +58,10 @@ function show(screen) {
   window.scrollTo(0, 0);
   if (screen === 'vault') renderVault();
   if (screen === 'settings') renderSettings();
+  if (screen === 'map') mountMap();
+  if (window.DossierMap) window.DossierMap.setVisible(screen === 'map');
 }
+function focusOnMap(placeId) { show('map'); const go = () => window.DossierMap && window.DossierMap.focusPlace(placeId); S.mapMounted ? setTimeout(go, 400) : setTimeout(go, 1500); }
 function openModal(html) { $('#modal-inner').innerHTML = `<button class="btn close" id="modal-close">Close</button>${html}`; $('#modal').classList.remove('hidden'); $('#modal-close').onclick = closeModal; }
 function closeModal() { $('#modal').classList.add('hidden'); $('#modal-inner').innerHTML = ''; }
 function applyTheme() { const t = settings.theme; if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t); }
@@ -221,7 +224,7 @@ function renderToday() {
     html += `<div class="countdown">${days} days</div><div>until wheels-up: AC2756 Townsville 06:05, Mon 30 Nov</div>`;
   } else if (ctx.stay) {
     html += `<div class="h3">Tonight</div><div class="big">${esc(ctx.stay.property)}</div><div>${esc(ctx.stay.address)}</div>${ctx.stay.address_ja ? `<div class="ja">${esc(ctx.stay.address_ja)}</div>` : ''}`;
-    html += `<div class="row"><a class="btn" href="#" data-go="stays">Stay details</a>${ctx.stay.coord && ctx.stay.coord.lat ? `<a class="btn" href="#" data-go="map">Show on map</a>` : ''}</div>`;
+    html += `<div class="row"><a class="btn" href="#" data-go="stays">Stay details</a>${ctx.stay.coord && ctx.stay.coord.lat ? `<a class="btn" href="#" data-focus="${esc(ctx.stay.ja_id || 'stay-' + ctx.stay.n)}">Show on map</a>` : ''}</div>`;
   } else {
     html += `<div class="h3">Travel day</div><div>No bed tonight: you are in the air or between stays. Check Moves.</div>`;
   }
@@ -245,7 +248,10 @@ function renderToday() {
   $('#today-sos').onclick = openSOS;
   wireGo($('#screen-today'));
 }
-function wireGo(root) { root.querySelectorAll('[data-go]').forEach((a) => a.onclick = (e) => { e.preventDefault(); show(a.dataset.go); }); }
+function wireGo(root) {
+  root.querySelectorAll('[data-go]').forEach((a) => a.onclick = (e) => { e.preventDefault(); show(a.dataset.go); });
+  root.querySelectorAll('[data-focus]').forEach((a) => a.onclick = (e) => { e.preventDefault(); closeModal(); focusOnMap(a.dataset.focus); });
+}
 
 function openSOS() {
   const F = S.family, ctx = currentContext();
@@ -261,7 +267,8 @@ function openSOS() {
   html += `<div class="card"><div class="h3">Do now</div><ol class="steps">${(lk.steps || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol></div>`;
   html += `<div class="card"><div class="h3">Say</div><div>${esc(lk.say_en || '')}</div>${lk.say_ja ? `<div class="ja">${esc(lk.say_ja)}</div>` : ''}</div>`;
   if (stayKoban || kobans.length) {
-    html += `<div class="card"><div class="h3">Nearest police box</div>${stayKoban ? `<div>${tel(stayKoban.note)}</div>` : ''}${kobans.filter((k) => k !== stayKoban).slice(0, 4).map((k) => `<div class="small muted" style="margin-top:6px">${esc(k.venue_id)}: ${tel(k.note)}</div>`).join('')}</div>`;
+    const onMap = (k) => (F.overlay.features || []).some((f) => f.properties.id === 'koban-' + k.venue_id) ? ` <a class="btn" href="#" data-focus="koban-${esc(k.venue_id)}">Map</a>` : '';
+    html += `<div class="card"><div class="h3">Nearest police box</div>${stayKoban ? `<div>${tel(stayKoban.note)}${onMap(stayKoban)}</div>` : ''}${kobans.filter((k) => k !== stayKoban).slice(0, 4).map((k) => `<div class="small muted" style="margin-top:6px">${esc(k.venue_id)}: ${tel(k.note)}${onMap(k)}</div>`).join('')}</div>`;
   } else {
     html += `<div class="card"><div class="h3">Police</div><div>Nearest staff or security first, then ${pol}.</div></div>`;
   }
@@ -269,7 +276,15 @@ function openSOS() {
   const E = F.emergency[cc === 'AU' ? 'JP' : cc];
   if (E && E.hospitals && E.hospitals.length) html += `<div class="card"><div class="h3">Hospital for a sick child</div>${E.hospitals.slice(0, 2).map((h) => `<div><b>${esc(h.name)}</b><br>${tel(h.address_en + ' · ' + h.phone)}</div>`).join('<hr>')}</div>`;
   openModal(html);
+  wireGo($('#modal-inner'));
 }
+function openTaxiCard(c) {
+  const F = S.family;
+  const take = (F.phrases || []).find((p) => p.id === 'take-us-here'), kb = (F.koban || []).find((k) => k.venue_id === c.id);
+  openModal(`<div class="taxi-full"><div class="muted">${esc(c.title_en)}</div>${c.name_ja ? `<div class="ja">${esc(c.name_ja)}</div>` : ''}${c.address_ja ? `<div class="addr-ja">${esc(c.address_ja)}</div>${take ? `<div class="ja">${esc(take.ja)}</div>` : ''}` : ''}<div class="big">${esc(c.address_en)}</div>${coordLine(c.coord) ? `<div class="mono">${coordLine(c.coord)}</div>` : ''}${c.notes ? `<div class="small muted" style="margin-top:8px">${tel(c.notes)}</div>` : ''}${kb ? `<div class="small" style="margin-top:8px"><b>Police box:</b> ${tel(kb.note)}</div>` : ''}${c.coord && c.coord.lat != null ? mapsLink(c.coord.lat, c.coord.lon, c.title_en) : ''}${c.coord && c.coord.lat != null ? `<div class="row"><a class="btn" href="#" data-focus="${esc(c.id)}">Show on our map</a></div>` : ''}</div>`);
+  wireGo($('#modal-inner'));
+}
+function openTaxiById(id) { const c = (S.family.taxi_cards || []).find((x) => x.id === id); if (c) openTaxiCard(c); }
 $('#btn-sos').onclick = openSOS;
 
 function renderDays() {
@@ -315,12 +330,28 @@ function renderStays() {
   </div>`).join('');
 }
 
+function currentTheme() { const t = settings.theme; if (t !== 'auto') return t; return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; }
+function mountMap() {
+  if (S.mapMounted || !window.DossierMap) return;
+  S.mapMounted = true;
+  window.DossierMap.mount({ container: $('#screen-map'), family: S.family, theme: currentTheme(), today: currentContext().date, onTaxi: openTaxiById })
+    .then(() => { if (S.vault) window.DossierMap.setVaultFeatures(((S.vault.overlay || {}).features) || []); })
+    .catch((e) => { const b = $('#map-packbar'); if (b) b.textContent = 'Map failed: ' + (e.message || e); });
+}
 function renderMap() {
   const F = S.family;
   const layers = {};
   for (const f of (F.overlay && F.overlay.features) || []) (layers[f.properties.layer] = layers[f.properties.layer] || []).push(f.properties);
   const titles = { stays: 'Stays', moves: 'Airports, stations, pickups', venues: 'Venues', emergency: 'Hospitals, police, pharmacies, consulates', rally: 'Rally points (proposed)' };
-  let html = `<h1 class="h1">Map</h1><div class="card"><b>Offline map arrives in the next build (Phase 4).</b><div class="small muted">Until then every place is listed here with its coordinates and Plus Code, and a button that opens it in a maps app (needs data).</div></div>`;
+  let html = `<h1 class="h1">Map</h1>
+    <div id="map-wrap"><div id="map"></div><div id="map-packbar">Loading map…</div>
+      <button class="btn primary" id="map-me" title="Centre on me">◉ Me</button>
+      <div id="map-outside" class="hidden">Outside the offline packs here. <a class="btn" href="#" target="_blank" rel="noopener">Open in Google Maps</a></div>
+      <div id="map-card" class="hidden"></div></div>
+    <div class="row" id="map-filter"><button class="pill active" data-filter="today">Today + tomorrow</button><button class="pill" data-filter="all">Everything</button><button class="pill" id="map-packs-toggle">Offline maps</button></div>
+    <div id="map-packs" class="card hidden"></div>
+    <p class="tiny muted">Directions and search: use the Organic Maps or Google Maps buttons on a place. Location is used only on this screen and never stored.</p>
+    <h2 class="h2">All places as a list</h2>`;
   for (const layer of ['stays', 'moves', 'venues', 'emergency', 'rally']) {
     if (!layers[layer]) continue;
     html += `<details><summary>${esc(titles[layer])} <span class="chip">${layers[layer].length}</span></summary>` + layers[layer].map((p) => `
@@ -345,8 +376,7 @@ function renderTaxi() {
   $('#taxi-pills').onclick = (e) => { const b = e.target.closest('.pill'); if (!b) return; document.querySelectorAll('#taxi-pills .pill').forEach((p) => p.classList.toggle('active', p === b)); document.querySelectorAll('#taxi-list li').forEach((li) => li.classList.toggle('hidden', b.dataset.base !== 'all' && li.dataset.base !== b.dataset.base)); };
   $('#taxi-list').onclick = (e) => {
     const a = e.target.closest('[data-card]'); if (!a) return; e.preventDefault();
-    const c = F.taxi_cards[+a.dataset.card], take = phrases['take-us-here'], kb = kobans[c.id];
-    openModal(`<div class="taxi-full"><div class="muted">${esc(c.title_en)}</div>${c.name_ja ? `<div class="ja">${esc(c.name_ja)}</div>` : ''}${c.address_ja ? `<div class="addr-ja">${esc(c.address_ja)}</div>${take ? `<div class="ja">${esc(take.ja)}</div>` : ''}` : ''}<div class="big">${esc(c.address_en)}</div>${coordLine(c.coord) ? `<div class="mono">${coordLine(c.coord)}</div>` : ''}${c.notes ? `<div class="small muted" style="margin-top:8px">${tel(c.notes)}</div>` : ''}${kb ? `<div class="small" style="margin-top:8px"><b>Police box:</b> ${tel(kb.note)}</div>` : ''}${c.coord && c.coord.lat != null ? mapsLink(c.coord.lat, c.coord.lon, c.title_en) : ''}</div>`);
+    openTaxiCard(F.taxi_cards[+a.dataset.card]);
   };
 }
 
@@ -375,7 +405,7 @@ function renderProtocols() {
   let html = `<h1 class="h1">Protocols</h1>`;
   html += `<div class="card"><div class="h2">Lost kid</div><ol class="steps">${(lk.steps || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol><div><b>Say:</b> ${esc(lk.say_en || '')}</div>${lk.say_ja ? `<div class="ja">${esc(lk.say_ja)}</div>` : ''}<div class="red">${esc(lk.morning_photo || '')}</div></div>`;
   html += `<div class="card"><div class="h2">PACE</div>${kv([['Primary', pace.primary], ['Alternate', pace.alternate], ['Contingency', pace.contingency], ['Emergency', pace.emergency]])}</div>`;
-  html += `<div class="card"><div class="h2">Phone stolen</div><div class="h3">iPhone (Sarah)</div><ol class="steps">${(ps.ios || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol><div class="h3">Android (Andy)</div><ol class="steps">${(ps.android || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol>${kv([['SIM / eSIM', ps.sim], ['Wallet cards', ps.wallet_lock], ['Sign out everywhere', ps.sign_out_everywhere]])}<div class="small muted">Card-lock list: in the vault.</div></div>`;
+  html += `<div class="card"><div class="h2">Phone stolen</div><div class="h3">iPhone (Sarah)</div><ol class="steps">${(ps.ios || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol><div class="h3">Android (Andy)</div><ol class="steps">${(ps.android || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol>${kv([['SIM / eSIM', ps.sim], ['Wallet cards', ps.wallet_lock], ['Sign out everywhere', ps.sign_out_everywhere]])}${(ps.carriers || []).some((c) => c && (c.carrier || c.lost_sim)) ? `<div class="h3">Carriers: suspend the SIM or eSIM</div>${kv((ps.carriers || []).filter((c) => c && (c.carrier || c.lost_sim)).map((c) => [c.who || 'Carrier', [c.carrier, c.lost_sim].filter(Boolean).join(' · ') + (c.note ? ' — ' + c.note : '')]))}` : ''}<div class="small muted">Card-lock list: in the vault.</div></div>`;
   $('#screen-protocols').innerHTML = html;
 }
 
@@ -389,6 +419,7 @@ function lockVault() {
   $('#screen-vault').innerHTML = '';                 // never leave decrypted vault text in the DOM, even hidden
   if (S.screen === 'vault') renderVault();
   renderStays();                                     // inline PINs disappear again
+  if (window.DossierMap) window.DossierMap.setVaultFeatures([]);
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) lockVault(); });
 ['click', 'touchstart', 'keydown'].forEach((ev) => document.addEventListener(ev, () => { if (S.vault) armVaultLock(); }, { passive: true }));
@@ -405,7 +436,7 @@ async function renderVault() {
       <div class="card"><div class="h2">Entry documents</div><table class="t"><tr><th>Person</th><th>Document</th><th>Number</th><th>Valid to</th></tr>${V.entry.eta.map((e) => `<tr><td>${esc(e.person)}</td><td>Canada eTA</td><td class="mono">${esc(e.number)}</td><td>${esc(e.valid_to)}</td></tr>`).join('')}${V.entry.esta.map((e) => `<tr><td>${esc(e.person)}</td><td>US ESTA</td><td class="mono">${esc(e.number)}</td><td>${esc(e.valid_to)}</td></tr>`).join('')}</table>${V.entry.esta_group ? `<div class="mono small">ESTA group ${esc(V.entry.esta_group)}</div>` : ''}<div class="small muted">${esc(V.entry.passports)}</div></div>
       <div class="card"><div class="h2">Insurance policies</div>${V.policies.map((p) => `<div class="h3">${esc(p.name)}</div>${kv([['Policy', p.number], ['Covers', p.when], ['Emergency', p.emergency], ['Claims', p.claims]])}`).join('')}</div>
       <div class="card"><div class="h2">5 January: the plan</div>${kv(V.surprise.filter((r) => r.text).map((r) => [r.label || '·', r.text + (r.note ? ' — ' + r.note : '')]))}</div>
-      <div class="card"><div class="h2">Card-lock list</div><div class="small">${esc(V.card_lock)}</div></div>`;
+      <div class="card"><div class="h2">Card-lock list</div>${(V.card_lock || []).length ? kv(V.card_lock.map((r) => [r.label || '·', r.text + (r.note ? ' — ' + r.note : '')])) : `<div class="small">${esc(V.card_lock_note || '')}</div>`}</div>`;
     $('#vault-lock').onclick = lockVault;
     return;
   }
@@ -439,6 +470,7 @@ async function renderVault() {
         await kvSet('key:vault', k); await setPin('vault', a);
       }
       renderVault(); renderStays();
+      if (window.DossierMap) window.DossierMap.setVaultFeatures(((S.vault.overlay || {}).features) || []);
     } catch (ex) { err.textContent = 'That did not open the vault.'; err.classList.remove('hidden'); }
   };
 }
@@ -453,7 +485,7 @@ function renderSettings() {
       <button class="btn block" id="opt-forget">Forget this device (wipe stored keys and PINs)</button></div>
     <div class="card"><div class="h3">Build</div><div>${esc(VERSION)} · built ${esc(BUILT)}</div><button class="btn block" id="opt-update">Check for a newer build</button><div class="small muted" id="update-msg"></div></div>
     <div class="card small muted">Storage: <span id="storage-msg">…</span></div>`;
-  document.querySelectorAll('[data-theme]').forEach((b) => b.onclick = () => { settings.theme = b.dataset.theme; renderSettings(); });
+  document.querySelectorAll('[data-theme]').forEach((b) => b.onclick = () => { settings.theme = b.dataset.theme; renderSettings(); if (window.DossierMap) window.DossierMap.setTheme(currentTheme()); });
   $('#opt-reader').onchange = (e) => { settings.readerMode = e.target.checked; $('#sheet-vault').classList.toggle('hidden', settings.readerMode); if (settings.readerMode) lockVault(); };
   $('#opt-auto').onchange = (e) => { settings.autoFamily = e.target.checked; };
   $('#opt-forget').onclick = () => { if (confirm('Forget this device? You will need the passphrase again.')) forgetDevice(); };

@@ -1,0 +1,251 @@
+{
+ "packs": [
+  {
+   "name": "overview-na",
+   "title": "North America overview",
+   "file": "tiles/overview-na.pmtiles",
+   "bbox": [
+    -130.0,
+    40.0,
+    -70.0,
+    51.5
+   ],
+   "maxzoom": 7,
+   "dates": [],
+   "size": 14330364,
+   "sha256": "538f20d67a52389849331b4aaad0e2b43aa46613ae62c38a5ebe5df28b5d3de2",
+   "always": true,
+   "built": "2026-10-06",
+   "planet": "20261006"
+  },
+  {
+   "name": "overview-jp",
+   "title": "Japan overview",
+   "file": "tiles/overview-jp.pmtiles",
+   "bbox": [
+    128.0,
+    30.0,
+    146.5,
+    46.0
+   ],
+   "maxzoom": 7,
+   "dates": [],
+   "size": 4327208,
+   "sha256": "a1677c4fc80d548877e4fbed167fb0422af6d23821babf1bb666042b8b565ba3",
+   "always": true,
+   "built": "2026-10-06",
+   "planet": "20261006"
+  },
+  {
+   "name": "vancouver",
+   "title": "Vancouver",
+   "file": "tiles/vancouver.pmtiles",
+   "bbox": [
+    -123.2105,
+    49.1748,
+    -123.0936,
+    49.3038
+   ],
+   "maxzoom": 15,
+   "dates": [
+    "2026-11-30",
+    "2026-12-08"
+   ],
+   "size": 8002983,
+   "sha256": "6a1cb0c96625b3caa87ddfe8768b8656b5db1be94c80ca840a3fda1b470a8e13",
+   "always": false,
+   "built": "2026-10-06",
+   "planet": "20261006"
+  },
+  {
+   "name": "whistler",
+   "title": "Whistler village",
+   "file": "tiles/whistler.pmtiles",
+   "bbox": [
+    -122.985,
+    50.096,
+    -122.925,
+    50.138
+   ],
+   "maxzoom": 15,
+   "dates": [
+    "2026-12-02",
+    "2026-12-05"
+   ],
+   "size": 1581479,
+   "sha256": "af12411cb2a0053a1e487d48e80182b5cef3fd337e334c567ddf2d2e2584d62e",
+   "always": false,
+   "built": "2026-10-06",
+   "planet": "20261006"
+  },
+  {
+   "name": "sea-to-sky",
+   "title": "Vancouver to Whistler corridor",
+   "file": "tiles/sea-to-sky.pmtiles",
+   "bbox": [
+    -123.25,
+    49.25,
+    -122.85,
+    50.15
+   ],
+   "maxzoom": 11,
+   "dates": [
+    "2026-12-02",
+    "2026-12-05"
+   ],
+   "size": 2531593,
+   "sha256": "de5d114181b3cc48836b6517fed27a5d74452cea647af13d3b64772968ff2267",
+   "always": false,
+   "built": "2026-10-06",
+   "planet": "20261006"
+  },
+  {
+   "name": "toronto",
+   "title": "Toronto",
+   "file": "tiles/toronto.pmtiles",
+   "bbox": [
+    -79.6537,
+    43.6187,
+    -79.3529,
+    43.6962
+   ],
+   "maxzoom": 15,
+   "dates": [
+    "2026-12-08",
+    "2026-12-30"
+   ],
+   "size": 17432105,
+   "sha256": "b3c9918bcf69267db0dc399800dfee19a220654cae00ba906686f4e83c1d2bed",
+   "always": false,
+   "built": "2026-10-06",
+   "planet": "20261006"
+  },
+  {
+   "name": "nyc",
+   "title": "New York",
+   "file": "tiles/nyc.pmtiles",
+   "bbox": [
+    -74.0107,
+    40.7331,
+    -73.8496,
+    40.7937
+   ],
+   "maxzoom": 15,
+   "dates": [
+    "2026-12-12",
+    "2026-12-15"
+   ],
+   "size": 10914997,
+   "sha256": "507cdb083498a24a776def045e844db2f7f26db52f676411b3862655ff8de35b",
+   "always": false,
+   "built": "2026-10-06",
+   "planet": "20261006"
+  },
+  {
+   "name": "montreal",
+   "title": "Montr\u00e9al",
+   "file": "tiles/montreal.pmtiles",
+   "bbox": [
+    -73.65,
+    45.455,
+    -73.54,
+    45.53
+   ],
+   "maxzoom": 15,
+   "dates": [
+    "2026-12-23",
+    "2026-12-27"
+   ],
+   "size": 10947471,
+   "sha256": "cf09653a288afb16adba2ad4ce4f71d032b8c509ab5ee1476bf671018d391b0f",
+   "always": false,
+   "built": "2026-10-06",
+   "planet": "20261006"
+  },
+  {
+   "name": "tokyo",
+   "title": "Tokyo central",
+   "file": "tiles/tokyo.pmtiles",
+   "bbox": [
+    139.717,
+    35.6314,
+    139.8409,
+    35.7334
+   ],
+   "maxzoom": 15,
+   "dates": [
+    "2026-12-31",
+    "2027-01-07"
+   ],
+   "size": 16988971,
+   "sha256": "c97275c3e8692f327cf67b72c468b1adb524d54cfdce0a6441454d9a0a47882a",
+   "always": false,
+   "built": "2026-10-06",
+   "planet": "20261006"
+  },
+  {
+   "name": "tokyo-narita",
+   "title": "Tokyo to Narita corridor",
+   "file": "tiles/tokyo-narita.pmtiles",
+   "bbox": [
+    139.7,
+    35.6,
+    140.45,
+    35.85
+   ],
+   "maxzoom": 11,
+   "dates": [
+    "2026-12-31",
+    "2027-01-06"
+   ],
+   "size": 2985826,
+   "sha256": "ec9e6f76ab26a97db9fea5d9793eb7fd8b397e134c2ecd78c84ad424c838d0bb",
+   "always": false,
+   "built": "2026-10-06",
+   "planet": "20261006"
+  },
+  {
+   "name": "narita",
+   "title": "Narita Airport",
+   "file": "tiles/narita.pmtiles",
+   "bbox": [
+    140.355,
+    35.74,
+    140.415,
+    35.8
+   ],
+   "maxzoom": 14,
+   "dates": [
+    "2026-12-31",
+    "2027-01-06"
+   ],
+   "size": 2050356,
+   "sha256": "24546b7687a5dffc79a7d24cce593d95d2fcad6e80b4d7ec6bad6a449ebf227f",
+   "always": false,
+   "built": "2026-10-06",
+   "planet": "20261006"
+  },
+  {
+   "name": "nagoya",
+   "title": "Nagoya and LEGOLAND",
+   "file": "tiles/nagoya.pmtiles",
+   "bbox": [
+    136.82,
+    35.03,
+    136.9,
+    35.19
+   ],
+   "maxzoom": 14,
+   "dates": [
+    "2027-01-03",
+    "2027-01-03"
+   ],
+   "size": 4744448,
+   "sha256": "2ac78e2fd33820218ae3c148a8b3f02d746fffd1fba6bc0276c7ad8f04c2fdd4",
+   "always": false,
+   "built": "2026-10-06",
+   "planet": "20261006"
+  }
+ ],
+ "attribution": "\u00a9 OpenStreetMap contributors \u00b7 Protomaps"
+}

@@ -1,1 +1,96 @@
-<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Not yet</title><body style="font-family:sans-serif;background:#0B1F3A;color:#fff;padding:2em"><h1>Nothing here yet</h1><p>The first build has not been published.</p></body>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B1F3A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Dossier">
+<meta name="referrer" content="no-referrer">
+<title>Mission Dossier</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-version="v03" data-built="06 Oct 2026">
+
+<header class="top">
+  <div class="brand"><span class="stamp">MISSION DOSSIER</span><span class="edition" id="top-edition">Family</span></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="btn-sos" title="Lost kid / emergency" aria-label="Lost kid">SOS</button>
+    <button class="icon-btn" id="btn-settings" title="Settings" aria-label="Settings">⚙</button>
+  </div>
+</header>
+
+<div id="banner" class="banner hidden"></div>
+
+<main id="main">
+  <!-- Unlock / setup -->
+  <section id="screen-unlock" class="screen">
+    <div class="card centre">
+      <h1 class="h1">Mission Dossier</h1>
+      <p class="muted" id="unlock-sub">Loading…</p>
+      <form id="form-passphrase" class="hidden" autocomplete="off">
+        <label class="label" for="pp">Family passphrase (first time on this device)</label>
+        <input id="pp" type="password" inputmode="text" autocapitalize="none" autocorrect="off" spellcheck="false" class="input" required>
+        <button class="btn primary" type="submit">Unlock</button>
+        <p class="tiny muted">Typed once per device. After this, the 4-digit PIN.</p>
+      </form>
+      <form id="form-setpin" class="hidden" autocomplete="off">
+        <label class="label" for="pin1">Choose a 4-digit PIN for this device</label>
+        <input id="pin1" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" class="input pin" required>
+        <label class="label" for="pin2">Again</label>
+        <input id="pin2" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" class="input pin" required>
+        <button class="btn primary" type="submit">Save PIN</button>
+      </form>
+      <form id="form-pin" class="hidden" autocomplete="off">
+        <label class="label" for="pin">PIN</label>
+        <input id="pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" class="input pin" required autofocus>
+        <button class="btn primary" type="submit">Open</button>
+        <p class="tiny muted" id="pin-hint"></p>
+      </form>
+      <p class="error hidden" id="unlock-error"></p>
+    </div>
+  </section>
+
+  <section id="screen-today" class="screen hidden"></section>
+  <section id="screen-days" class="screen hidden"></section>
+  <section id="screen-moves" class="screen hidden"></section>
+  <section id="screen-stays" class="screen hidden"></section>
+  <section id="screen-map" class="screen hidden"></section>
+  <section id="screen-taxi" class="screen hidden"></section>
+  <section id="screen-emergency" class="screen hidden"></section>
+  <section id="screen-protocols" class="screen hidden"></section>
+  <section id="screen-vault" class="screen hidden"></section>
+  <section id="screen-settings" class="screen hidden"></section>
+</main>
+
+<nav id="nav" class="nav hidden" aria-label="Sections">
+  <button data-screen="today">Today</button>
+  <button data-screen="days">Days</button>
+  <button data-screen="moves">Moves</button>
+  <button data-screen="stays">Stays</button>
+  <button data-screen="map">Map</button>
+  <button data-screen="taxi">Taxi</button>
+  <button data-screen="emergency">SOS</button>
+  <button data-screen="more" id="nav-more">More</button>
+</nav>
+
+<div id="sheet" class="sheet hidden" role="dialog" aria-modal="true">
+  <div class="sheet-inner">
+    <button class="sheet-item" data-screen="protocols">Protocols</button>
+    <button class="sheet-item" data-screen="vault" id="sheet-vault">Vault</button>
+    <button class="sheet-item" data-screen="settings">Settings</button>
+    <button class="sheet-item muted" id="sheet-close">Close</button>
+  </div>
+</div>
+
+<div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-inner" id="modal-inner"></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

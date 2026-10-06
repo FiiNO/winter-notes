@@ -1,0 +1,16 @@
+{
+ "version": 3,
+ "label": "v03",
+ "built": "06 Oct 2026",
+ "counts": {
+  "days": 39,
+  "moves": 15,
+  "stays": 9,
+  "events": 6,
+  "taxi_cards": 28,
+  "hospitals": 14,
+  "places": 83,
+  "vault_items": 69
+ },
+ "test": false
+}

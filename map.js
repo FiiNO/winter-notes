@@ -1,4 +1,4 @@
-/* Mission Dossier map (Build Plan v2, Maps module). ES module; app.js talks to it through window.DossierMap.
+/* Travel Dossier map (Build Plan v2, Maps module). ES module; app.js talks to it through window.DossierMap.
    - MapLibre GL JS + pmtiles, vendored and pinned. No network requests except this origin (tiles stream from the host
      over range requests when online) and never any analytics.
    - Basemap packs: Protomaps PMTiles cut per area. Downloaded packs live in the Origin Private File System, or in
@@ -155,7 +155,6 @@ function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
 function openCard(f) {
   const p = f.properties, [lon, lat] = f.geometry.coordinates;
   const name = p.name_en || p.name_ja || '';
-  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
   const btn = (href, label, cls = '') => `<a class="btn ${cls}" href="${href}" ${href.startsWith('http') ? 'target="_blank" rel="noopener"' : ''}>${label}</a>`;
   const card = S.container.querySelector('#map-card');
   card.innerHTML = `<button class="btn" id="map-card-close" style="float:right">Close</button>
@@ -167,7 +166,7 @@ function openCard(f) {
       ${p.taxi_card_id ? `<button class="btn" data-taxi="${esc(p.taxi_card_id)}">Taxi card</button>` : ''}
       ${btn(`om://map?v=1&ll=${lat},${lon}&n=${encodeURIComponent(name)}`, 'Organic Maps')}
       ${btn(`https://www.google.com/maps/search/?api=1&query=${lat},${lon}`, 'Google Maps')}
-      ${ios ? btn(`https://maps.apple.com/?ll=${lat},${lon}&q=${encodeURIComponent(name)}`, 'Apple Maps') : btn(`geo:${lat},${lon}?q=${lat},${lon}(${encodeURIComponent(name)})`, 'Maps app')}
+      ${btn(`https://earth.google.com/web/search/${lat},${lon}`, 'Google Earth')}
       ${p.phone ? btn('tel:' + String(p.phone).replace(/[^\d+]/g, ''), 'Call') : ''}
     </div>`;
   card.classList.remove('hidden');

@@ -1,4 +1,4 @@
-/* Mission Dossier app (Build Plan v2, Phase 3: everything except the live map).
+/* Travel Dossier app (Build Plan v2, Phase 3: everything except the live map).
    Plain JS, no libraries, no network requests except this origin (app files, the two blobs, version.json).
    Crypto: WebCrypto PBKDF2-SHA256 (600,000 iterations) -> AES-256-GCM, matching build.py's encrypt_blob.
    Keys are stored as NON-extractable CryptoKeys in IndexedDB after the passphrase is typed once on a device;
@@ -39,14 +39,24 @@ function kv(rows) {
   return '<div class="kv">' + rows.filter((r) => r[1] !== undefined && r[1] !== null && String(r[1]) !== '').map(([k, v, raw]) =>
     `<div class="k">${esc(k)}</div><div class="v">${raw ? v : tel(v)}</div>`).join('') + '</div>';
 }
+/* Hand-off links, the same three everywhere (Andy, 10 Oct): Organic Maps for offline directions and search (every device
+   carries it with the regions downloaded), Google Maps for live transit, Google Earth for a look at the building.
+   Apple Maps and the Android geo: intent were dropped. Google Maps and Google Earth need data. */
+function mapButtons(lat, lon, label) {
+  const q = `${(+lat).toFixed(6)},${(+lon).toFixed(6)}`, n = encodeURIComponent(label || 'Here');
+  return `<a class="btn" href="om://map?v=1&ll=${q}&n=${n}">Organic Maps</a>` +
+    `<a class="btn" href="https://www.google.com/maps/search/?api=1&query=${q}" target="_blank" rel="noopener">Google Maps</a>` +
+    `<a class="btn" href="https://earth.google.com/web/search/${q}" target="_blank" rel="noopener">Google Earth</a>`;
+}
 function mapsLink(lat, lon, label) {
   if (lat == null || lat === '') return '';
-  const q = `${lat},${lon}`;
-  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
-  const links = [`<a class="btn" href="https://www.google.com/maps/search/?api=1&query=${q}" target="_blank" rel="noopener">Google Maps</a>`];
-  if (ios) links.push(`<a class="btn" href="https://maps.apple.com/?ll=${q}&q=${encodeURIComponent(label || 'Here')}" target="_blank" rel="noopener">Apple Maps</a>`);
-  else links.push(`<a class="btn" href="geo:${q}?q=${q}(${encodeURIComponent(label || 'Here')})">Maps app</a>`);
-  return `<div class="row">${links.join('')}</div>`;
+  return `<div class="row">${mapButtons(lat, lon, label)}</div>`;
+}
+const isMontreal = (s) => /montr[eé]al/i.test(String(s || ''));
+/* One phrase card. Japanese cards carry ja + romaji, French cards (Montréal) fr + a plain pronunciation line. */
+function phraseCard(p, show) {
+  const lang = p.lang || 'ja', main = lang === 'fr' ? p.fr : p.ja, sub = lang === 'fr' ? p.say : p.romaji;
+  return `<div class="card phrase${lang !== show ? ' hidden' : ''}" data-lang="${lang}"><div class="small muted">${esc(p.en || '')}</div><div class="${lang}">${esc(main || '')}</div><div class="tiny muted">${esc(sub || '')}</div></div>`;
 }
 function coordLine(c) { return c && c.lat != null && c.lat !== '' ? `${(+c.lat).toFixed(5)}, ${(+c.lon).toFixed(5)}` : ''; }
 function show(screen) {
@@ -264,8 +274,9 @@ function openSOS() {
   let html = `<h1 class="h1 red">Lost kid</h1>`;
   html += `<a class="btn danger block sos" href="tel:${em}">Call ${em}${pol !== em ? ` (police ${pol})` : ''}</a>`;
   if (pol !== em) html += `<a class="btn block" href="tel:${pol}">Police ${pol}</a>`;
+  html += `<button class="btn block" id="sos-disaster">Earthquake · fire · winter storm</button>`;
   html += `<div class="card"><div class="h3">Do now</div><ol class="steps">${(lk.steps || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol></div>`;
-  html += `<div class="card"><div class="h3">Say</div><div>${esc(lk.say_en || '')}</div>${lk.say_ja ? `<div class="ja">${esc(lk.say_ja)}</div>` : ''}</div>`;
+  html += `<div class="card"><div class="h3">Say</div><div>${esc(lk.say_en || '')}</div>${cc === 'JP' && lk.say_ja ? `<div class="ja">${esc(lk.say_ja)}</div>` : ''}${isMontreal(ctx.city) && lk.say_fr ? `<div class="fr">${esc(lk.say_fr)}</div>` : ''}</div>`;
   if (stayKoban || kobans.length) {
     const onMap = (k) => (F.overlay.features || []).some((f) => f.properties.id === 'koban-' + k.venue_id) ? ` <a class="btn" href="#" data-focus="koban-${esc(k.venue_id)}">Map</a>` : '';
     html += `<div class="card"><div class="h3">Nearest police box</div>${stayKoban ? `<div>${tel(stayKoban.note)}${onMap(stayKoban)}</div>` : ''}${kobans.filter((k) => k !== stayKoban).slice(0, 4).map((k) => `<div class="small muted" style="margin-top:6px">${esc(k.venue_id)}: ${tel(k.note)}${onMap(k)}</div>`).join('')}</div>`;
@@ -277,11 +288,27 @@ function openSOS() {
   if (E && E.hospitals && E.hospitals.length) html += `<div class="card"><div class="h3">Hospital for a sick child</div>${E.hospitals.slice(0, 2).map((h) => `<div><b>${esc(h.name)}</b><br>${tel(h.address_en + ' · ' + h.phone)}</div>`).join('<hr>')}</div>`;
   openModal(html);
   wireGo($('#modal-inner'));
+  $('#sos-disaster').onclick = openDisaster;
+}
+/* Earthquake, fire and winter-storm cards for today's country (all of them if we are not yet away). */
+function openDisaster() {
+  const F = S.family, ctx = currentContext(), em = EMERGENCY_NUMBER[ctx.country] || '112';
+  let html = `<h1 class="h1 red">Earthquake · fire · storm</h1><a class="btn danger block sos" href="tel:${em}">Call ${em}</a>`;
+  html += disasterCards(F, ctx, true);
+  html += `<div class="small muted">Every hazard for every country: More → Protocols.</div>`;
+  openModal(html);
+  wireGo($('#modal-inner'));
+}
+function disasterCards(F, ctx, onlyHere) {
+  const all = ((F.protocols || {}).disasters || []);
+  let list = onlyHere ? all.filter((d) => (d.where || []).includes(ctx.country)) : all;
+  if (!list.length) list = all;
+  return list.map((d) => `<div class="card"><div class="h2">${esc(d.title || '')}</div>${d.where_label ? `<div class="tiny muted">${esc(d.where_label)}</div>` : ''}${(d.steps || []).length ? `<ol class="steps">${d.steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>` : ''}${(d.notes || []).map((n) => `<div class="small">${tel(n)}</div>`).join('')}${d.say_ja ? `<div class="ja">${esc(d.say_ja)}</div>` : ''}${(d.lines || []).length ? kv(d.lines.map((l) => [l.who, l.number])) : ''}</div>`).join('');
 }
 function openTaxiCard(c) {
   const F = S.family;
-  const take = (F.phrases || []).find((p) => p.id === 'take-us-here'), kb = (F.koban || []).find((k) => k.venue_id === c.id);
-  openModal(`<div class="taxi-full"><div class="muted">${esc(c.title_en)}</div>${c.name_ja ? `<div class="ja">${esc(c.name_ja)}</div>` : ''}${c.address_ja ? `<div class="addr-ja">${esc(c.address_ja)}</div>${take ? `<div class="ja">${esc(take.ja)}</div>` : ''}` : ''}<div class="big">${esc(c.address_en)}</div>${coordLine(c.coord) ? `<div class="mono">${coordLine(c.coord)}</div>` : ''}${c.notes ? `<div class="small muted" style="margin-top:8px">${tel(c.notes)}</div>` : ''}${kb ? `<div class="small" style="margin-top:8px"><b>Police box:</b> ${tel(kb.note)}</div>` : ''}${c.coord && c.coord.lat != null ? mapsLink(c.coord.lat, c.coord.lon, c.title_en) : ''}${c.coord && c.coord.lat != null ? `<div class="row"><a class="btn" href="#" data-focus="${esc(c.id)}">Show on our map</a></div>` : ''}</div>`);
+  const take = (F.phrases || []).find((p) => p.id === 'take-us-here'), takeFr = (F.phrases || []).find((p) => p.id === 'fr-take-us-here'), kb = (F.koban || []).find((k) => k.venue_id === c.id);
+  openModal(`<div class="taxi-full"><div class="muted">${esc(c.title_en)}</div>${c.name_ja ? `<div class="ja">${esc(c.name_ja)}</div>` : ''}${c.name_fr ? `<div class="fr">${esc(c.name_fr)}</div>` : ''}${c.address_ja ? `<div class="addr-ja">${esc(c.address_ja)}</div>${take ? `<div class="ja">${esc(take.ja)}</div>` : ''}` : ''}<div class="big">${esc(c.address_en)}</div>${isMontreal(c.base) && takeFr ? `<div class="fr">${esc(takeFr.fr)}</div>` : ''}${coordLine(c.coord) ? `<div class="mono">${coordLine(c.coord)}</div>` : ''}${c.notes ? `<div class="small muted" style="margin-top:8px">${tel(c.notes)}</div>` : ''}${kb ? `<div class="small" style="margin-top:8px"><b>Police box:</b> ${tel(kb.note)}</div>` : ''}${c.coord && c.coord.lat != null ? mapsLink(c.coord.lat, c.coord.lon, c.title_en) : ''}${c.coord && c.coord.lat != null ? `<div class="row"><a class="btn" href="#" data-focus="${esc(c.id)}">Show on our map</a></div>` : ''}</div>`);
   wireGo($('#modal-inner'));
 }
 function openTaxiById(id) { const c = (S.family.taxi_cards || []).find((x) => x.id === id); if (c) openTaxiCard(c); }
@@ -342,7 +369,7 @@ function renderMap() {
   const F = S.family;
   const layers = {};
   for (const f of (F.overlay && F.overlay.features) || []) (layers[f.properties.layer] = layers[f.properties.layer] || []).push(f.properties);
-  const titles = { stays: 'Stays', moves: 'Airports, stations, pickups', venues: 'Venues', emergency: 'Hospitals, police, pharmacies, consulates', rally: 'Rally points (proposed)' };
+  const titles = { stays: 'Stays', moves: 'Airports, stations, pickups', venues: 'Venues', emergency: 'Hospitals, police, pharmacies, consulates, evacuation', rally: 'Rally points (proposed)' };
   let html = `<h1 class="h1">Map</h1>
     <div id="map-wrap"><div id="map"></div><div id="map-packbar">Loading map…</div>
       <button class="btn primary" id="map-me" title="Centre on me">◉ Me</button>
@@ -370,9 +397,12 @@ function renderTaxi() {
   const BASE_LABEL = { vancouver: 'Vancouver', whistler: 'Whistler', toronto: 'Toronto', 'new york': 'New York', newyork: 'New York', 'montréal': 'Montréal', montreal: 'Montréal', tokyo: 'Tokyo', nagoya: 'Nagoya' };
   const bases = [...new Set(F.taxi_cards.map((c) => c.base))].filter((b) => BASE_LABEL[b]);
   let html = `<h1 class="h1">Taxi cards</h1><div class="pill-row" id="taxi-pills"><button class="pill active" data-base="all">All</button>${bases.map((b) => `<button class="pill" data-base="${esc(b)}">${esc(BASE_LABEL[b])}</button>`).join('')}</div>`;
-  html += `<ul class="list" id="taxi-list">` + F.taxi_cards.map((c, i) => `<li data-base="${esc(c.base)}"><a href="#" data-card="${i}"><b>${esc(c.title_en)}</b></a>${c.name_ja ? `<div class="ja">${esc(c.name_ja)}</div>` : ''}<div class="small muted">${esc(c.address_en)}</div></li>`).join('') + `</ul>`;
-  html += `<h2 class="h2">Phrases</h2>` + (F.phrases || []).map((p) => `<div class="card"><div class="small muted">${esc(p.en)}</div><div class="ja">${esc(p.ja)}</div><div class="tiny muted">${esc(p.romaji)}</div></div>`).join('');
+  html += `<ul class="list" id="taxi-list">` + F.taxi_cards.map((c, i) => `<li data-base="${esc(c.base)}"><a href="#" data-card="${i}"><b>${esc(c.title_en)}</b></a>${c.name_ja ? `<div class="ja">${esc(c.name_ja)}</div>` : ''}${c.name_fr ? `<div class="fr">${esc(c.name_fr)}</div>` : ''}<div class="small muted">${esc(c.address_en)}</div></li>`).join('') + `</ul>`;
+  const lang0 = isMontreal(currentContext().city) ? 'fr' : 'ja';
+  html += `<h2 class="h2">Phrases</h2><div class="pill-row" id="phrase-pills"><button class="pill${lang0 === 'ja' ? ' active' : ''}" data-lang="ja">Japanese</button><button class="pill${lang0 === 'fr' ? ' active' : ''}" data-lang="fr">French · Montréal</button></div>`;
+  html += (F.phrases || []).map((p) => phraseCard(p, lang0)).join('');
   $('#screen-taxi').innerHTML = html;
+  $('#phrase-pills').onclick = (e) => { const b = e.target.closest('.pill'); if (!b) return; document.querySelectorAll('#phrase-pills .pill').forEach((p) => p.classList.toggle('active', p === b)); document.querySelectorAll('#screen-taxi .phrase').forEach((c) => c.classList.toggle('hidden', c.dataset.lang !== b.dataset.lang)); };
   $('#taxi-pills').onclick = (e) => { const b = e.target.closest('.pill'); if (!b) return; document.querySelectorAll('#taxi-pills .pill').forEach((p) => p.classList.toggle('active', p === b)); document.querySelectorAll('#taxi-list li').forEach((li) => li.classList.toggle('hidden', b.dataset.base !== 'all' && li.dataset.base !== b.dataset.base)); };
   $('#taxi-list').onclick = (e) => {
     const a = e.target.closest('[data-card]'); if (!a) return; e.preventDefault();
@@ -403,7 +433,8 @@ function renderEmergency() {
 function renderProtocols() {
   const P = S.family.protocols || {}, lk = P.lost_kid || {}, pace = P.pace || {}, ps = P.phone_stolen || {};
   let html = `<h1 class="h1">Protocols</h1>`;
-  html += `<div class="card"><div class="h2">Lost kid</div><ol class="steps">${(lk.steps || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol><div><b>Say:</b> ${esc(lk.say_en || '')}</div>${lk.say_ja ? `<div class="ja">${esc(lk.say_ja)}</div>` : ''}<div class="red">${esc(lk.morning_photo || '')}</div></div>`;
+  html += `<div class="card"><div class="h2">Lost kid</div><ol class="steps">${(lk.steps || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol><div><b>Say:</b> ${esc(lk.say_en || '')}</div>${lk.say_ja ? `<div class="ja">${esc(lk.say_ja)}</div>` : ''}${lk.say_fr ? `<div class="fr">${esc(lk.say_fr)} <span class="tiny muted">Montréal</span></div>` : ''}<div class="red">${esc(lk.morning_photo || '')}</div></div>`;
+  html += disasterCards(S.family, currentContext(), false);
   html += `<div class="card"><div class="h2">PACE</div>${kv([['Primary', pace.primary], ['Alternate', pace.alternate], ['Contingency', pace.contingency], ['Emergency', pace.emergency]])}</div>`;
   html += `<div class="card"><div class="h2">Phone stolen</div><div class="h3">iPhone (Sarah)</div><ol class="steps">${(ps.ios || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol><div class="h3">Android (Andy)</div><ol class="steps">${(ps.android || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol>${kv([['SIM / eSIM', ps.sim], ['Wallet cards', ps.wallet_lock], ['Sign out everywhere', ps.sign_out_everywhere]])}${(ps.carriers || []).some((c) => c && (c.carrier || c.lost_sim)) ? `<div class="h3">Carriers: suspend the SIM or eSIM</div>${kv((ps.carriers || []).filter((c) => c && (c.carrier || c.lost_sim)).map((c) => [c.who || 'Carrier', [c.carrier, c.lost_sim].filter(Boolean).join(' · ') + (c.note ? ' — ' + c.note : '')]))}` : ''}<div class="small muted">Card-lock list: in the vault.</div></div>`;
   $('#screen-protocols').innerHTML = html;

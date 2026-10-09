@@ -1,4 +1,4 @@
-/* Mission Dossier - phone-first, big type, one-handed. Navy + one red accent, dark and light. */
+/* Travel Dossier - phone-first, big type, one-handed. Navy + one red accent, dark and light. */
 :root {
   --navy: #0B1F3A; --red: #B3261E; --ink: #111418; --grey: #5C6670; --line: #C9D1DA; --pale: #EEF2F7;
   --bg: #FFFFFF; --card: #FFFFFF; --text: #111418; --muted: #5C6670; --border: #C9D1DA; --accent: #0B1F3A;
@@ -68,6 +68,8 @@ main { padding: var(--pad); max-width: 820px; margin: 0 auto; }
 .ja { font-size: 1.35em; line-height: 1.35; }
 .taxi-full .ja { font-size: 2em; }
 .taxi-full .addr-ja { font-size: 1.5em; }
+.fr { font-size: 1.2em; line-height: 1.35; }
+.taxi-full .fr { font-size: 1.6em; }
 .pill-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
 .pill { flex: 0 0 auto; border: 1.5px solid var(--border); border-radius: 999px; padding: 6px 14px; background: var(--card); color: var(--text); font-weight: 600; }
 .pill.active { background: var(--navy); border-color: var(--navy); color: #fff; }

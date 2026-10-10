@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
 <link rel="stylesheet" href="styles.css">
 </head>
-<body data-version="v08" data-built="10 Oct 2026">
+<body data-version="v09" data-built="10 Oct 2026">
 
 <header class="top">
   <div class="brand"><span class="stamp">TRAVEL DOSSIER</span><span class="edition" id="top-edition">Family</span></div>
@@ -62,28 +62,28 @@
   <section id="screen-stays" class="screen hidden"></section>
   <section id="screen-map" class="screen hidden"></section>
   <section id="screen-taxi" class="screen hidden"></section>
-  <section id="screen-emergency" class="screen hidden"></section>
+  <section id="screen-sos" class="screen hidden"></section>
   <section id="screen-protocols" class="screen hidden"></section>
   <section id="screen-vault" class="screen hidden"></section>
   <section id="screen-settings" class="screen hidden"></section>
 </main>
 
 <nav id="nav" class="nav hidden" aria-label="Sections">
-  <button data-screen="today">Today</button>
-  <button data-screen="days">Days</button>
-  <button data-screen="moves">Moves</button>
-  <button data-screen="stays">Stays</button>
-  <button data-screen="map">Map</button>
-  <button data-screen="taxi">Taxi</button>
-  <button data-screen="emergency">SOS</button>
-  <button data-screen="more" id="nav-more">More</button>
+  <button data-screen="today"><span class="ico">🏠</span><span>Today</span></button>
+  <button data-screen="map"><span class="ico">🗺️</span><span>Map</span></button>
+  <button data-screen="taxi"><span class="ico">🚕</span><span>Taxi</span></button>
+  <button data-screen="sos"><span class="ico">🆘</span><span>SOS</span></button>
+  <button data-screen="more" id="nav-more"><span class="ico">☰</span><span>More</span></button>
 </nav>
 
 <div id="sheet" class="sheet hidden" role="dialog" aria-modal="true">
   <div class="sheet-inner">
-    <button class="sheet-item" data-screen="protocols">Protocols</button>
-    <button class="sheet-item" data-screen="vault" id="sheet-vault">Vault</button>
-    <button class="sheet-item" data-screen="settings">Settings</button>
+    <button class="sheet-item" data-screen="days"><span class="ico">📅</span>Days: the plan</button>
+    <button class="sheet-item" data-screen="moves"><span class="ico">✈️</span>Moves: flights, trains, buses</button>
+    <button class="sheet-item" data-screen="stays"><span class="ico">🛏️</span>Stays</button>
+    <button class="sheet-item" data-screen="protocols"><span class="ico">📋</span>Protocols</button>
+    <button class="sheet-item" data-screen="vault" id="sheet-vault"><span class="ico">🔒</span>Vault</button>
+    <button class="sheet-item" data-screen="settings"><span class="ico">⚙️</span>Settings</button>
     <button class="sheet-item muted" id="sheet-close">Close</button>
   </div>
 </div>

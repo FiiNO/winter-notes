@@ -21,6 +21,7 @@ const settings = {
   get theme() { return localStorage.getItem('theme') || 'auto'; }, set theme(v) { localStorage.setItem('theme', v); applyTheme(); },
   get readerMode() { return localStorage.getItem('readerMode') === '1'; }, set readerMode(v) { localStorage.setItem('readerMode', v ? '1' : '0'); },
   get autoFamily() { return localStorage.getItem('autoFamily') === '1'; }, set autoFamily(v) { localStorage.setItem('autoFamily', v ? '1' : '0'); },
+  get bigText() { return localStorage.getItem('bigText') === '1'; }, set bigText(v) { localStorage.setItem('bigText', v ? '1' : '0'); applyBigText(); },
 };
 
 /* ------------------------------------------------------------------ tiny DOM helpers */
@@ -63,9 +64,10 @@ function show(screen) {
   document.querySelectorAll('.screen').forEach((el) => el.classList.add('hidden'));
   const el = $('#screen-' + screen);
   if (el) el.classList.remove('hidden');
-  document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.screen === screen || (b.dataset.screen === 'more' && ['protocols', 'vault', 'settings'].includes(screen))));
+  document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.screen === screen || (b.dataset.screen === 'more' && ['days', 'moves', 'stays', 'protocols', 'vault', 'settings'].includes(screen))));
   S.screen = screen;
   window.scrollTo(0, 0);
+  if (screen === 'sos') renderSOS();
   if (screen === 'vault') renderVault();
   if (screen === 'settings') renderSettings();
   if (screen === 'map') mountMap();
@@ -75,6 +77,7 @@ function focusOnMap(placeId) { show('map'); const go = () => window.DossierMap &
 function openModal(html) { $('#modal-inner').innerHTML = `<button class="btn close" id="modal-close">Close</button>${html}`; $('#modal').classList.remove('hidden'); $('#modal-close').onclick = closeModal; }
 function closeModal() { $('#modal').classList.add('hidden'); $('#modal-inner').innerHTML = ''; }
 function applyTheme() { const t = settings.theme; if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t); }
+function applyBigText() { document.documentElement.classList.toggle('big-text', settings.bigText); }
 
 /* ------------------------------------------------------------------ dates and time zones */
 function localDate(tz, d = new Date()) {
@@ -220,7 +223,7 @@ function enterApp() {
 }
 
 /* ------------------------------------------------------------------ rendering */
-function renderAll() { renderToday(); renderDays(); renderMoves(); renderStays(); renderMap(); renderTaxi(); renderEmergency(); renderProtocols(); }
+function renderAll() { renderToday(); renderDays(); renderMoves(); renderStays(); renderMap(); renderTaxi(); renderSOS(); renderProtocols(); }
 
 function renderToday() {
   const F = S.family, ctx = currentContext();
@@ -251,11 +254,11 @@ function renderToday() {
   if (!localStorage.getItem(photoKey) && !ctx.before) {
     html += `<div class="photo-reminder"><div><b>Morning photo</b><br><span class="small">Snap each kid in today's clothes.</span></div><button id="photo-done">Done</button></div>`;
   }
-  html += `<button class="btn danger block sos" id="today-sos">Lost kid / emergency</button>`;
+  html += `<button class="btn danger block sos" id="today-sos">🆘 SOS: lost kid, sick, disasters</button>`;
   html += `<p class="tiny muted">Built ${esc(BUILT)} · ${esc(VERSION)}</p>`;
   $('#screen-today').innerHTML = html;
   const pd = $('#photo-done'); if (pd) pd.onclick = () => { localStorage.setItem(photoKey, '1'); renderToday(); };
-  $('#today-sos').onclick = openSOS;
+  $('#today-sos').onclick = () => show('sos');
   wireGo($('#screen-today'));
 }
 function wireGo(root) {
@@ -263,47 +266,138 @@ function wireGo(root) {
   root.querySelectorAll('[data-focus]').forEach((a) => a.onclick = (e) => { e.preventDefault(); closeModal(); focusOnMap(a.dataset.focus); });
 }
 
-function openSOS() {
+/* ------------------------------------------------------------------ SOS: one screen for everything urgent (Andy, 10 Oct)
+   Big call button, then tiles: Lost kid, I'm lost (the kid's own card), Sick or hurt, Disasters (most likely first for
+   the country we are in), Say it (the local-language lines, full screen to hold up), Numbers (the old Emergency page).
+   Text comes from extra.yaml protocols: short lines, {em}/{pol} filled with today's numbers. */
+const SOS_ICON = { lost: '🧒', kid: '🙋', sick: '🤕', disasters: '⚠️', say: '🗣️', numbers: '📒' };
+const COUNTRY_LABEL = { CA: 'Canada', US: 'USA', JP: 'Japan', AU: 'Australia' };
+function emNum(ctx) { return EMERGENCY_NUMBER[ctx.country] || '112'; }
+function fill(s, ctx) { return String(s || '').replace(/\{em\}/g, emNum(ctx)).replace(/\{pol\}/g, POLICE_NUMBER[ctx.country] || emNum(ctx)); }
+function sayLang(ctx) { return ctx.country === 'JP' ? 'ja' : (isMontreal(ctx.city) ? 'fr' : null); }
+/* The "say it" lines of a card for where we are: Japanese in Japan, French in Montréal, both before the trip, else English. */
+function sayLines(card, ctx) {
+  const lang = sayLang(ctx), out = [];
+  if ((!lang || lang === 'ja') && card.say_ja) out.push({ lang: 'ja', local: card.say_ja, sub: card.say_romaji || '', en: card.say_en || '' });
+  if ((!lang || lang === 'fr') && card.say_fr) out.push({ lang: 'fr', local: card.say_fr, sub: '', en: card.say_en || '' });
+  if (!out.length && card.say_en) out.push({ lang: 'en', local: card.say_en, sub: '', en: '' });
+  return out;
+}
+function sayBlock(card, ctx) {
+  return sayLines(card, ctx).map((l) => `<div class="say"><div class="${l.lang === 'en' ? 'big' : l.lang}">${esc(l.local)}</div>${l.sub ? `<div class="tiny muted">${esc(l.sub)}</div>` : ''}${l.en && l.lang !== 'en' ? `<div class="small muted">${esc(l.en)}</div>` : ''}<button class="btn small-btn" data-say="${esc(l.local)}" data-say-en="${esc(l.en)}" data-say-sub="${esc(l.sub)}" data-say-lang="${l.lang}">Show big</button></div>`).join('');
+}
+function wireSay(root) { root.querySelectorAll('[data-say]').forEach((b) => b.onclick = () => openSayCard(b.dataset.say, b.dataset.sayEn, b.dataset.saySub, b.dataset.sayLang)); }
+function openSayCard(local, en, sub, lang) {
+  openModal(`<div class="say-full"><div class="local ${lang === 'en' ? '' : esc(lang || '')}">${esc(local)}</div>${sub ? `<div class="sub muted">${esc(sub)}</div>` : ''}${en ? `<div class="en">${esc(en)}</div>` : ''}</div>`);
+}
+function stepsList(steps, ctx) { return `<ol class="steps kid">${(steps || []).map((s) => `<li>${tel(fill(s, ctx))}</li>`).join('')}</ol>`; }
+function linesBlock(lines) { return (lines || []).length ? `<div class="row">${lines.map((l) => `<a class="btn" href="tel:${String(l.number).replace(/[^\d+]/g, '')}">📞 ${esc(l.who)} ${esc(l.number)}</a>`).join('')}</div>` : ''; }
+function callButtons(ctx) {
+  const em = emNum(ctx), pol = POLICE_NUMBER[ctx.country];
+  return `<a class="btn danger block sos" href="tel:${em}">📞 Call ${em}</a>` + (pol && pol !== em ? `<a class="btn block sos" href="tel:${pol}">👮 Police ${pol}</a>` : '');
+}
+
+function renderSOS() {
   const F = S.family, ctx = currentContext();
-  const cc = ctx.country, em = EMERGENCY_NUMBER[cc], pol = POLICE_NUMBER[cc];
-  const lk = (F.protocols && F.protocols.lost_kid) || {};
+  const where = ctx.before ? 'Before the trip: every country is shown' : `${ctx.city} · ${COUNTRY_LABEL[ctx.country] || ''}`;
+  let html = `<h1 class="h1 red">🆘 SOS</h1><div class="small muted">${esc(where)}</div>` + callButtons(ctx);
+  html += `<div class="tiles">` + [['lost', 'Lost kid'], ['kid', "I'm lost"], ['sick', 'Sick or hurt'], ['disasters', 'Disasters'], ['say', 'Say it'], ['numbers', 'Numbers']]
+    .map(([k, label]) => `<button class="tile${k === 'lost' ? ' red' : ''}" data-sos="${k}"><span class="ico">${SOS_ICON[k]}</span>${label}</button>`).join('') + `</div>`;
+  html += `<div class="card small muted">Photo of each kid every morning, in today's clothes. Insurance, consulate and pharmacy numbers are under Numbers.</div>`;
+  $('#screen-sos').innerHTML = html;
+  const open = { lost: openLostKid, kid: openKidCard, sick: openSick, disasters: openDisasters, say: openSayList, numbers: openNumbers };
+  $('#screen-sos').querySelectorAll('[data-sos]').forEach((b) => b.onclick = () => open[b.dataset.sos]());
+}
+function openLostKid() {
+  const F = S.family, ctx = currentContext(), lk = (F.protocols || {}).lost_kid || {};
   const base = ctx.city.toLowerCase();
   const cardIds = new Set(F.taxi_cards.filter((c) => (c.base || '').toLowerCase() === base).map((c) => c.id));
   const kobans = (F.koban || []).filter((k) => cardIds.has(k.venue_id));
   const stayKoban = ctx.stay ? kobans.find((k) => k.venue_id === (ctx.stay.ja_id || '')) : null;
-  let html = `<h1 class="h1 red">Lost kid</h1>`;
-  html += `<a class="btn danger block sos" href="tel:${em}">Call ${em}${pol !== em ? ` (police ${pol})` : ''}</a>`;
-  if (pol !== em) html += `<a class="btn block" href="tel:${pol}">Police ${pol}</a>`;
-  html += `<button class="btn block" id="sos-disaster">Earthquake · fire · winter storm</button>`;
-  html += `<div class="card"><div class="h3">Do now</div><ol class="steps">${(lk.steps || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol></div>`;
-  html += `<div class="card"><div class="h3">Say</div><div>${esc(lk.say_en || '')}</div>${cc === 'JP' && lk.say_ja ? `<div class="ja">${esc(lk.say_ja)}</div>` : ''}${isMontreal(ctx.city) && lk.say_fr ? `<div class="fr">${esc(lk.say_fr)}</div>` : ''}</div>`;
+  let html = `<h1 class="h1 red">🧒 Lost kid</h1>` + callButtons(ctx);
+  html += `<div class="card">${stepsList(lk.steps, ctx)}</div>`;
+  html += `<div class="card"><div class="h3">Say</div>${sayBlock(lk, ctx)}</div>`;
   if (stayKoban || kobans.length) {
-    const onMap = (k) => (F.overlay.features || []).some((f) => f.properties.id === 'koban-' + k.venue_id) ? ` <a class="btn" href="#" data-focus="koban-${esc(k.venue_id)}">Map</a>` : '';
+    const onMap = (k) => (F.overlay.features || []).some((f) => f.properties.id === 'koban-' + k.venue_id) ? ` <a class="btn small-btn" href="#" data-focus="koban-${esc(k.venue_id)}">Map</a>` : '';
     html += `<div class="card"><div class="h3">Nearest police box</div>${stayKoban ? `<div>${tel(stayKoban.note)}${onMap(stayKoban)}</div>` : ''}${kobans.filter((k) => k !== stayKoban).slice(0, 4).map((k) => `<div class="small muted" style="margin-top:6px">${esc(k.venue_id)}: ${tel(k.note)}${onMap(k)}</div>`).join('')}</div>`;
-  } else {
-    html += `<div class="card"><div class="h3">Police</div><div>Nearest staff or security first, then ${pol}.</div></div>`;
   }
   html += `<div class="card red"><b>This morning's photo</b>: open Photos now and have it ready to show.</div>`;
-  const E = F.emergency[cc === 'AU' ? 'JP' : cc];
-  if (E && E.hospitals && E.hospitals.length) html += `<div class="card"><div class="h3">Hospital for a sick child</div>${E.hospitals.slice(0, 2).map((h) => `<div><b>${esc(h.name)}</b><br>${tel(h.address_en + ' · ' + h.phone)}</div>`).join('<hr>')}</div>`;
-  openModal(html);
-  wireGo($('#modal-inner'));
-  $('#sos-disaster').onclick = openDisaster;
+  openModal(html); wireGo($('#modal-inner')); wireSay($('#modal-inner'));
 }
-/* Earthquake, fire and winter-storm cards for today's country (all of them if we are not yet away). */
-function openDisaster() {
-  const F = S.family, ctx = currentContext(), em = EMERGENCY_NUMBER[ctx.country] || '112';
-  let html = `<h1 class="h1 red">Earthquake · fire · storm</h1><a class="btn danger block sos" href="tel:${em}">Call ${em}</a>`;
-  html += disasterCards(F, ctx, true);
-  html += `<div class="small muted">Every hazard for every country: More → Protocols.</div>`;
+function openKidCard() {
+  const F = S.family, ctx = currentContext(), kc = (F.protocols || {}).kid_card || {}, mob = ((F.trip || {}).family || {}).mobiles || {};
+  const nums = [['Mum', mob.sarah], ['Dad', mob.andy]].filter((x) => x[1]);
+  let html = `<div class="kid-card"><h1 class="h1">🙋 ${esc(kc.title || "I'm lost")}</h1>${stepsList(kc.steps, ctx)}`;
+  html += sayLines(kc, ctx).map((l) => `<div class="say-full"><div class="local ${l.lang === 'en' ? '' : l.lang}">${esc(l.local)}</div>${l.sub ? `<div class="sub muted">${esc(l.sub)}</div>` : ''}${l.en && l.lang !== 'en' ? `<div class="en">${esc(l.en)}</div>` : ''}</div>`).join('');
+  html += nums.length ? nums.map(([who, n]) => `<a class="btn danger block sos" href="tel:${esc(String(n).replace(/[^\d+]/g, ''))}">📞 ${esc(who)} ${esc(n)}</a>`).join('')
+    : `<div class="card red">Mum and dad's numbers go here once they are in extra.yaml (family.mobiles).</div>`;
+  html += `</div>`;
   openModal(html);
-  wireGo($('#modal-inner'));
 }
-function disasterCards(F, ctx, onlyHere) {
-  const all = ((F.protocols || {}).disasters || []);
-  let list = onlyHere ? all.filter((d) => (d.where || []).includes(ctx.country)) : all;
-  if (!list.length) list = all;
-  return list.map((d) => `<div class="card"><div class="h2">${esc(d.title || '')}</div>${d.where_label ? `<div class="tiny muted">${esc(d.where_label)}</div>` : ''}${(d.steps || []).length ? `<ol class="steps">${d.steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>` : ''}${(d.notes || []).map((n) => `<div class="small">${tel(n)}</div>`).join('')}${d.say_ja ? `<div class="ja">${esc(d.say_ja)}</div>` : ''}${(d.lines || []).length ? kv(d.lines.map((l) => [l.who, l.number])) : ''}</div>`).join('');
+function openSick() {
+  const F = S.family, ctx = currentContext(), sk = (F.protocols || {}).sick || {}, E = F.emergency[ctx.country === 'AU' ? 'JP' : ctx.country] || {};
+  let html = `<h1 class="h1 red">🤕 Sick or hurt</h1>` + callButtons(ctx);
+  html += `<div class="card">${stepsList(sk.steps, ctx)}</div>`;
+  if (E.hospitals && E.hospitals.length) html += `<div class="card"><div class="h3">Children's hospital</div>${E.hospitals.slice(0, 2).map((h) => `<div class="hosp"><b>${esc(h.name)}</b><div>${tel(h.address_en + ' · ' + h.phone)}</div>${h.address_ja ? `<div class="ja">${esc(h.address_ja)}</div>` : ''}${h.coord && h.coord.lat != null ? mapsLink(h.coord.lat, h.coord.lon, h.name) : ''}</div>`).join('<hr>')}</div>`;
+  html += `<div class="card"><div class="h3">Say</div>${sayBlock(sk, ctx)}</div>`;
+  if (E.health_lines && E.health_lines.length) html += `<div class="card"><div class="h3">Nurse / health line</div>${kv(E.health_lines.map((h) => [h.name, `${h.number} · ${h.hours}`]))}</div>`;
+  html += `<div class="small muted">Pharmacies, insurance and more: SOS → Numbers.</div>`;
+  openModal(html); wireSay($('#modal-inner'));
+}
+function disasterOrder(ctx) {
+  const all = ((S.family.protocols || {}).disasters || []), cc = ctx.country;
+  const rk = (d, c) => ((d.rank || {})[c] || 99), minRank = (d) => Math.min(...Object.values(d.rank || {}), 99);
+  const here = all.filter((d) => (d.where || []).includes(cc)).sort((a, b) => rk(a, cc) - rk(b, cc));
+  const rest = all.filter((d) => !here.includes(d)).sort((a, b) => minRank(a) - minRank(b));
+  return { here, rest };
+}
+function openDisasters() {
+  const ctx = currentContext(), { here, rest } = disasterOrder(ctx);
+  const btn = (d) => `<button class="tile wide" data-dis="${esc(d.id)}"><span class="ico">${d.icon || '⚠️'}</span><span class="label">${esc(d.title)}</span><span class="tiny muted">${esc((d.where || []).map((c) => COUNTRY_LABEL[c] || c).join(' · '))}</span></button>`;
+  let html = `<h1 class="h1 red">⚠️ Disasters</h1>`;
+  if (here.length) html += `<div class="small muted">Most likely first, here in ${esc(ctx.city)}.</div><div class="tiles">${here.map(btn).join('')}</div>`;
+  if (rest.length) html += `<div class="small muted" style="margin-top:12px">${here.length ? 'Elsewhere on the trip' : 'Most likely first'}</div><div class="tiles">${rest.map(btn).join('')}</div>`;
+  openModal(html);
+  $('#modal-inner').querySelectorAll('[data-dis]').forEach((b) => b.onclick = () => openDisasterCard(b.dataset.dis));
+}
+function openDisasterCard(id) {
+  const F = S.family, ctx = currentContext(), d = ((F.protocols || {}).disasters || []).find((x) => x.id === id);
+  if (!d) return;
+  let html = `<h1 class="h1 red">${d.icon || '⚠️'} ${esc(d.title)}</h1><div class="small muted">${esc((d.where || []).map((c) => COUNTRY_LABEL[c] || c).join(' · '))}</div>` + linesBlock(d.lines);
+  html += `<div class="card">${stepsList(d.steps, ctx)}</div>`;
+  if (d.say_ja || d.say_fr || d.say_en) html += `<div class="card"><div class="h3">Say</div>${sayBlock(d, ctx)}</div>`;
+  if ((d.notes || []).length) html += `<div class="card small">${d.notes.map((n) => `<div>${tel(n)}</div>`).join('')}</div>`;
+  html += `<button class="btn block" id="dis-back">← All disasters</button>`;
+  openModal(html); wireSay($('#modal-inner')); $('#dis-back').onclick = openDisasters;
+}
+function openSayList() {
+  const F = S.family, ctx = currentContext(), P = F.protocols || {};
+  const cards = [['🧒 Lost kid', P.lost_kid], ["🙋 I'm lost", P.kid_card], ['🤕 Sick or hurt', P.sick], ['📞 Calling for help', P.call]].concat((P.disasters || []).map((d) => [`${d.icon || '⚠️'} ${d.title}`, d]));
+  let html = `<h1 class="h1">🗣️ Say it</h1><div class="small muted">Tap Show big, then hold the screen up.</div>`;
+  for (const [label, c] of cards) {
+    if (!c || !sayLines(c, ctx).some((l) => l.lang !== 'en')) continue;
+    html += `<div class="card"><div class="h3">${esc(label)}</div>${sayBlock(c, ctx)}</div>`;
+  }
+  openModal(html); wireSay($('#modal-inner'));
+}
+function openNumbers() {
+  const F = S.family, ctx = currentContext();
+  const order = ['CA', 'US', 'JP'].sort((a, b) => (a === ctx.country ? -1 : b === ctx.country ? 1 : 0));
+  let html = `<h1 class="h1">📒 Numbers</h1>`;
+  for (const cc of order) {
+    const E = F.emergency[cc];
+    html += `<details ${cc === ctx.country ? 'open' : ''}><summary>${esc(E.name)}${cc === ctx.country ? '<span class="chip red">here</span>' : ''}</summary>`;
+    html += kv(E.numbers.map((c) => [c.who, c.phone + (c.ref ? ' · ' + c.ref : '')]));
+    if (E.hospitals.length) html += `<div class="h3">Hospital for a sick child</div>` + E.hospitals.map((h) => `<div class="card"><b>${esc(h.name)}</b><div>${tel(h.address_en + ' · ' + h.phone + (h.open_24h ? ' · 24 h' : ''))}</div>${h.address_ja ? `<div class="ja">${esc(h.address_ja)}</div>` : ''}${coordLine(h.coord) ? `<div class="mono small">${coordLine(h.coord)}</div>` : ''}<div class="small muted">${esc(h.notes)}</div>${h.coord && h.coord.lat != null ? mapsLink(h.coord.lat, h.coord.lon, h.name) : ''}</div>`).join('');
+    if (E.pharmacies && E.pharmacies.length) html += `<div class="h3">Pharmacy at night</div>` + E.pharmacies.map((p) => `<div class="card"><b>${esc(p.name)}</b><div>${tel(p.address_en + ' · ' + p.phone + ' · ' + p.hours)}</div>${p.address_ja ? `<div class="ja">${esc(p.address_ja)}</div>` : ''}<div class="small muted">${tel(p.notes)}</div></div>`).join('');
+    if (E.medicine) html += E.medicine.map((m) => `<div class="small muted">${esc(m)}</div>`).join('');
+    if (E.health_lines.length) html += `<div class="h3">Health lines</div>` + kv(E.health_lines.map((h) => [h.name, `${h.number} · ${h.hours}`]));
+    const cons = E.consulates_verified || E.consulates;
+    if (cons && cons.length) html += `<div class="h3">Australian consulate</div>` + cons.map((c) => `<div class="card">${c.who ? tel(`${c.who} — ${c.phone} · ${c.ref}`) : tel(`${c.name} — ${c.address_en} · ${c.phone} · ${c.hours}`)}${c.after_hours ? `<div class="small muted">${tel(c.after_hours)}</div>` : ''}</div>`).join('');
+    if (E.insurers.length) html += `<div class="h3">Insurance</div>` + kv(E.insurers.map((c) => [c.who, c.phone + (c.ref ? ' · ' + c.ref : '')]));
+    html += `</details>`;
+  }
+  openModal(html);
 }
 function openTaxiCard(c) {
   const F = S.family;
@@ -312,7 +406,7 @@ function openTaxiCard(c) {
   wireGo($('#modal-inner'));
 }
 function openTaxiById(id) { const c = (S.family.taxi_cards || []).find((x) => x.id === id); if (c) openTaxiCard(c); }
-$('#btn-sos').onclick = openSOS;
+$('#btn-sos').onclick = () => { if (S.family) show('sos'); };
 
 function renderDays() {
   const ctx = currentContext();
@@ -410,31 +504,11 @@ function renderTaxi() {
   };
 }
 
-function renderEmergency() {
-  const F = S.family, ctx = currentContext();
-  const order = ['CA', 'US', 'JP'].sort((a, b) => (a === ctx.country ? -1 : b === ctx.country ? 1 : 0));
-  let html = `<h1 class="h1">Emergency</h1>`;
-  for (const cc of order) {
-    const E = F.emergency[cc];
-    html += `<details ${cc === ctx.country ? 'open' : ''}><summary>${esc(E.name)}${cc === ctx.country ? '<span class="chip red">here</span>' : ''}</summary>`;
-    html += kv(E.numbers.map((c) => [c.who, c.phone + (c.ref ? ' · ' + c.ref : '')]));
-    if (E.hospitals.length) html += `<div class="h3">Hospital for a sick child</div>` + E.hospitals.map((h) => `<div class="card"><b>${esc(h.name)}</b><div>${tel(h.address_en + ' · ' + h.phone + (h.open_24h ? ' · 24 h' : ''))}</div>${h.address_ja ? `<div class="ja">${esc(h.address_ja)}</div>` : ''}${coordLine(h.coord) ? `<div class="mono small">${coordLine(h.coord)}</div>` : ''}<div class="small muted">${esc(h.notes)}</div>${h.coord && h.coord.lat != null ? mapsLink(h.coord.lat, h.coord.lon, h.name) : ''}</div>`).join('');
-    if (E.pharmacies && E.pharmacies.length) html += `<div class="h3">Pharmacy at night</div>` + E.pharmacies.map((p) => `<div class="card"><b>${esc(p.name)}</b><div>${tel(p.address_en + ' · ' + p.phone + ' · ' + p.hours)}</div>${p.address_ja ? `<div class="ja">${esc(p.address_ja)}</div>` : ''}<div class="small muted">${tel(p.notes)}</div></div>`).join('');
-    if (E.medicine) html += E.medicine.map((m) => `<div class="small muted">${esc(m)}</div>`).join('');
-    if (E.health_lines.length) html += `<div class="h3">Health lines</div>` + kv(E.health_lines.map((h) => [h.name, `${h.number} · ${h.hours}`]));
-    const cons = E.consulates_verified || E.consulates;
-    if (cons && cons.length) html += `<div class="h3">Australian consulate</div>` + cons.map((c) => `<div class="card">${c.who ? tel(`${c.who} — ${c.phone} · ${c.ref}`) : tel(`${c.name} — ${c.address_en} · ${c.phone} · ${c.hours}`)}${c.after_hours ? `<div class="small muted">${tel(c.after_hours)}</div>` : ''}</div>`).join('');
-    if (E.insurers.length) html += `<div class="h3">Insurance</div>` + kv(E.insurers.map((c) => [c.who, c.phone + (c.ref ? ' · ' + c.ref : '')]));
-    html += `</details>`;
-  }
-  $('#screen-emergency').innerHTML = html;
-}
-
 function renderProtocols() {
   const P = S.family.protocols || {}, lk = P.lost_kid || {}, pace = P.pace || {}, ps = P.phone_stolen || {};
   let html = `<h1 class="h1">Protocols</h1>`;
-  html += `<div class="card"><div class="h2">Lost kid</div><ol class="steps">${(lk.steps || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol><div><b>Say:</b> ${esc(lk.say_en || '')}</div>${lk.say_ja ? `<div class="ja">${esc(lk.say_ja)}</div>` : ''}${lk.say_fr ? `<div class="fr">${esc(lk.say_fr)} <span class="tiny muted">Montréal</span></div>` : ''}<div class="red">${esc(lk.morning_photo || '')}</div></div>`;
-  html += disasterCards(S.family, currentContext(), false);
+  html += `<div class="card"><div class="h2">Lost kid</div>${stepsList(lk.steps, currentContext())}<div><b>Say:</b> ${esc(lk.say_en || '')}</div>${lk.say_ja ? `<div class="ja">${esc(lk.say_ja)}</div>` : ''}${lk.say_romaji ? `<div class="tiny muted">${esc(lk.say_romaji)}</div>` : ''}${lk.say_fr ? `<div class="fr">${esc(lk.say_fr)} <span class="tiny muted">Montréal</span></div>` : ''}<div class="red">${esc(lk.morning_photo || '')}</div></div>`;
+  html += `<div class="card small muted">Sick or hurt, the kids' own "I'm lost" card, disasters and the say-it lines are under SOS.</div>`;
   html += `<div class="card"><div class="h2">PACE</div>${kv([['Primary', pace.primary], ['Alternate', pace.alternate], ['Contingency', pace.contingency], ['Emergency', pace.emergency]])}</div>`;
   html += `<div class="card"><div class="h2">Phone stolen</div><div class="h3">iPhone (Sarah)</div><ol class="steps">${(ps.ios || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol><div class="h3">Android (Andy)</div><ol class="steps">${(ps.android || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol>${kv([['SIM / eSIM', ps.sim], ['Wallet cards', ps.wallet_lock], ['Sign out everywhere', ps.sign_out_everywhere]])}${(ps.carriers || []).some((c) => c && (c.carrier || c.lost_sim)) ? `<div class="h3">Carriers: suspend the SIM or eSIM</div>${kv((ps.carriers || []).filter((c) => c && (c.carrier || c.lost_sim)).map((c) => [c.who || 'Carrier', [c.carrier, c.lost_sim].filter(Boolean).join(' · ') + (c.note ? ' — ' + c.note : '')]))}` : ''}<div class="small muted">Card-lock list: in the vault.</div></div>`;
   $('#screen-protocols').innerHTML = html;
@@ -510,6 +584,7 @@ async function renderVault() {
 function renderSettings() {
   $('#screen-settings').innerHTML = `<h1 class="h1">Settings</h1>
     <div class="card"><div class="h3">Theme</div><div class="row">${['auto', 'light', 'dark'].map((t) => `<button class="pill${settings.theme === t ? ' active' : ''}" data-theme="${t}">${t}</button>`).join('')}</div></div>
+    <div class="card"><div class="h3">Text size</div><label><input type="checkbox" id="opt-big" ${settings.bigText ? 'checked' : ''}> Big text (for the kids and tired eyes)</label></div>
     <div class="card"><div class="h3">This device</div>
       <label><input type="checkbox" id="opt-reader" ${settings.readerMode ? 'checked' : ''}> Reader mode: hide the Vault (for the iPad)</label><br>
       <label><input type="checkbox" id="opt-auto" ${settings.autoFamily ? 'checked' : ''}> Open the family view without a PIN on this device</label>
@@ -519,6 +594,7 @@ function renderSettings() {
   document.querySelectorAll('[data-theme]').forEach((b) => b.onclick = () => { settings.theme = b.dataset.theme; renderSettings(); if (window.DossierMap) window.DossierMap.setTheme(currentTheme()); });
   $('#opt-reader').onchange = (e) => { settings.readerMode = e.target.checked; $('#sheet-vault').classList.toggle('hidden', settings.readerMode); if (settings.readerMode) lockVault(); };
   $('#opt-auto').onchange = (e) => { settings.autoFamily = e.target.checked; };
+  $('#opt-big').onchange = (e) => { settings.bigText = e.target.checked; };
   $('#opt-forget').onclick = () => { if (confirm('Forget this device? You will need the passphrase again.')) forgetDevice(); };
   $('#opt-update').onclick = () => checkForUpdate(true);
   if (navigator.storage && navigator.storage.estimate) navigator.storage.estimate().then((e) => { $('#storage-msg').textContent = `${Math.round((e.usage || 0) / 1024)} KB used of ${Math.round((e.quota || 0) / 1048576)} MB available`; });
@@ -549,6 +625,7 @@ $('#sheet-close').onclick = () => $('#sheet').classList.add('hidden');
 $('#sheet').onclick = (e) => { if (e.target === $('#sheet')) $('#sheet').classList.add('hidden'); };
 $('#btn-settings').onclick = () => { if (S.family) show('settings'); };
 applyTheme();
+applyBigText();
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').then((reg) => {
     reg.addEventListener('updatefound', () => { const nw = reg.installing; nw && nw.addEventListener('statechange', () => { if (nw.state === 'installed' && navigator.serviceWorker.controller) checkForUpdate(); }); });

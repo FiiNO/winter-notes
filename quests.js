@@ -234,6 +234,7 @@ window.Quests = (() => {
 
   /* ---------------------------------------------------------------- changes (every one is a fact) */
   const by = () => (isParentDevice() ? 'parent' : 'kid');
+  let fx = null;                        // the card to animate after the next render: { key, cls, float, fcls }
   function complete(player, id, date) {
     const st = state(), q = byId[id]; if (!q) return;
     const key = tickKey(player, id, q.daily ? date : null);
@@ -242,7 +243,9 @@ window.Quests = (() => {
     put(st, key, { on: true, by: who, date });
     save(st); Sync.touch();
     const waits = needsVerify(q) && who !== 'parent';
-    celebrate(waits ? '⏳' : q.e, waits ? 'Sent to Mum and Dad' : `+${q.pts} points`, waits ? `${q.t} · ${q.pts} points when they say yes` : q.t, player);
+    fx = waits ? { key, cls: 'just-sent', float: '📨 sent', fcls: 'send' } : { key, cls: 'just-done', float: `+${q.pts}` };
+    if (waits) celebrate('⏳', 'Sent to Mum and Dad', `${q.t} · ${q.pts} points when they say yes`, player, 'wait');
+    else celebrate(q.e, `+${q.pts} points`, q.t, player, 'quest', q.pts);
     afterChange();
   }
   function undo(player, id, date) {
@@ -250,6 +253,7 @@ window.Quests = (() => {
     const key = tickKey(player, id, q.daily ? date : null);
     if (!liveOn(st, key)) return;
     put(st, key, { on: false, by: by(), date });
+    fx = { key, cls: 'just-undone', float: `−${q.pts}`, fcls: 'minus' };
     save(st); Sync.touch(); afterChange();
   }
   function addFood(player, what, date) {
@@ -257,8 +261,24 @@ window.Quests = (() => {
     put(st, 'food|' + player + '|' + newId(), { on: true, by: who, date, what: String(what || '').slice(0, 60) });
     save(st); Sync.touch();
     const waits = who !== 'parent';
-    celebrate(waits ? '⏳' : '🍽️', waits ? 'Sent to Mum and Dad' : `+${FOOD_PTS} points`, (what ? `Tried: ${what}` : 'Tried something new') + (waits ? ` · ${FOOD_PTS} points when they say yes` : ''), player);
+    fx = waits ? { key: 'food', cls: 'just-done', float: '📨 sent', fcls: 'send' } : { key: 'food', cls: 'just-done', float: `+${FOOD_PTS}` };
+    const small = (what ? `Tried: ${what}` : 'Tried something new') + (waits ? ` · ${FOOD_PTS} points when they say yes` : '');
+    if (waits) celebrate('⏳', 'Sent to Mum and Dad', small, player, 'wait');
+    else celebrate('🍽️', `+${FOOD_PTS} points`, small, player, 'food', FOOD_PTS);
     afterChange();
+  }
+  function applyFx(root) {              // after a re-render: pop the card that just changed and float its points
+    if (!fx || !root) return;
+    const card = root.querySelector(`[data-key="${CSS.escape(fx.key)}"]`);
+    if (card) { FX.pulse(card, fx.cls, 1000); FX.floatText(card.querySelector('.qbtn') || card, fx.float, fx.fcls); }
+    fx = null;
+  }
+  function checkLevelUp(st) {           // the active player crossed a level line (own tick or a sync merge)
+    const p = st.active, lv = level(points(view(st, p)));
+    st.lastLevel = st.lastLevel || {};
+    const prev = st.lastLevel[p];
+    if (prev !== lv.from) { st.lastLevel[p] = lv.from; save(st); }
+    if (prev != null && lv.from > prev) celebrate(lv.emoji, 'Level up!', `${lv.name}`, p, 'level');
   }
   function removeFood(player, key) {
     const st = state(), f = st.facts[key]; if (!f) return;
@@ -284,6 +304,8 @@ window.Quests = (() => {
     if (S.screen === 'passport') renderPassport();
     if (S.screen === 'home') renderHome();
     if (S.screen === 'settings') renderSettings();
+    fx = null;
+    checkLevelUp(state());
   }
 
   /* ---------------------------------------------------------------- sync: what we send, how we merge */
@@ -312,8 +334,8 @@ window.Quests = (() => {
     for (const p of visiblePlayers()) for (const it of items(st, p, eff)) if (it.needs && it.ok && !st.okSeen[it.key]) { st.okSeen[it.key] = it.ok; if (it.ok === 'yes') fresh.push(it); }
     save(st);
     if (!fresh.length) return;
-    const it = fresh[0];
-    celebrate(it.e, fresh.length > 1 ? `${fresh.length} approved!` : `+${it.pts} points`, `${it.okBy || 'A parent'} said yes${fresh.length > 1 ? ' to ' + fresh.length + ' things' : ': ' + it.title}`, it.player);
+    const it = fresh[0], total = fresh.reduce((n, i) => n + i.pts, 0);
+    celebrate(it.e, `+${total} points`, `${it.okBy || 'A parent'} said yes${fresh.length > 1 ? ' to ' + fresh.length + ' things' : ': ' + it.title}`, it.player, 'ok', total);
   }
   function startSync() {
     const sy = (S.family && S.family.trip && S.family.trip.sync) || {};
@@ -388,8 +410,8 @@ window.Quests = (() => {
     if (!fresh.length) return;
     for (const b of fresh) st.seen[p + '|' + b.id] = ctx.date;
     save(st);
-    const b = fresh[0];
-    celebrate(b.e, fresh.length > 1 ? `${fresh.length} new badges` : 'New badge', b.t + (fresh.length > 1 ? ' and more' : ''), p);
+    const b = fresh[0], total = fresh.reduce((n, x) => n + x.pts, 0);
+    celebrate(b.e, fresh.length > 1 ? `${fresh.length} new badges` : (b.kind === 'stamp' ? 'New stamp!' : 'New badge!'), b.t + (fresh.length > 1 ? ' and more' : '') + ` · +${total} points`, p, b.kind === 'stamp' ? 'stamp' : 'badge', 0, { winter: /Whistler|Vancouver|Montréal|Toronto/.test(b.t) });
   }
 
   /* ---------------------------------------------------------------- views */
@@ -417,7 +439,7 @@ window.Quests = (() => {
     const cls = 'quest' + (it ? (it.counted ? ' done' : it.rejected ? ' rejected' : ' pending') : '');
     const status = !it ? '' : it.counted ? ' · ✓ done' : it.rejected ? ` · ✗ ${esc(it.okBy || 'a parent')} said not this time` : ' · ⏳ waiting for Mum or Dad';
     const btn = it ? `<button class="qbtn undo" data-undo="${q.id}">Undo</button>` : `<button class="qbtn go" data-do="${q.id}">Done!</button>`;
-    return `<div class="${cls}"><span class="qe">${q.e}</span><div class="qt"><div class="qn">${esc(q.t)}</div><div class="qp">${q.daily ? 'every day · ' : ''}${q.pts} pts${needsVerify(q) && !isParentDevice() ? ' · parent checks' : ''}${status}</div></div>${btn}</div>`;
+    return `<div class="${cls}" data-key="${esc(tickKey(player, q.id, q.daily ? ctx.date : null))}"><span class="qe">${q.e}</span><div class="qt"><div class="qn">${esc(q.t)}</div><div class="qp">${q.daily ? 'every day · ' : ''}${q.pts} pts${needsVerify(q) && !isParentDevice() ? ' · parent checks' : ''}${status}</div></div>${btn}</div>`;
   }
   function roleCard() {
     const cur = role();
@@ -444,7 +466,7 @@ window.Quests = (() => {
     html += playerChips(st, ctx);
     html += `<div class="levelcard"><div class="lv-top"><span class="lv-av">${pl.avatar}</span><div><div class="lv-name">${esc(label(player))} · ${lv.emoji} ${esc(lv.name)}</div><div class="lv-pts">${pts} points${lv.next ? ` · ${lv.next - pts} to ${esc(lv.nextName)}` : ' · top level!'}${pl.pending.length ? ` · ⏳ ${pl.pending.length} waiting` : ''}</div></div></div><div class="bar"><i style="width:${lv.pct}%"></i></div></div>`;
     html += `<div class="row"><button class="btn block" data-go-passport>📘 Passport and badges</button></div>`;
-    html += `<div class="foodcard"><span class="qe">🍽️</span><div class="qt"><div class="qn">Tried a new food?</div><div class="qp">${FOOD_PTS} pts each · ${pl.foods.length} so far${isParentDevice() ? '' : ' · parent checks'}</div></div><button class="qbtn go" id="food-add">+1</button></div>`;
+    html += `<div class="foodcard" data-key="food"><span class="qe">🍽️</span><div class="qt"><div class="qn">Tried a new food?</div><div class="qp">${FOOD_PTS} pts each · ${pl.foods.length} so far${isParentDevice() ? '' : ' · parent checks'}</div></div><button class="qbtn go" id="food-add">+1</button></div>`;
     if (todays.length) html += `<h2 class="h2">${esc(here)}</h2>` + todays.map((q) => questCard(q, ctx, player, pl)).join('');
     html += `<h2 class="h2">Every day</h2>` + dailies.map((q) => questCard(q, ctx, player, pl)).join('');
     if (helpers.length) html += `<h2 class="h2">Any time</h2>` + helpers.map((q) => questCard(q, ctx, player, pl)).join('');
@@ -455,14 +477,16 @@ window.Quests = (() => {
     html += `<p class="tiny muted" id="sync-line">${esc(syncText())}</p>`;
     const el = $('#screen-quests'); el.innerHTML = html;
     wire(el, ctx, player);
+    applyFx(el);
   }
   function wire(el, ctx, player) {
-    el.querySelectorAll('[data-player]').forEach((b) => b.onclick = () => { setActive(b.dataset.player); afterChange(); });
+    el.querySelectorAll('[data-player]').forEach((b) => b.onclick = () => { setActive(b.dataset.player); afterChange(); FX.pulse(el.querySelector('.player.active'), 'just', 700); FX.pulse(el.querySelector('.lv-av'), 'bump', 700); });
     el.querySelectorAll('[data-do]').forEach((b) => b.onclick = () => complete(player, b.dataset.do, ctx.date));
     el.querySelectorAll('[data-undo]').forEach((b) => b.onclick = () => undo(player, b.dataset.undo, ctx.date));
     el.querySelectorAll('[data-food-undo]').forEach((b) => b.onclick = () => removeFood(player, b.dataset.foodUndo));
-    el.querySelectorAll('[data-ok]').forEach((b) => b.onclick = () => approve(b.dataset.ok, true));
-    el.querySelectorAll('[data-no]').forEach((b) => b.onclick = () => approve(b.dataset.no, false));
+    const decide = (b, yes) => { const row = b.closest('.approve-row'), key = yes ? b.dataset.ok : b.dataset.no; FX.haptic(20); if (row && !FX.reduce()) { row.classList.add(yes ? 'yes-out' : 'no-out'); setTimeout(() => approve(key, yes), 360); } else approve(key, yes); };
+    el.querySelectorAll('[data-ok]').forEach((b) => b.onclick = () => decide(b, true));
+    el.querySelectorAll('[data-no]').forEach((b) => b.onclick = () => decide(b, false));
     el.querySelectorAll('[data-role]').forEach((b) => b.onclick = () => chooseRole(b.dataset.role, b.dataset.who));
     const fa = el.querySelector('#food-add'); if (fa) fa.onclick = () => { const what = prompt('What did you try?'); if (what !== null) addFood(player, what.trim(), ctx.date); };
     const gp = el.querySelector('[data-go-passport]'); if (gp) gp.onclick = () => show('passport');
@@ -482,11 +506,21 @@ window.Quests = (() => {
     const stamps = all.filter((b) => b.kind === 'stamp'), rest = all.filter((b) => b.kind !== 'stamp');
     let html = `<h1 class="h1">📘 Passport</h1>` + playerChips(st, ctx);
     html += `<div class="levelcard"><div class="lv-top"><span class="lv-av">${pl.avatar}</span><div><div class="lv-name">${esc(label(player))} · ${lv.emoji} ${esc(lv.name)}</div><div class="lv-pts">${pts} points · ${stamps.filter((b) => b.earned).length} of ${stamps.length} stamps · ${rest.filter((b) => b.earned).length} of ${rest.length} badges</div></div></div><div class="bar"><i style="width:${lv.pct}%"></i></div></div>`;
-    html += `<h2 class="h2">Stamps</h2><div class="stamps">` + stamps.map((b) => `<div class="stampc${b.earned ? ' earned' : ''} ${CITY_KEY[b.t] || ''}"><span class="se">${b.e}</span><span class="st">${esc(b.t)}</span><span class="sh">${b.earned ? '✓ ' + esc(fmtDate(b.opens)) : esc(b.hint)}</span></div>`).join('') + `</div>`;
-    html += `<h2 class="h2">Badges</h2><div class="stamps">` + rest.map((b) => `<div class="stampc badge${b.earned ? ' earned' : ''}"><span class="se">${b.e}</span><span class="st">${esc(b.t)}</span><span class="sh">${b.earned ? '✓ earned · ' + b.pts + ' pts' : esc(b.hint)}</span></div>`).join('') + `</div>`;
+    const stampCard = (b, k, extraCls, sub) => `<div class="stampc${extraCls}${b.earned ? ' earned' : ''}" style="--i:${k}" data-badge="${esc(b.id)}"><span class="se">${b.e}</span><span class="st">${esc(b.t)}</span><span class="sh">${sub}</span>${b.earned ? '<i class="glint"></i>' : ''}</div>`;
+    html += `<h2 class="h2">Stamps</h2><div class="stamps">` + stamps.map((b, k) => stampCard(b, k, ' ' + (CITY_KEY[b.t] || ''), b.earned ? '✓ ' + esc(fmtDate(b.opens)) : esc(b.hint))).join('') + `</div>`;
+    html += `<h2 class="h2">Badges</h2><div class="stamps">` + rest.map((b, k) => stampCard(b, k, ' badge', b.earned ? '✓ earned · ' + b.pts + ' pts' : esc(b.hint))).join('') + `</div>`;
     html += `<h2 class="h2">Levels</h2><div class="card">${LEVELS.map((l) => `<div class="lvrow${pts >= l[0] ? ' got' : ''}"><span>${l[2]} ${esc(l[1])}</span><span class="muted">${l[0]} pts</span></div>`).join('')}</div>`;
     const el = $('#screen-passport'); el.innerHTML = html;
     wire(el, ctx, player);
+    // stamps and badges earned since this device last showed them slam in one by one, with sparkles
+    st.revealed = st.revealed || {};
+    const fresh = all.filter((b) => b.earned && !st.revealed[player + '|' + b.id]);
+    if (fresh.length) {
+      const els = fresh.map((b) => el.querySelector(`[data-badge="${CSS.escape(b.id)}"]`)).filter(Boolean).slice(0, 14);
+      FX.revealAll(els);
+      for (const b of fresh) st.revealed[player + '|' + b.id] = ctx.date;
+      save(st);
+    }
   }
   function settingsCard() {
     const st = state(), eff = effective(st);
@@ -508,24 +542,20 @@ window.Quests = (() => {
     openModal(`<h2 class="h2">${esc(label(p))}: pick a face</h2><div class="avgrid">` + AVATARS.map((a) => `<button class="avpick${a === cur ? ' active' : ''}" data-pick="${a}">${a}</button>`).join('') + `</div>`);
     $('#modal-inner').querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => { setAvatar(p, b.dataset.pick); closeModal(); refreshTop(); renderSettings(); });
   }
+  let lastTop = null;                   // [player, points] the header pill last showed, for the count-up
   function refreshTop() {
     const el = $('#top-points'); if (!el || !S.family) return;
-    const st = state(), pl = view(st, st.active);
-    el.textContent = `${pl.avatar} ${points(pl)}`;
+    const st = state(), pl = view(st, st.active), n = points(pl);
+    if (lastTop && lastTop[0] === st.active && lastTop[1] !== n) { FX.countUp(el, lastTop[1], n, 700, (v) => `${pl.avatar} ${v}`); FX.pulse($('#btn-points'), 'bump', 700); }
+    else el.textContent = `${pl.avatar} ${n}`;
+    lastTop = [st.active, n];
     const badge = $('#nav-quests-badge');
     if (badge) { const n = isParentDevice() ? pendingAll(st).length : 0; badge.textContent = n ? String(n) : ''; badge.classList.toggle('hidden', !n); }
   }
 
-  /* ---------------------------------------------------------------- party */
-  function celebrate(emoji, big, small, player) {
-    const p = $('#party'); if (!p) return;
-    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const bits = reduce ? '' : Array.from({ length: 36 }, (_, i) => `<i style="left:${(i * 37) % 100}%;animation-delay:${(i % 9) * 0.12}s;background:${['#FF4D8D', '#FFB703', '#4CC9F0', '#7B2CBF', '#2A9D8F', '#E63946'][i % 6]}"></i>`).join('');
-    p.innerHTML = `<div class="confetti">${bits}</div><div class="party-card"><div class="party-e">${emoji}</div><div class="party-big">${esc(big)}</div><div class="party-small">${esc(small)}</div><div class="party-who">${esc(label(player))}</div></div>`;
-    p.classList.remove('hidden');
-    clearTimeout(p._t);
-    p._t = setTimeout(() => p.classList.add('hidden'), 2600);
-    p.onclick = () => p.classList.add('hidden');
+  /* ---------------------------------------------------------------- party (fx.js draws it; kinds: quest food wait badge stamp ok level) */
+  function celebrate(emoji, big, small, player, kind, points, extra) {
+    FX.celebrate(Object.assign({ emoji, big, small, who: label(player), kind: kind || 'quest', points: points || 0 }, extra || {}));
   }
 
   return { QUESTS, CITY_EMOJI, CITY_KEY, CITIES, dayCity, daysBetween, state, label, setActive, complete, undo, addFood, approve, summary, badges,

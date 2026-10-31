@@ -57,7 +57,7 @@ button { font: inherit; color: inherit; }
 .icon-btn { background: rgba(255,255,255,0.22); color: #fff; border: 0; border-radius: 999px; padding: 7px 11px; font-weight: 800; font-size: 0.85em; min-height: 40px; white-space: nowrap; }
 .icon-btn.sos { background: var(--red); }
 .icon-btn.pts { background: #fff; color: #1B1B2F; }
-@media (max-width: 430px) { .edition { display: none; } .stamp { font-size: 0.9em; } }
+@media (max-width: 430px) { .edition { display: none; } .stamp { font-size: 0.84em; } .icon-btn { padding: 7px 9px; } .brand { gap: 5px; } }
 
 .banner { position: sticky; top: 56px; z-index: 19; margin: 0; padding: 10px var(--pad); background: var(--red); color: #fff; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .banner button { background: #fff; color: var(--red); border: 0; border-radius: 8px; padding: 6px 12px; font-weight: 700; }
@@ -116,7 +116,7 @@ table.t td { padding: 6px 6px 6px 0; border-top: 1px solid var(--border); vertic
 .hero::before { width: 180px; height: 180px; right: -60px; top: -80px; }
 .hero::after { width: 110px; height: 110px; right: 60px; bottom: -70px; }
 .hero.mini { margin-top: 10px; }
-.hero-emoji { font-size: 3.4em; line-height: 1; flex: 0 0 auto; filter: drop-shadow(0 4px 0 rgba(0,0,0,0.15)); }
+.hero-emoji { font-size: 3.4em; line-height: 1; flex: 0 0 auto; filter: drop-shadow(0 4px 0 rgba(0,0,0,0.15)); animation: bob 3.2s ease-in-out infinite; }
 .hero-text { min-width: 0; position: relative; }
 .hero-kicker { font-size: 0.72em; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; opacity: 0.92; }
 .hero-date { font-size: 1.7em; font-weight: 900; line-height: 1.15; }
@@ -127,7 +127,8 @@ table.t td { padding: 6px 6px 6px 0; border-top: 1px solid var(--border); vertic
 .day .de { font-size: 1.35em; line-height: 1.1; }
 .day .dn { font-weight: 900; font-size: 1.05em; }
 .day .dw { font-size: 0.68em; color: var(--muted); font-weight: 700; text-transform: uppercase; }
-.day.today { background: var(--city); border-color: var(--city); color: #fff; transform: scale(1.06); }
+.day.today { background: var(--city); border-color: var(--city); color: #fff; transform: scale(1.06); position: relative; }
+.day.today::after { content: ""; position: absolute; inset: -5px; border-radius: 22px; border: 2px solid var(--city); opacity: 0; animation: pulse-ring 2.2s ease-out infinite; pointer-events: none; }
 .day.today .dw { color: rgba(255,255,255,0.85); }
 .day.past { opacity: 0.55; }
 .day.more { border-style: dashed; }
@@ -178,8 +179,9 @@ table.t td { padding: 6px 6px 6px 0; border-top: 1px solid var(--border); vertic
 .lv-name { font-weight: 900; font-size: 1.1em; }
 .lv-pts { font-size: 0.85em; color: var(--muted); font-weight: 700; }
 .bar { height: 14px; border-radius: 999px; background: var(--pale); overflow: hidden; }
-.bar i { display: block; height: 100%; background: var(--city); border-radius: 999px; transition: width 0.5s; min-width: 4px; }
-.quest, .foodcard { display: flex; align-items: center; gap: 12px; background: var(--card); border: 2px solid var(--border); border-radius: 20px; padding: 10px 12px; margin: 8px 0; }
+.bar i { display: block; height: 100%; background: var(--city); border-radius: 999px; transition: width 0.7s cubic-bezier(0.2, 1, 0.3, 1); min-width: 4px; position: relative; overflow: hidden; }
+.bar i::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); animation: shimmer 2.4s linear infinite; }
+.quest, .foodcard { display: flex; align-items: center; gap: 12px; background: var(--card); border: 2px solid var(--border); border-radius: 20px; padding: 10px 12px; margin: 8px 0; position: relative; overflow: hidden; }
 .foodcard { background: var(--t6); color: var(--t6-ink); border-color: transparent; }
 .quest.done { background: var(--t4); color: var(--t4-ink); border-color: transparent; }
 .qe { font-size: 1.9em; line-height: 1; flex: 0 0 auto; }
@@ -192,7 +194,8 @@ table.t td { padding: 6px 6px 6px 0; border-top: 1px solid var(--border); vertic
 .qbtn.small-undo { min-height: 0; padding: 2px 10px; font-size: 0.78em; margin-left: 6px; }
 details .quest { margin: 6px 0; }
 .stamps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.stampc { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 2px; padding: 12px 6px; border-radius: 24px; border: 3px dashed var(--border); background: var(--card); color: var(--muted); min-height: 118px; }
+.stampc { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 2px; padding: 12px 6px; border-radius: 24px; border: 3px dashed var(--border); background: var(--card); color: var(--muted); min-height: 118px; position: relative; overflow: hidden; }
+.stampc .glint { position: absolute; top: -60%; left: 0; width: 38%; height: 220%; background: linear-gradient(100deg, transparent, rgba(255,255,255,0.5), transparent); transform: translateX(-140%) rotate(15deg); animation: glint 6.5s ease-in-out infinite; animation-delay: calc(var(--i, 0) * 0.45s); pointer-events: none; }
 .stampc .se { font-size: 2.3em; line-height: 1; filter: grayscale(1); opacity: 0.45; }
 .stampc .st { font-weight: 900; font-size: 0.9em; line-height: 1.15; }
 .stampc .sh { font-size: 0.68em; font-weight: 700; }
@@ -241,18 +244,89 @@ details .quest { margin: 6px 0; }
 .pv-strip .day { min-width: 58px; }
 .btn[disabled] { opacity: 0.4; }
 
-/* party: confetti and the badge card */
-.party { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.35); }
-.party-card { position: relative; background: var(--card); color: var(--text); border-radius: 30px; padding: 22px 28px; text-align: center; min-width: 240px; max-width: 86vw; animation: pop 0.35s cubic-bezier(0.2, 1.4, 0.4, 1); }
-.party-e { font-size: 4.2em; line-height: 1.1; }
-.party-big { font-size: 1.5em; font-weight: 900; }
-.party-small { margin-top: 2px; }
-.party-who { margin-top: 6px; font-size: 0.85em; color: var(--muted); font-weight: 700; }
-.confetti { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
-.confetti i { position: absolute; top: -16px; width: 10px; height: 16px; border-radius: 3px; animation: fall 2.4s linear forwards; }
-@keyframes fall { to { transform: translateY(110vh) rotate(720deg); } }
-@keyframes pop { from { transform: scale(0.5); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .party-card { animation: none; } .confetti { display: none; } .bar i { transition: none; } }
+/* party: the celebration card (fx.js draws the particles on its own canvas above it) */
+.party { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.38); animation: fade-in 0.2s both; }
+.party.out { animation: fade-out 0.22s both; }
+.fx-canvas { position: fixed; inset: 0; z-index: 70; pointer-events: none; display: none; }
+.fx-canvas.on { display: block; }
+.party-card { position: relative; overflow: hidden; background: var(--card); color: var(--text); border-radius: 32px; padding: 26px 30px 22px; text-align: center; min-width: 250px; max-width: 86vw; box-shadow: 0 24px 60px rgba(0,0,0,0.35); animation: pop-in 0.6s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+.party-card > * { position: relative; }
+.party-card .rays { position: absolute; inset: -70%; background: repeating-conic-gradient(color-mix(in srgb, var(--city) 16%, transparent) 0 10deg, transparent 10deg 24deg); animation: spin 14s linear infinite; pointer-events: none; }
+.party-e { font-size: 4.6em; line-height: 1.1; animation: emoji-slam 0.75s cubic-bezier(0.2, 1.4, 0.4, 1) both; filter: drop-shadow(0 6px 0 rgba(0,0,0,0.12)); }
+.party-big { font-size: 1.6em; font-weight: 900; animation: rise 0.45s 0.12s both; }
+.party-small { margin-top: 2px; animation: rise 0.45s 0.26s both; }
+.party-who { margin-top: 6px; font-size: 0.85em; color: var(--muted); font-weight: 700; animation: rise 0.45s 0.36s both; }
+.party-card .shine { position: absolute; top: 0; left: -60%; width: 40%; height: 100%; background: linear-gradient(100deg, transparent, rgba(255,255,255,0.5), transparent); transform: skewX(-15deg); animation: shine 1.1s 0.45s ease-in-out both; pointer-events: none; }
+.party-card.k-badge, .party-card.k-stamp { background: linear-gradient(160deg, #FFE08A, #FFB703); color: #3B2A00; }
+.party-card.k-badge .party-who, .party-card.k-stamp .party-who, .party-card.k-level .party-who, .party-card.k-ok .party-who { color: inherit; opacity: 0.85; }
+.party-card.k-badge .rays, .party-card.k-stamp .rays { background: repeating-conic-gradient(rgba(255,255,255,0.5) 0 10deg, transparent 10deg 24deg); }
+.party-card.k-level { background: linear-gradient(160deg, #7B2CBF, #FF4D8D 60%, #FFB703); color: #fff; min-width: 280px; }
+.party-card.k-level .rays { background: repeating-conic-gradient(rgba(255,255,255,0.22) 0 10deg, transparent 10deg 24deg); animation-duration: 6s; }
+.party-card.k-level .party-big { font-size: 2.3em; letter-spacing: 0.06em; text-transform: uppercase; animation: big-bounce 0.9s cubic-bezier(0.2, 1.5, 0.4, 1) 0.1s both; }
+.party-card.k-level .party-small { font-size: 1.35em; font-weight: 900; }
+.party-card.k-ok { background: linear-gradient(160deg, #2A9D8F, #6BCB77); color: #fff; }
+.party-card.k-ok .rays { background: repeating-conic-gradient(rgba(255,255,255,0.25) 0 10deg, transparent 10deg 24deg); }
+.party-card.k-wait { border: 3px dashed var(--c-air); }
+.party-card.k-wait .party-e { animation: wobble 1.6s ease-in-out infinite; }
+.fx-float { position: fixed; z-index: 75; transform: translate(-50%, 0); font-weight: 900; font-size: 1.35em; color: var(--city); text-shadow: 0 2px 0 rgba(0,0,0,0.18); pointer-events: none; white-space: nowrap; animation: float-up 1.3s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+.fx-float.send { color: var(--c-air); }
+.fx-float.minus { color: var(--muted); }
+
+/* reveals: quest ticks, stamps slamming in, screens cascading, bumps */
+.quest.just-done { animation: card-pop 0.55s cubic-bezier(0.2, 1.5, 0.4, 1); }
+.quest.just-done .qe { animation: jump 0.7s cubic-bezier(0.2, 1.3, 0.4, 1); }
+.quest.just-done::after, .foodcard.just-done::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(255,255,255,0.45), transparent 60%); animation: sweep 0.7s ease-out both; pointer-events: none; }
+.quest.just-sent { animation: card-pop 0.55s cubic-bezier(0.2, 1.5, 0.4, 1); }
+.quest.just-sent .qe { animation: fly 0.9s ease-in both; }
+.quest.just-undone { animation: shake 0.45s; }
+.foodcard.just-done { animation: card-pop 0.55s cubic-bezier(0.2, 1.5, 0.4, 1); }
+.stamps .stampc.reveal { animation: slam 0.8s cubic-bezier(0.2, 1.4, 0.3, 1) both; animation-delay: calc(var(--r, 0) * 180ms); }
+.player.just, .icon-btn.bump, .lv-av.bump { animation: bump 0.55s cubic-bezier(0.2, 1.5, 0.4, 1); }
+.approve-row.yes-out { animation: slide-right 0.38s ease-in both; background: rgba(42,157,143,0.22); border-radius: 12px; }
+.approve-row.no-out { animation: slide-left 0.38s ease-in both; background: rgba(230,57,70,0.2); border-radius: 12px; }
+.screen.enter > * { animation: cascade 0.45s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+.screen.enter > :nth-child(2) { animation-delay: 40ms; } .screen.enter > :nth-child(3) { animation-delay: 80ms; } .screen.enter > :nth-child(4) { animation-delay: 120ms; }
+.screen.enter > :nth-child(5) { animation-delay: 160ms; } .screen.enter > :nth-child(6) { animation-delay: 200ms; } .screen.enter > :nth-child(7) { animation-delay: 240ms; }
+.screen.enter > :nth-child(8) { animation-delay: 280ms; } .screen.enter > :nth-child(n+9) { animation-delay: 320ms; }
+.screen.enter .tiles > *, .screen.enter .book > *, .screen.enter .stamps > * { animation: cascade 0.45s cubic-bezier(0.2, 0.9, 0.3, 1) both; animation-delay: calc(120ms + var(--i, 0) * 45ms); }
+.screen.enter .tiles > :nth-child(2), .screen.enter .book > :nth-child(2) { --i: 1; } .screen.enter .tiles > :nth-child(3), .screen.enter .book > :nth-child(3) { --i: 2; }
+.screen.enter .tiles > :nth-child(4), .screen.enter .book > :nth-child(4) { --i: 3; } .screen.enter .tiles > :nth-child(5), .screen.enter .book > :nth-child(5) { --i: 4; }
+.screen.enter .tiles > :nth-child(6), .screen.enter .book > :nth-child(6) { --i: 5; } .screen.enter .tiles > :nth-child(7), .screen.enter .book > :nth-child(7) { --i: 6; }
+.screen.enter .tiles > :nth-child(8), .screen.enter .book > :nth-child(8) { --i: 7; } .screen.enter .tiles > :nth-child(n+9), .screen.enter .book > :nth-child(n+9) { --i: 8; }
+
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes pop-in { 0% { transform: scale(0.4) rotate(-6deg); opacity: 0; } 60% { transform: scale(1.07) rotate(1.5deg); opacity: 1; } 100% { transform: scale(1) rotate(0); } }
+@keyframes emoji-slam { 0% { transform: scale(3.2) rotate(-25deg); opacity: 0; } 55% { transform: scale(0.9) rotate(4deg); opacity: 1; } 75% { transform: scale(1.1) rotate(-2deg); } 100% { transform: scale(1) rotate(0); } }
+@keyframes rise { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes shine { from { left: -60%; } to { left: 130%; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes big-bounce { 0% { transform: scale(0.3); opacity: 0; } 60% { transform: scale(1.18); opacity: 1; } 100% { transform: scale(1); } }
+@keyframes wobble { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
+@keyframes float-up { from { opacity: 1; transform: translate(-50%, 0) scale(1); } 70% { opacity: 1; } to { opacity: 0; transform: translate(-50%, -80px) scale(1.35); } }
+@keyframes card-pop { 0% { transform: scale(0.95); } 50% { transform: scale(1.035); } 100% { transform: scale(1); } }
+@keyframes jump { 0%, 100% { transform: none; } 35% { transform: translateY(-16px) rotate(-12deg) scale(1.35); } 65% { transform: translateY(0) scale(0.92); } }
+@keyframes fly { 0% { transform: none; opacity: 1; } 100% { transform: translate(60px, -90px) rotate(30deg) scale(0.6); opacity: 0; } }
+@keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@keyframes shake { 0%, 100% { transform: none; } 20% { transform: translateX(-6px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(4px); } }
+@keyframes slam { 0% { scale: 2.6; opacity: 0; } 60% { scale: 0.94; opacity: 1; } 80% { scale: 1.06; } 100% { scale: 1; } }
+@keyframes bump { 0% { scale: 1; } 40% { scale: 1.25; } 100% { scale: 1; } }
+@keyframes slide-right { to { transform: translateX(110%); opacity: 0; } }
+@keyframes slide-left { to { transform: translateX(-110%); opacity: 0; } }
+@keyframes cascade { from { opacity: 0; translate: 0 18px; scale: 0.96; } to { opacity: 1; translate: 0 0; scale: 1; } }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes pulse-ring { 0% { opacity: 0.9; transform: scale(0.92); } 100% { opacity: 0; transform: scale(1.22); } }
+@keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@keyframes glint { 0%, 72% { transform: translateX(-140%) rotate(15deg); } 100% { transform: translateX(300%) rotate(15deg); } }
+/* motion: the phone's reduce-motion setting stills everything unless Settings → Animations is "on"; "off" stills everything regardless */
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-fx="on"]) :is(.party, .party.out, .party-card, .party-e, .party-big, .party-small, .party-who, .party-card .shine, .party-card .rays, .party-card.k-wait .party-e, .fx-float, .quest.just-done, .quest.just-done .qe, .quest.just-done::after, .foodcard.just-done::after, .quest.just-sent, .quest.just-sent .qe, .quest.just-undone, .foodcard.just-done, .stamps .stampc.reveal, .player.just, .icon-btn.bump, .lv-av.bump, .approve-row.yes-out, .approve-row.no-out, .screen.enter > *, .screen.enter .tiles > *, .screen.enter .book > *, .screen.enter .stamps > *, .hero-emoji, .day.today::after, .bar i::after, .stampc .glint) { animation: none !important; }
+  html:not([data-fx="on"]) .bar i { transition: none; }
+  html:not([data-fx="on"]) .fx-canvas { display: none !important; }
+}
+html[data-fx="off"] :is(.party, .party.out, .party-card, .party-e, .party-big, .party-small, .party-who, .party-card .shine, .party-card .rays, .party-card.k-wait .party-e, .fx-float, .quest.just-done, .quest.just-done .qe, .quest.just-done::after, .foodcard.just-done::after, .quest.just-sent, .quest.just-sent .qe, .quest.just-undone, .foodcard.just-done, .stamps .stampc.reveal, .player.just, .icon-btn.bump, .lv-av.bump, .approve-row.yes-out, .approve-row.no-out, .screen.enter > *, .screen.enter .tiles > *, .screen.enter .book > *, .screen.enter .stamps > *, .hero-emoji, .day.today::after, .bar i::after, .stampc .glint) { animation: none !important; }
+html[data-fx="off"] .bar i { transition: none; }
+html[data-fx="off"] .fx-canvas { display: none !important; }
 
 /* SOS tiles and say-it cards (kid-friendly: big targets, one idea per line) */
 .steps.kid { padding-left: 1.4em; }

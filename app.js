@@ -63,7 +63,7 @@ function coordLine(c) { return c && c.lat != null && c.lat !== '' ? `${(+c.lat).
 function show(screen) {
   document.querySelectorAll('.screen').forEach((el) => el.classList.add('hidden'));
   const el = $('#screen-' + screen);
-  if (el) el.classList.remove('hidden');
+  if (el) { el.classList.remove('hidden'); if (S.screen !== screen) { el.classList.add('enter'); clearTimeout(el._enter); el._enter = setTimeout(() => el.classList.remove('enter'), 1100); } }
   const BOOK = ['days', 'moves', 'stays', 'taxi', 'protocols', 'vault', 'settings', 'gates'], QUEST = ['quests', 'passport'];
   document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.screen === screen || (b.dataset.screen === 'book' && BOOK.includes(screen)) || (b.dataset.screen === 'quests' && QUEST.includes(screen))));
   S.screen = screen;
@@ -674,6 +674,7 @@ function renderSettings() {
   $('#screen-settings').innerHTML = `<h1 class="h1">⚙️ Settings</h1>
     <div class="card"><div class="h3">Theme</div><div class="row">${['auto', 'light', 'dark'].map((t) => `<button class="pill${settings.theme === t ? ' active' : ''}" data-theme="${t}">${t}</button>`).join('')}</div></div>
     <div class="card"><div class="h3">Text size</div>${switchRow('bigText', 'Big text (for the kids and tired eyes)')}</div>
+    <div class="card"><div class="h3">Confetti and animations</div><p class="small muted">Auto follows the phone's reduce-motion setting.</p><div class="row">${['auto', 'on', 'off'].map((t) => `<button class="pill${FX.pref() === t ? ' active' : ''}" data-fx="${t}">${t}</button>`).join('')}<button class="btn small-btn" id="opt-fx-demo">Show me</button></div></div>
     ${Quests.settingsCard()}
     <div class="card"><div class="h3">Preview a trip day</div><p class="small muted">Shows the app as it will look on that day: for testing and the dry run. Tap a day; tap Now to come back.</p>${previewPicker()}</div>
     <div class="card"><div class="h3">This device</div>
@@ -683,6 +684,8 @@ function renderSettings() {
     <div class="card"><div class="h3">Build</div><div>${esc(VERSION)} · built ${esc(BUILT)}</div><button class="btn block" id="opt-update">Check for a newer build</button><div class="small muted" id="update-msg"></div></div>
     <div class="card small muted">Storage: <span id="storage-msg">…</span></div>`;
   document.querySelectorAll('[data-theme]').forEach((b) => b.onclick = () => { settings.theme = b.dataset.theme; renderSettings(); if (window.DossierMap) window.DossierMap.setTheme(currentTheme()); });
+  document.querySelectorAll('[data-fx]').forEach((b) => b.onclick = () => { FX.setPref(b.dataset.fx); const y = window.scrollY; renderSettings(); window.scrollTo(0, y); });
+  $('#opt-fx-demo').onclick = () => FX.demo();
   document.querySelectorAll('[data-switch]').forEach((b) => b.onclick = () => {
     const opt = b.dataset.switch; settings[opt] = !settings[opt];
     if (opt === 'readerMode') { renderBook(); if (settings.readerMode) lockVault(); }

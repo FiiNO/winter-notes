@@ -302,12 +302,18 @@ window.Quests = (() => {
   }
   function settingsCard() {
     const st = state();
-    return `<div class="card"><div class="h3">Quest players</div>` + people().map((p) => `<div class="avrow"><span class="av big-av">${st.players[p].avatar}</span><b>${esc(label(p))}</b><span class="muted small">${points(st.players[p])} pts</span><select data-avatar="${esc(p)}">${AVATARS.map((a) => `<option${a === st.players[p].avatar ? ' selected' : ''}>${a}</option>`).join('')}</select></div>`).join('') +
+    // Avatars are picked from a grid of buttons (a <select> was one more native control that phones tapped past).
+    return `<div class="card"><div class="h3">Quest players</div><p class="small muted">Tap a face to change it.</p>` + people().map((p) => `<button class="avrow" data-avatar="${esc(p)}" aria-label="Change ${esc(label(p))}'s avatar"><span class="av big-av">${st.players[p].avatar}</span><b>${esc(label(p))}</b><span class="muted small">${points(st.players[p])} pts</span><span class="muted small avgo">Change ›</span></button>`).join('') +
       `<button class="btn block" id="opt-quests-reset">Reset all quest progress on this device</button></div>`;
   }
   function wireSettings(root) {
-    root.querySelectorAll('[data-avatar]').forEach((s) => s.onchange = () => { setAvatar(s.dataset.avatar, s.value); refreshTop(); });
+    root.querySelectorAll('[data-avatar]').forEach((b) => b.onclick = () => openAvatarPicker(b.dataset.avatar));
     const r = root.querySelector('#opt-quests-reset'); if (r) r.onclick = () => { if (confirm('Reset every player\'s points, quests and badges on this device?')) { reset(); renderSettings(); refreshTop(); } };
+  }
+  function openAvatarPicker(p) {
+    const st = state(), cur = st.players[p].avatar;
+    openModal(`<h2 class="h2">${esc(label(p))}: pick a face</h2><div class="avgrid">` + AVATARS.map((a) => `<button class="avpick${a === cur ? ' active' : ''}" data-pick="${a}">${a}</button>`).join('') + `</div>`);
+    $('#modal-inner').querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => { setAvatar(p, b.dataset.pick); closeModal(); refreshTop(); renderSettings(); });
   }
   function refreshTop() {
     const el = $('#top-points'); if (!el || !S.family) return;

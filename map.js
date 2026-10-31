@@ -39,10 +39,13 @@ async function downloadPack(pack, onProgress) {
     const w = await h.createWritable();
     await stream.pipeTo(w);
     S.storageKind = 'OPFS';
+    const f = await h.getFile();
+    if (total && f.size !== total) { await deletePack(pack.name); throw new Error(`incomplete (${fmtMB(f.size)} of ${fmtMB(total)}), try again`); }
   } else {
     const c = await caches.open(TILE_CACHE);
     await c.put('tiles/' + pack.name + '.pmtiles', new Response(stream, { headers: { 'content-type': 'application/octet-stream' } }));
     S.storageKind = 'Cache Storage';
+    if (total && got !== total) { await deletePack(pack.name); throw new Error(`incomplete (${fmtMB(got)} of ${fmtMB(total)}), try again`); }
   }
 }
 async function deletePack(name) {
@@ -50,11 +53,16 @@ async function deletePack(name) {
   if (root) { try { await root.removeEntry(name + '.pmtiles'); } catch (e) { /* absent */ } }
   try { const c = await caches.open(TILE_CACHE); await c.delete('tiles/' + name + '.pmtiles'); } catch (e) { /* absent */ }
 }
+/* The vendored pmtiles FileSource keys itself by the File's name and ignores a second constructor argument, so the
+   style must ask the protocol for exactly that key. Asking for anything else ("local-vancouver", until 31 Oct) made
+   the protocol fetch that name from the host, get a 404 and draw nothing: downloaded packs never rendered. */
+function localKey(name) { return name + '.pmtiles'; }
 async function sourceUrlFor(pack) {
   const f = await packFile(pack.name);
   if (f) {
-    const key = 'local-' + pack.name;
-    if (!S.loadedSources.has(key)) { protocol.add(new pmtiles.PMTiles(new pmtiles.FileSource(f, key))); S.loadedSources.add(key); }
+    const src = new pmtiles.FileSource(f);
+    const key = src.getKey();
+    if (!S.loadedSources.has(key)) { protocol.add(new pmtiles.PMTiles(src)); S.loadedSources.add(key); }
     return 'pmtiles://' + key;
   }
   return 'pmtiles://' + new URL(pack.file, location.href).href;
@@ -69,7 +77,14 @@ function packAt(lon, lat) { const cands = detailPacks().filter((p) => inBbox(p.b
 
 /* ------------------------------------------------------------------ style assembly */
 async function loadStyle(theme) {
-  if (!S.styles[theme]) S.styles[theme] = await (await fetch('style/' + theme + '.json')).json();
+  if (!S.styles[theme]) {
+    const st = await (await fetch('style/' + theme + '.json')).json();
+    // MapLibre 6 rejects a relative sprite URL ("must be absolute"), so the basemap icons never loaded; resolve
+    // sprite and glyphs against the page (string concat: new URL() would percent-encode the {fontstack} braces).
+    const base = new URL('.', location.href).href;
+    for (const k of ['sprite', 'glyphs']) if (typeof st[k] === 'string' && !/^[a-z][a-z0-9+.-]*:/i.test(st[k])) st[k] = base + st[k].replace(/^\.?\//, '');
+    S.styles[theme] = st;
+  }
   return JSON.parse(JSON.stringify(S.styles[theme]));
 }
 async function buildStyle(theme) {
@@ -125,6 +140,14 @@ async function ensureMap() {
   S.map.on('mouseenter', 'places-dot', () => { S.map.getCanvas().style.cursor = 'pointer'; });
   S.map.on('moveend', onMoveEnd);
   S.map.on('load', () => { S.ready = true; });
+  // Tile or style fetch failures used to vanish into the console; show the last one on the pack bar and in the
+  // Offline maps panel so a blank map on a phone can be reported with its reason.
+  S.map.on('error', (e) => {
+    const m = String((e && e.error && e.error.message) || '');
+    if (!/404|40[0-9]|50[0-9]|Bad response|Failed to fetch|NetworkError|HTTP|range|Invalid/i.test(m)) return;
+    S.lastError = m.slice(0, 160);
+    const b = S.container.querySelector('#map-packbar'); if (b) b.textContent = '⚠ Map tiles failed: ' + S.lastError.slice(0, 60);
+  });
   return S.map;
 }
 function startView() {
@@ -210,16 +233,20 @@ async function renderPacks() {
   if (!S.manifest) { el.innerHTML = '<div class="small muted">No tile packs in this build yet.</div>'; return; }
   const rows = [];
   for (const p of S.manifest.packs) {
-    const have = await packDownloaded(p.name);
-    rows.push(`<tr data-pack="${esc(p.name)}"><td><b>${esc(p.title)}</b><br><span class="tiny muted">z${p.maxzoom} · ${p.dates && p.dates.length ? esc(p.dates.join(' to ')) : 'always'}</span></td><td>${fmtMB(p.size)}</td><td class="pack-status">${have ? '<span class="chip">offline</span>' : '<span class="chip">online only</span>'}</td><td>${have ? `<button class="btn" data-del="${esc(p.name)}">Delete</button>` : `<button class="btn" data-get="${esc(p.name)}">Download</button>`}</td></tr>`);
+    const f = await packFile(p.name);
+    const have = !!f, whole = !f || !p.size || f.size === p.size;
+    const status = !have ? '<span class="chip">online only</span>' : whole ? `<span class="chip">offline ✓</span>` : `<span class="chip red">incomplete</span><br><span class="tiny muted">${fmtMB(f.size)} stored</span>`;
+    const action = have && whole ? `<button class="btn" data-del="${esc(p.name)}">Delete</button>` : `<button class="btn" data-get="${esc(p.name)}">${have ? 'Download again' : 'Download'}</button>`;
+    rows.push(`<tr data-pack="${esc(p.name)}"><td><b>${esc(p.title)}</b><br><span class="tiny muted">z${p.maxzoom} · ${p.dates && p.dates.length ? esc(p.dates.join(' to ')) : 'always'}</span></td><td>${fmtMB(p.size)}</td><td class="pack-status">${status}</td><td>${action}</td></tr>`);
   }
   const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate() : null;
   const persisted = navigator.storage && navigator.storage.persisted ? await navigator.storage.persisted() : null;
   el.innerHTML = `<table class="t"><tr><th>Pack</th><th>Size</th><th>Status</th><th></th></tr>${rows.join('')}</table>
     <div class="row"><button class="btn primary" id="packs-all">Download all for the trip (on Wi-Fi)</button></div>
-    <div class="tiny muted">${est ? `Storage: ${fmtMB(est.usage || 0)} used of ${fmtMB(est.quota || 0)}.` : ''} ${persisted === true ? 'Persistent storage granted.' : persisted === false ? 'Persistent storage not granted yet.' : ''} ${S.storageKind ? 'Packs kept in ' + S.storageKind + '.' : ''} Built ${esc((S.manifest.packs[0] || {}).built || '')}, planet ${esc((S.manifest.packs[0] || {}).planet || '')}.</div>`;
+    <div class="tiny muted">${est ? `Storage: ${fmtMB(est.usage || 0)} used of ${fmtMB(est.quota || 0)}.` : ''} ${persisted === true ? 'Persistent storage granted.' : persisted === false ? 'Persistent storage not granted yet.' : ''} ${S.storageKind ? 'Packs kept in ' + S.storageKind + '.' : ''} Built ${esc((S.manifest.packs[0] || {}).built || '')}, planet ${esc((S.manifest.packs[0] || {}).planet || '')}.</div>
+    ${S.lastError ? `<div class="tiny" style="color:var(--red)">Last map error: ${esc(S.lastError)}</div>` : ''}`;
   el.querySelectorAll('[data-get]').forEach((b) => b.onclick = () => getPack(b.dataset.get));
-  el.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => { await deletePack(b.dataset.del); S.loadedSources.delete('local-' + b.dataset.del); renderPacks(); });
+  el.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => { await deletePack(b.dataset.del); S.loadedSources.delete(localKey(b.dataset.del)); renderPacks(); });
   el.querySelector('#packs-all').onclick = async () => { for (const p of S.manifest.packs) if (!(await packDownloaded(p.name))) await getPack(p.name); };
 }
 async function getPack(name) {
@@ -228,8 +255,9 @@ async function getPack(name) {
   try {
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
     await downloadPack(p, (got, total) => { if (row) row.textContent = total ? Math.round(100 * got / total) + '%' : fmtMB(got); });
-    S.loadedSources.delete('local-' + name);
-    if (S.activePack && S.activePack.name === name || S.overview && S.overview.name === name) { S.map && S.map.setStyle(await buildStyle(S.theme), { diff: false }); }
+    S.loadedSources.delete(localKey(name));
+    S.lastError = null;
+    if (S.activePack && S.activePack.name === name || S.overview && S.overview.name === name) { S.map && S.map.setStyle(await buildStyle(S.theme), { diff: false }); renderPackBar(); }
   } catch (e) { if (row) row.textContent = 'failed: ' + (e.message || e); }
   renderPacks();
 }

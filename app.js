@@ -653,27 +653,47 @@ async function renderVault() {
 }
 
 /* ------------------------------------------------------------------ settings and updates */
+/* Settings controls are all buttons (31 Oct): on Andy's phone the checkboxes and the native date input did not take
+   taps, so each option is a big switch and the preview day is picked from a strip of day chips. */
+function switchRow(opt, text) {
+  const on = !!settings[opt];
+  return `<button class="switch${on ? ' on' : ''}" data-switch="${opt}" role="switch" aria-checked="${on}"><span class="sw-track"><span class="sw-knob"></span></span><span class="sw-text">${text}</span><span class="sw-state">${on ? 'On' : 'Off'}</span></button>`;
+}
+function previewPicker() {
+  const days = S.family.days, cur = S.preview || '', i = days.findIndex((d) => d.date === cur);
+  const chip = (d) => { const c = Quests.dayCity(d); return `<button class="day${d.date === cur ? ' today' : ''}" data-pv="${d.date}"><span class="de">${Quests.CITY_EMOJI[c] || '📍'}</span><span class="dn">${+d.date.slice(8, 10)}</span><span class="dw">${esc(fmtDate(d.date).slice(-3))}</span></button>`; };
+  const status = cur && i >= 0 ? `Previewing <b>${esc(fmtDate(cur))}</b> · ${esc(Quests.dayCity(days[i]))} · day ${i + 1} of ${days.length}` : 'Showing the real date.';
+  return `<div class="small" id="pv-status">${status}</div>
+    <div class="strip pv-strip" id="pv-strip"><button class="day more${cur ? '' : ' today'}" data-pv=""><span class="de">⏰</span><span class="dn">Now</span><span class="dw">real</span></button>${days.map(chip).join('')}</div>
+    <div class="row"><button class="btn" id="pv-prev">◀ Day before</button><button class="btn" id="pv-next">Day after ▶</button><button class="btn" id="opt-preview-clear"${cur ? '' : ' disabled'}>Back to today</button></div>`;
+}
 function renderSettings() {
   $('#screen-settings').innerHTML = `<h1 class="h1">⚙️ Settings</h1>
     <div class="card"><div class="h3">Theme</div><div class="row">${['auto', 'light', 'dark'].map((t) => `<button class="pill${settings.theme === t ? ' active' : ''}" data-theme="${t}">${t}</button>`).join('')}</div></div>
-    <div class="card"><div class="h3">Text size</div><label><input type="checkbox" id="opt-big" ${settings.bigText ? 'checked' : ''}> Big text (for the kids and tired eyes)</label></div>
+    <div class="card"><div class="h3">Text size</div>${switchRow('bigText', 'Big text (for the kids and tired eyes)')}</div>
     ${Quests.settingsCard()}
-    <div class="card"><div class="h3">Preview a trip day</div><p class="small muted">Shows the app as it will look on that day: for testing and the dry run. Clear it before the trip.</p><input type="date" id="opt-preview" class="input" min="${esc(S.family.trip.start)}" max="${esc(S.family.trip.end)}" value="${esc(S.preview || '')}"><button class="btn block" id="opt-preview-clear">Back to today</button></div>
+    <div class="card"><div class="h3">Preview a trip day</div><p class="small muted">Shows the app as it will look on that day: for testing and the dry run. Tap a day; tap Now to come back.</p>${previewPicker()}</div>
     <div class="card"><div class="h3">This device</div>
-      <label><input type="checkbox" id="opt-reader" ${settings.readerMode ? 'checked' : ''}> Reader mode: hide the Vault (for the iPad)</label><br>
-      <label><input type="checkbox" id="opt-auto" ${settings.autoFamily ? 'checked' : ''}> Open the family view without a PIN on this device</label>
+      ${switchRow('readerMode', 'Reader mode: hide the Vault (for the iPad)')}
+      ${switchRow('autoFamily', 'Open the family view without a PIN on this device')}
       <button class="btn block" id="opt-forget">Forget this device (wipe stored keys, PINs and quest scores)</button></div>
     <div class="card"><div class="h3">Build</div><div>${esc(VERSION)} · built ${esc(BUILT)}</div><button class="btn block" id="opt-update">Check for a newer build</button><div class="small muted" id="update-msg"></div></div>
     <div class="card small muted">Storage: <span id="storage-msg">…</span></div>`;
   document.querySelectorAll('[data-theme]').forEach((b) => b.onclick = () => { settings.theme = b.dataset.theme; renderSettings(); if (window.DossierMap) window.DossierMap.setTheme(currentTheme()); });
-  $('#opt-reader').onchange = (e) => { settings.readerMode = e.target.checked; renderBook(); if (settings.readerMode) lockVault(); };
-  $('#opt-auto').onchange = (e) => { settings.autoFamily = e.target.checked; };
-  $('#opt-big').onchange = (e) => { settings.bigText = e.target.checked; };
+  document.querySelectorAll('[data-switch]').forEach((b) => b.onclick = () => {
+    const opt = b.dataset.switch; settings[opt] = !settings[opt];
+    if (opt === 'readerMode') { renderBook(); if (settings.readerMode) lockVault(); }
+    const y = window.scrollY; renderSettings(); window.scrollTo(0, y);
+  });
   $('#opt-forget').onclick = () => { if (confirm('Forget this device? You will need the passphrase again.')) forgetDevice(); };
   $('#opt-update').onclick = () => checkForUpdate(true);
-  const setPreview = (v) => { S.preview = v || null; if (v) localStorage.setItem('previewDate', v); else localStorage.removeItem('previewDate'); rerender(); Quests.refreshTop(); renderSettings(); Quests.checkNewBadges(currentContext()); };
-  $('#opt-preview').onchange = (e) => setPreview(e.target.value);
+  const setPreview = (v) => { S.preview = v || null; if (v) localStorage.setItem('previewDate', v); else localStorage.removeItem('previewDate'); rerender(); Quests.refreshTop(); const y = window.scrollY; renderSettings(); window.scrollTo(0, y); Quests.checkNewBadges(currentContext()); };
+  const dates = S.family.days.map((d) => d.date), pi = dates.indexOf(S.preview || '');
+  document.querySelectorAll('[data-pv]').forEach((b) => b.onclick = () => setPreview(b.dataset.pv));
+  $('#pv-prev').onclick = () => setPreview(pi < 0 ? dates[dates.length - 1] : pi === 0 ? '' : dates[pi - 1]);
+  $('#pv-next').onclick = () => setPreview(pi < 0 ? dates[0] : pi >= dates.length - 1 ? '' : dates[pi + 1]);
   $('#opt-preview-clear').onclick = () => setPreview('');
+  const cur = $('#pv-strip .day.today'); if (cur) cur.scrollIntoView({ inline: 'center', block: 'nearest' });
   Quests.wireSettings($('#screen-settings'));
   if (navigator.storage && navigator.storage.estimate) navigator.storage.estimate().then((e) => { $('#storage-msg').textContent = `${Math.round((e.usage || 0) / 1024)} KB used of ${Math.round((e.quota || 0) / 1048576)} MB available`; });
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist();

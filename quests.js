@@ -10,9 +10,11 @@
 'use strict';
 window.Quests = (() => {
   const KEY = 'quests:v2', OLD_KEY = 'quests:v1';
-  const CITY_EMOJI = { Home: '🏡', Vancouver: '🌲', Whistler: '⛄', Toronto: '🍁', 'New York': '🗽', 'Montréal': '🏒', Montreal: '🏒', Tokyo: '🗼', Nagoya: '🧱', Air: '✈️' };
-  const CITY_KEY = { Home: 'home', Vancouver: 'vancouver', Whistler: 'whistler', Toronto: 'toronto', 'New York': 'newyork', 'Montréal': 'montreal', Montreal: 'montreal', Tokyo: 'tokyo', Nagoya: 'nagoya', Air: 'air' };
-  const CITIES = ['Vancouver', 'Whistler', 'Toronto', 'New York', 'Montréal', 'Tokyo', 'Nagoya'];
+  const CITY_EMOJI = { Home: '🏡', Townsville: '🏡', Brisbane: '🐨', Cairns: '🐊', Vancouver: '🌲', Whistler: '⛄', Toronto: '🍁', 'New York': '🗽', 'Montréal': '🏒', Montreal: '🏒', Tokyo: '🗼', Nagoya: '🧱', Air: '✈️' };
+  const CITY_KEY = { Home: 'home', Townsville: 'townsville', Brisbane: 'brisbane', Cairns: 'cairns', Vancouver: 'vancouver', Whistler: 'whistler', Toronto: 'toronto', 'New York': 'newyork', 'Montréal': 'montreal', Montreal: 'montreal', Tokyo: 'tokyo', Nagoya: 'nagoya', Air: 'air' };
+  const CITIES = ['Brisbane', 'Vancouver', 'Whistler', 'Toronto', 'New York', 'Montréal', 'Tokyo', 'Nagoya', 'Cairns', 'Townsville'];
+  const CHAMPION_CITIES = ['Vancouver', 'Whistler', 'Toronto', 'New York', 'Montréal', 'Tokyo', 'Nagoya'];
+  const AIRPORTS = { BNE: 'Brisbane', CNS: 'Cairns', TSV: 'Townsville' };   // the Australian stops live in the moves, not the days
   const AVATARS = ['🦖', '🦄', '🐼', '🦊', '🐨', '🐯', '🦁', '🐸', '🦋', '🐙', '🚀', '🌟', '🎸', '🧙', '🦸', '🕵️'];
   const DEFAULT_AVATAR = { Andrew: '🕵️', Sarah: '🌟', Vince: '🦖', Drew: '🦄' };
   const DISPLAY = { Andrew: 'Dad', Sarah: 'Mum' };          // the parents; everyone else is a kid
@@ -36,6 +38,7 @@ window.Quests = (() => {
     { id: 'hands', e: '🤝', t: 'Hold hands at every crossing and station', pts: 5, where: 'any', kind: 'daily', daily: true },
     { id: 'thanks', e: '🙏', t: 'Say thank you in the local language', pts: 5, where: 'any', kind: 'daily', daily: true },
     { id: 'water', e: '💧', t: 'Drink water before bed', pts: 5, where: 'any', kind: 'daily', daily: true },
+    { id: 'diary', e: '📓', t: 'Draw or write one line about today', pts: 5, where: 'any', kind: 'daily', daily: true },
     // travel days
     { id: 'first-flight', e: '🛫', t: 'Take off on the first flight', pts: 30, where: 'any', kind: 'travel' },
     { id: 'window', e: '🪟', t: 'Spot mountains or clouds from the window seat', pts: 10, where: 'any', kind: 'travel' },
@@ -115,6 +118,63 @@ window.Quests = (() => {
     // Nagoya day trip
     { id: 'legoland', e: '🧱', t: 'Build something at LEGOLAND', pts: 25, where: 'Nagoya', kind: 'explore' },
     { id: 'ekiben', e: '🍱', t: 'Eat an ekiben on the train', pts: 15, where: 'Nagoya', kind: 'food' },
+    // 31 Oct additions: the Australian stops, more per city, and a few for any day
+    { id: 'plane-clothes', e: '🧦', t: 'Lay out your plane clothes the night before', pts: 10, where: 'home', kind: 'helper' },
+    { id: 'weigh-cases', e: '⚖️', t: 'Help weigh the suitcases', pts: 10, where: 'home', kind: 'helper' },
+    { id: 'time-vancouver', e: '🕰️', t: 'Work out what time it is in Vancouver right now', pts: 15, where: 'home', kind: 'explore' },
+    { id: 'house-check', e: '🔑', t: 'Check the house: lights off, doors locked', pts: 10, where: 'home', kind: 'helper' },
+    { id: 'bne-gate', e: '🛫', t: 'Find our gate on the big departures board', pts: 15, where: 'Brisbane', kind: 'explore' },
+    { id: 'bne-river', e: '🌊', t: 'Spot the Brisbane River from the plane', pts: 10, where: 'Brisbane', kind: 'explore' },
+    { id: 'bne-walk', e: '🚶', t: 'Walk the whole international terminal', pts: 10, where: 'Brisbane', kind: 'explore' },
+    { id: 'bne-water', e: '💧', t: 'Fill your water bottle after security', pts: 10, where: 'Brisbane', kind: 'helper' },
+    { id: 'seat-map', e: '🗺️', t: 'Watch our plane on the seat-back map', pts: 10, where: 'any', kind: 'travel' },
+    { id: 'plane-meal', e: '🍽️', t: 'Eat a whole plane meal', pts: 10, where: 'any', kind: 'food' },
+    { id: 'aisle-stretch', e: '🧘', t: 'Walk the aisle and stretch on the long flight', pts: 10, where: 'any', kind: 'travel' },
+    { id: 'new-film', e: '🎬', t: 'Watch a film you have never seen', pts: 10, where: 'any', kind: 'travel' },
+    { id: 'flyover', e: '🎢', t: 'FlyOver Canada', pts: 20, where: 'Vancouver', kind: 'explore' },
+    { id: 'robson-rink', e: '⛸️', t: 'Skate at Robson Square', pts: 20, where: 'Vancouver', kind: 'explore' },
+    { id: 'eagle', e: '🦅', t: 'Spot a bald eagle', pts: 15, where: 'Vancouver', kind: 'explore' },
+    { id: 'granville', e: '🛝', t: 'Granville Island Kids Market', pts: 15, where: 'Vancouver', kind: 'explore' },
+    { id: 'maple-cookie', e: '🍪', t: 'Try a maple cookie', pts: 10, where: 'Vancouver', kind: 'food' },
+    { id: 'toboggan', e: '🛷', t: 'Toboggan run', pts: 15, where: 'Whistler', kind: 'explore' },
+    { id: 'magic-castle', e: '🏰', t: 'Magic Castle play area', pts: 10, where: 'Whistler', kind: 'explore' },
+    { id: 'bear-sign', e: '🐻', t: 'Spot a bear sign while the bears sleep', pts: 10, where: 'Whistler', kind: 'explore' },
+    { id: 'fondue', e: '🫕', t: 'Fondue or raclette dinner', pts: 15, where: 'Whistler', kind: 'food' },
+    { id: 'sharks', e: '🦈', t: "Ripley's shark tunnel", pts: 15, where: 'Toronto', kind: 'explore' },
+    { id: 'xmas-market', e: '🎄', t: 'Christmas market', pts: 15, where: 'Toronto', kind: 'explore' },
+    { id: 'casa-loma', e: '🏰', t: 'Casa Loma lights', pts: 15, where: 'Toronto', kind: 'explore' },
+    { id: 'toronto-sign', e: '🪧', t: 'Photo at the TORONTO sign', pts: 10, where: 'Toronto', kind: 'explore' },
+    { id: 'timbits', e: '🍩', t: 'Timbits from Tim Hortons', pts: 10, where: 'Toronto', kind: 'food' },
+    { id: 'sorry', e: '🙏', t: 'Say "sorry" like a Canadian', pts: 10, where: 'Toronto', kind: 'words' },
+    { id: 'liberty', e: '🗽', t: 'Spot the Statue of Liberty', pts: 15, where: 'New York', kind: 'explore' },
+    { id: 'empire', e: '🏙️', t: 'Empire State Building lit up', pts: 15, where: 'New York', kind: 'explore' },
+    { id: 'saks', e: '✨', t: 'Saks light show', pts: 10, where: 'New York', kind: 'explore' },
+    { id: 'busker', e: '🎷', t: 'Hear a street musician', pts: 10, where: 'New York', kind: 'explore' },
+    { id: 'cheesecake', e: '🍰', t: 'New York cheesecake', pts: 10, where: 'New York', kind: 'food' },
+    { id: 'metro', e: '🚇', t: 'Ride the métro', pts: 10, where: 'Montréal', kind: 'explore' },
+    { id: 'snowplough', e: '❄️', t: 'Spot a snowplough', pts: 10, where: 'Montréal', kind: 'explore' },
+    { id: 'croissant', e: '🥐', t: 'Croissant from a boulangerie', pts: 10, where: 'Montréal', kind: 'food' },
+    { id: 'au-revoir', e: '👋', t: 'Say "au revoir" when we leave', pts: 10, where: 'Montréal', kind: 'words' },
+    { id: 'panda', e: '🐼', t: 'Panda at Ueno Zoo', pts: 20, where: 'Tokyo', kind: 'explore' },
+    { id: 'toilet', e: '🚽', t: 'Press the buttons on a Japanese toilet', pts: 10, where: 'Tokyo', kind: 'explore' },
+    { id: 'vending-ten', e: '🧮', t: 'Count ten vending machines in one street', pts: 10, where: 'Tokyo', kind: 'explore' },
+    { id: 'chopsticks', e: '🥢', t: 'Use chopsticks for a whole meal', pts: 15, where: 'Tokyo', kind: 'helper' },
+    { id: 'shibuya', e: '🚶', t: 'Cross the Shibuya scramble', pts: 15, where: 'Tokyo', kind: 'explore' },
+    { id: 'hachiko', e: '🐕', t: 'Find the Hachikō statue', pts: 15, where: 'Tokyo', kind: 'explore' },
+    { id: 'melon-pan', e: '🍈', t: 'Melon pan', pts: 10, where: 'Tokyo', kind: 'food' },
+    { id: 'dango', e: '🍡', t: 'Dango', pts: 10, where: 'Tokyo', kind: 'food' },
+    { id: 'count-ja', e: '🔢', t: 'Count to ten in Japanese', pts: 20, where: 'Tokyo', kind: 'words' },
+    { id: 'fuji', e: '🗻', t: 'Spot Mount Fuji from the Shinkansen', pts: 20, where: 'Nagoya', kind: 'explore' },
+    { id: 'cns-sunrise', e: '🌄', t: 'Watch the sun come up over Cairns', pts: 15, where: 'Cairns', kind: 'explore' },
+    { id: 'cns-hot', e: '🌴', t: 'First to say "it\'s hot!"', pts: 10, where: 'Cairns', kind: 'explore' },
+    { id: 'cns-tropical', e: '🥭', t: 'Something tropical at the airport', pts: 10, where: 'Cairns', kind: 'food' },
+    { id: 'unpack', e: '🧳', t: 'Unpack your own suitcase', pts: 20, where: 'Townsville', kind: 'helper' },
+    { id: 'own-bed', e: '🛏️', t: 'Sleep in your own bed again', pts: 10, where: 'Townsville', kind: 'explore' },
+    { id: 'tell-grandparents', e: '📖', t: 'Tell Grandma or Grandpa three things about the trip', pts: 20, where: 'Townsville', kind: 'words' },
+    { id: 'postcard', e: '📮', t: 'Send a postcard home', pts: 15, where: 'any', kind: 'helper' },
+    { id: 'flags', e: '🏳️', t: 'Spot five different flags in one day', pts: 10, where: 'any', kind: 'explore' },
+    { id: 'carry-bag', e: '🪜', t: 'Carry a bag up the stairs for someone', pts: 10, where: 'any', kind: 'helper' },
+    { id: 'new-friend', e: '🤝', t: 'Make a friend who speaks another language', pts: 25, where: 'any', kind: 'words' },
   ];
   const byId = Object.fromEntries(QUESTS.map((q) => [q.id, q]));
   const needsVerify = (q) => !!(q && (q.verify || VERIFY_KINDS.includes(q.kind)));
@@ -218,10 +278,13 @@ window.Quests = (() => {
 
   const doneCount = (pl, id) => (pl.done[id] || []).length;
   const doneToday = (pl, id, date) => (pl.done[id] || []).includes(date);
-  function points(pl) {
+  function rawPoints(pl) {              // quests and foods only, no badges (the Thousand club counts these)
     let pts = 0;
     for (const [id, dates] of Object.entries(pl.done)) pts += (byId[id] ? byId[id].pts : 0) * dates.length;
-    pts += (pl.foods || []).length * FOOD_PTS;
+    return pts + (pl.foods || []).length * FOOD_PTS;
+  }
+  function points(pl) {
+    let pts = rawPoints(pl);
     for (const b of badges(pl)) if (b.earned) pts += b.pts;
     return pts;
   }
@@ -357,21 +420,40 @@ window.Quests = (() => {
   /* ---------------------------------------------------------------- trip helpers */
   function dayCity(d) {
     const w = String(d.where || '');
+    if (/in the air/i.test(String(d.sleep || ''))) return 'Air';    // 30 Dec and 6 Jan: nights on a plane, the stamp waits for the landing
     if (/in the air|calgary/i.test(w) && !/→\s*(Tokyo|Toronto|Vancouver)/.test(w)) return 'Air';
     if (/nagoya/i.test(w)) return 'Nagoya';                       // the LEGOLAND day trip gets its own stamp
     const tail = w.includes('→') ? w.split('→').pop() : w;
     for (const c of CITIES) if (tail.toLowerCase().includes(c.toLowerCase())) return c;
-    if (/home|townsville|cairns/i.test(tail)) return 'Home';
+    if (/home/i.test(tail)) return 'Home';
     for (const c of CITIES) if (w.toLowerCase().includes(c.toLowerCase())) return c;
     return 'Home';
   }
   function dateInt(iso) { return Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)); }
   function daysBetween(a, b) { return Math.round((dateInt(b) - dateInt(a)) / 86400000); }
+  function addDays(iso, n) { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+  function airportCode(s) { return (String(s || '').match(/\(([A-Z]{3})\)/) || [])[1]; }
+  function arrivalsOn() {               // date → cities we land in that day, from the moves (Brisbane, Cairns, Townsville)
+    const out = {};
+    for (const m of S.family.moves || []) { const c = AIRPORTS[airportCode(m.to)]; if (!c) continue; const date = addDays(m.date, /\+1/.test(String(m.arrive || '')) ? 1 : 0); (out[date] = out[date] || []).push(c); }
+    return out;
+  }
   function firstDates() {
-    /* first date we are in each city, from the days list (so Nagoya, a day trip, counts too) */
+    /* first date we are in each city: the days list (so Nagoya, a day trip, counts) plus the airport stops from the moves */
     const out = {};
     for (const d of S.family.days) { const c = dayCity(d); if (!(c in out) && c !== 'Home' && c !== 'Air') out[c] = d.date; }
-    return out;
+    for (const [date, cities] of Object.entries(arrivalsOn())) for (const c of cities) if (!(c in out) || date < out[c]) out[c] = date;
+    return Object.fromEntries(Object.entries(out).sort((a, b) => a[1].localeCompare(b[1])));
+  }
+  function citiesForDay(ctx) {          // every place the day touches, in order: airports landed at, the bed, the plan's destination
+    const set = new Set();
+    if (ctx.before) set.add('home');
+    for (const c of arrivalsOn()[ctx.date] || []) set.add(c);
+    if (!ctx.before && ctx.city && ctx.city !== 'Home') set.add(ctx.city);
+    const day = S.family.days.find((d) => d.date === ctx.date);
+    if (day) { const c = dayCity(day); if (c !== 'Air' && c !== 'Home') set.add(c); }
+    if (ctx.date >= S.family.trip.end) set.add('Townsville');
+    return set;
   }
 
   /* ---------------------------------------------------------------- badges (stamps are automatic by date) */
@@ -401,6 +483,30 @@ window.Quests = (() => {
       out.push({ id: 'skill-' + k, e, t, kind: 'skill', pts: 30, earned: kindCount(k) >= n, hint: `${Math.min(kindCount(k), n)} of ${n} ${k} quests` });
     const photos = (pl.done.photo || []).length;
     out.push({ id: 'photo-7', e: '📸', t: 'Photo streak', kind: 'skill', pts: 30, earned: photos >= 7, hint: `${Math.min(photos, 7)} of 7 morning photos` });
+    // 31 Oct additions: three more milestones, dailies badges, a champion per city, and two big counters
+    const firstUS = F.days.find((d) => dayCity(d) === 'New York'), firstJP = F.days.find((d) => dayCity(d) === 'Tokyo'), xmas = F.days.find((d) => d.date === '2026-12-25');
+    if (firstUS) out.push({ id: 'border-hopper', e: '🛂', t: 'Border hopper', kind: 'milestone', pts: 50, earned: today >= firstUS.date, hint: `Opens ${fmtDate(firstUS.date)}` });
+    if (xmas) out.push({ id: 'christmas', e: '🎄', t: 'Christmas away', kind: 'milestone', pts: 50, earned: today >= xmas.date, hint: `Opens ${fmtDate(xmas.date)}` });
+    if (firstJP) out.push({ id: 'four-countries', e: '🌍', t: 'Four countries', kind: 'milestone', pts: 50, earned: today >= firstJP.date, hint: `Opens ${fmtDate(firstJP.date)}` });
+    const dailyIds = QUESTS.filter((q) => q.daily && !q.parents).map((q) => q.id);
+    const dailyDates = new Set(); for (const id of dailyIds) for (const d of (pl.done[id] || [])) dailyDates.add(d);
+    const perfect = [...dailyDates].some((d) => dailyIds.every((id) => (pl.done[id] || []).includes(d)));
+    out.push({ id: 'perfect-day', e: '⭐', t: 'Perfect day', kind: 'skill', pts: 30, earned: perfect, hint: `All ${dailyIds.length} dailies in one day` });
+    const sorted = [...dailyDates].sort(); let run = 0, best = 0;
+    for (let i = 0; i < sorted.length; i++) { run = i > 0 && daysBetween(sorted[i - 1], sorted[i]) === 1 ? run + 1 : 1; best = Math.max(best, run); }
+    out.push({ id: 'streak-7', e: '🔥', t: 'Seven-day streak', kind: 'skill', pts: 30, earned: best >= 7, hint: `${Math.min(best, 7)} of 7 days running` });
+    for (const [id, n, t, e] of [['water', 10, 'Hydration hero', '💧'], ['hands', 20, 'Hand holder', '🤝'], ['daypack', 10, 'Packer', '🎒'], ['thanks', 10, 'Polite traveller', '🙏']]) {
+      const c = (pl.done[id] || []).length;
+      out.push({ id: 'daily-' + id, e, t, kind: 'skill', pts: 30, earned: c >= n, hint: `${Math.min(c, n)} of ${n} days` });
+    }
+    for (const c of CHAMPION_CITIES) {
+      const qs = QUESTS.filter((q) => q.where === c), done = qs.filter((q) => doneCount(pl, q.id)).length;
+      out.push({ id: 'champ-' + CITY_KEY[c], e: '🏆', t: `${c} champion`, kind: 'skill', pts: 40, earned: qs.length > 0 && done === qs.length, hint: `${done} of ${qs.length} ${c} quests` });
+    }
+    const distinct = Object.keys(pl.done).filter((id) => byId[id] && !byId[id].daily).length;
+    out.push({ id: 'quest-master', e: '🎯', t: 'Quest master', kind: 'skill', pts: 30, earned: distinct >= 50, hint: `${Math.min(distinct, 50)} of 50 quests` });
+    const raw = rawPoints(pl);
+    out.push({ id: 'thousand', e: '💰', t: 'Thousand club', kind: 'skill', pts: 30, earned: raw >= 1000, hint: `${Math.min(raw, 1000)} of 1,000 quest points` });
     return out;
   }
   function checkNewBadges(ctx) {
@@ -423,8 +529,8 @@ window.Quests = (() => {
       pending: isParentDevice() ? pendingAll(st).length : pl.pending.length, role: role() };
   }
   function available(ctx, pl) {
-    const here = ctx.before ? 'home' : ctx.city;
-    return QUESTS.filter((q) => (q.where === 'any' || q.where === here || (ctx.before && q.where === 'home')) && !(q.parents && !isParentDevice()))
+    const here = citiesForDay(ctx);
+    return QUESTS.filter((q) => (q.where === 'any' || here.has(q.where) || (ctx.before && q.where === 'home')) && !(q.parents && !isParentDevice()))
       .map((q) => ({ ...q, done: q.daily ? doneToday(pl, q.id, ctx.date) : doneCount(pl, q.id) > 0 }));
   }
   function playerChips(st, ctx) {
@@ -455,7 +561,8 @@ window.Quests = (() => {
   function renderQuests() {
     const ctx = currentContext(), st = state(), player = st.active, eff = effective(st), pl = view(st, player, eff);
     const pts = points(pl), lv = level(pts);
-    const here = ctx.before ? 'Before we go' : `Here in ${ctx.city}`;
+    const places = [...citiesForDay(ctx)].filter((c) => c !== 'home');
+    const here = ctx.before ? 'Before we go' : `Here in ${places.join(' and ') || ctx.city}`;
     const avail = available(ctx, pl);
     const todays = avail.filter((q) => q.where !== 'any').concat(avail.filter((q) => q.where === 'any' && q.kind === 'travel'));
     const dailies = avail.filter((q) => q.daily);
@@ -470,7 +577,7 @@ window.Quests = (() => {
     if (todays.length) html += `<h2 class="h2">${esc(here)}</h2>` + todays.map((q) => questCard(q, ctx, player, pl)).join('');
     html += `<h2 class="h2">Every day</h2>` + dailies.map((q) => questCard(q, ctx, player, pl)).join('');
     if (helpers.length) html += `<h2 class="h2">Any time</h2>` + helpers.map((q) => questCard(q, ctx, player, pl)).join('');
-    const others = CITIES.filter((c) => c !== ctx.city);
+    const others = CITIES.filter((c) => !citiesForDay(ctx).has(c));
     html += `<h2 class="h2">Coming up</h2>` + others.map((c) => { const qs = QUESTS.filter((q) => q.where === c); return qs.length ? `<details><summary>${CITY_EMOJI[c]} ${esc(c)} <span class="chip">${qs.filter((q) => doneCount(pl, q.id)).length} / ${qs.length}</span></summary>${qs.map((q) => questCard(q, ctx, player, pl)).join('')}</details>` : ''; }).join('');
     const foodItems = pl.items.filter((it) => it.kind === 'food');
     if (foodItems.length) html += `<details><summary>🍽️ New foods tried <span class="chip">${pl.foods.length}</span></summary><ul class="list">${foodItems.map((it) => `<li>${esc(it.what || 'Something new')} <span class="muted small">· ${esc(fmtDate(it.date))}${it.pending ? ' · ⏳ waiting' : it.rejected ? ' · ✗ not this time' : ''}</span> <button class="qbtn undo small-undo" data-food-undo="${esc(it.key)}">Undo</button></li>`).join('')}</ul></details>`;

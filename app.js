@@ -11,8 +11,8 @@ const BUILT = document.body.dataset.built;
 const PIN_ITER = 150000, PIN_MAX_TRIES = 5, VAULT_LOCK_MS = 5 * 60 * 1000;
 const TZ = { 'Vancouver': 'America/Vancouver', 'Whistler': 'America/Vancouver', 'Toronto': 'America/Toronto',
   'Montréal': 'America/Toronto', 'Montreal': 'America/Toronto', 'New York': 'America/New_York', 'Tokyo': 'Asia/Tokyo',
-  'Nagoya': 'Asia/Tokyo', 'Home': 'Australia/Brisbane' };
-const COUNTRY = { 'Vancouver': 'CA', 'Whistler': 'CA', 'Toronto': 'CA', 'Montréal': 'CA', 'Montreal': 'CA', 'New York': 'US', 'Tokyo': 'JP', 'Nagoya': 'JP' };
+  'Nagoya': 'Asia/Tokyo', 'Home': 'Australia/Brisbane', 'Brisbane': 'Australia/Brisbane', 'Cairns': 'Australia/Brisbane', 'Townsville': 'Australia/Brisbane' };
+const COUNTRY = { 'Vancouver': 'CA', 'Whistler': 'CA', 'Toronto': 'CA', 'Montréal': 'CA', 'Montreal': 'CA', 'New York': 'US', 'Tokyo': 'JP', 'Nagoya': 'JP', 'Brisbane': 'AU', 'Cairns': 'AU', 'Townsville': 'AU' };
 const EMERGENCY_NUMBER = { CA: '911', US: '911', JP: '119', AU: '000' };
 const POLICE_NUMBER = { CA: '911', US: '911', JP: '110', AU: '000' };
 

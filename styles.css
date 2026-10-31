@@ -4,6 +4,7 @@
   --fs: 18px; --radius: 22px; --pad: 14px;
   --c-home: #2A9D8F; --c-vancouver: #0FA3B1; --c-whistler: #2FA8D8; --c-toronto: #E63946; --c-newyork: #E89B00;
   --c-montreal: #7B2CBF; --c-tokyo: #FF4D8D; --c-nagoya: #FF7A00; --c-air: #3A86FF;
+  --c-brisbane: #8AC926; --c-cairns: #06D6A0; --c-townsville: #2A9D8F;
   --city: var(--c-home); --city-ink: #FFFFFF;
   --bg: #FFF8EE; --card: #FFFFFF; --text: #1B1B2F; --muted: #5F6B7A; --border: #EADFD2; --pale: #F6EFE4;
   --navy: #0B1F3A; --red: #E63946; --accent: #1B1B2F; --link: #0B5FFF;
@@ -206,6 +207,7 @@ details .quest { margin: 6px 0; }
 .stampc.earned.toronto { border-color: var(--c-toronto); } .stampc.earned.newyork { border-color: var(--c-newyork); }
 .stampc.earned.montreal { border-color: var(--c-montreal); } .stampc.earned.tokyo { border-color: var(--c-tokyo); }
 .stampc.earned.nagoya { border-color: var(--c-nagoya); }
+.stampc.earned.brisbane { border-color: var(--c-brisbane); } .stampc.earned.cairns { border-color: var(--c-cairns); } .stampc.earned.townsville { border-color: var(--c-townsville); }
 .stampc.badge.earned { border-color: var(--c-newyork); background: var(--t1); color: var(--t1-ink); }
 .lvrow { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); }
 .lvrow:last-child { border-bottom: 0; }

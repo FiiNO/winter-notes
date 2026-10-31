@@ -2,8 +2,8 @@
    Scores are a set of facts (quest ticks, food notes, parent approvals, avatars), each stamped with a time and the
    device that wrote it, so any number of devices merge without conflicts: the newest fact per key wins. With a sync
    address in the family blob (see ../sync/README.md) the facts travel through the Worker; without one they stay here.
-   Roles: a device is Dad's phone, Mum's phone or the kids' device. On the kids' device, ticks on food and words
-   quests (and every "tried a new food") wait for a parent's ✓ before they count.
+   Roles: a device is Dad's phone, Mum's phone or the kids' device. On the kids' device every tick (and every
+   "tried a new food") waits for a parent's ✓ before it counts; a quest marked auto: true is the one exception.
    Nothing here is secret and nothing names the 5 January plan beyond the family wording.
    Loaded after sync.js and before app.js; it only touches app.js helpers ($, esc, fmtDate, currentContext, show,
    openModal, closeModal, verifyPin, renderHome, renderSettings) at call time. */
@@ -20,17 +20,17 @@ window.Quests = (() => {
   const DISPLAY = { Andrew: 'Dad', Sarah: 'Mum' };          // the parents; everyone else is a kid
   const LEVELS = [[0, 'Rookie', '🥾'], [100, 'Explorer', '🧭'], [250, 'Adventurer', '🎒'], [500, 'Navigator', '🧭'], [900, 'Globetrotter', '🌏'], [1500, 'Legend', '👑']];
   const FOOD_PTS = 10;
-  const VERIFY_KINDS = ['food', 'words'];                    // a kid's tick on these waits for a parent
 
   /* kind: food · explore · helper · words · travel · daily. where: a city, 'any' (whole trip), 'home' (before we go).
-     verify: true makes a kid's tick wait for a parent even outside VERIFY_KINDS. */
+     A kid's tick on any quest waits for a parent's ✓ (Andy, 1 Nov: "parent approval for most of the kids' challenges");
+     auto: true lets a quest count at once on the kids' device (none at the moment). Parent ticks never wait. */
   const QUESTS = [
     // before we go
     { id: 'pack-case', e: '🧳', t: 'Help pack your own suitcase', pts: 20, where: 'home', kind: 'helper' },
     { id: 'flu-shot', e: '💉', t: 'Brave the flu shot', pts: 30, where: 'home', kind: 'helper' },
     { id: 'learn-ja', e: '🇯🇵', t: 'Learn three Japanese words', pts: 20, where: 'home', kind: 'words' },
     { id: 'learn-fr', e: '🇫🇷', t: 'Learn three French words', pts: 20, where: 'home', kind: 'words' },
-    { id: 'know-numbers', e: '📱', t: "Know Mum and Dad's phone numbers by heart", pts: 50, where: 'any', kind: 'helper', verify: true },
+    { id: 'know-numbers', e: '📱', t: "Know Mum and Dad's phone numbers by heart", pts: 50, where: 'any', kind: 'helper' },
     { id: 'thermals', e: '🧤', t: 'Try on your thermals and gloves', pts: 10, where: 'home', kind: 'helper' },
     // every day, anywhere
     { id: 'photo', e: '📸', t: 'Morning photo taken (grown-ups)', pts: 5, where: 'any', kind: 'daily', daily: true, parents: true },
@@ -177,7 +177,7 @@ window.Quests = (() => {
     { id: 'new-friend', e: '🤝', t: 'Make a friend who speaks another language', pts: 25, where: 'any', kind: 'words' },
   ];
   const byId = Object.fromEntries(QUESTS.map((q) => [q.id, q]));
-  const needsVerify = (q) => !!(q && (q.verify || VERIFY_KINDS.includes(q.kind)));
+  const needsVerify = (q) => !!(q && !q.auto);               // a kid's tick waits for a parent unless the quest is auto
 
   /* ---------------------------------------------------------------- people and roles */
   function people() { return ((typeof S !== 'undefined' && S.family && S.family.trip && S.family.trip.people) || ['Andrew', 'Sarah', 'Vince', 'Drew']).slice(); }
@@ -352,6 +352,12 @@ window.Quests = (() => {
     if (!isParentDevice()) return;
     const st = state();
     put(st, 'ok|' + key, { a: yes ? 'yes' : 'no', who: label(owner() || 'Dad') });
+    save(st); Sync.touch(); afterChange();
+  }
+  function approveAll() {               // every pending item, one fact each, one sync
+    if (!isParentDevice()) return;
+    const st = state(), who = label(owner() || 'Dad');
+    for (const it of pendingAll(st)) put(st, 'ok|' + it.key, { a: 'yes', who });
     save(st); Sync.touch(); afterChange();
   }
   function setActive(p) { const st = state(); st.active = p; save(st); }
@@ -545,18 +551,18 @@ window.Quests = (() => {
     const cls = 'quest' + (it ? (it.counted ? ' done' : it.rejected ? ' rejected' : ' pending') : '');
     const status = !it ? '' : it.counted ? ' · ✓ done' : it.rejected ? ` · ✗ ${esc(it.okBy || 'a parent')} said not this time` : ' · ⏳ waiting for Mum or Dad';
     const btn = it ? `<button class="qbtn undo" data-undo="${q.id}">Undo</button>` : `<button class="qbtn go" data-do="${q.id}">Done!</button>`;
-    return `<div class="${cls}" data-key="${esc(tickKey(player, q.id, q.daily ? ctx.date : null))}"><span class="qe">${q.e}</span><div class="qt"><div class="qn">${esc(q.t)}</div><div class="qp">${q.daily ? 'every day · ' : ''}${q.pts} pts${needsVerify(q) && !isParentDevice() ? ' · parent checks' : ''}${status}</div></div>${btn}</div>`;
+    return `<div class="${cls}" data-key="${esc(tickKey(player, q.id, q.daily ? ctx.date : null))}"><span class="qe">${q.e}</span><div class="qt"><div class="qn">${esc(q.t)}</div><div class="qp">${q.daily ? 'every day · ' : ''}${q.pts} pts${status}</div></div>${btn}</div>`;
   }
   function roleCard() {
     const cur = role();
     const pill = (r, who, text) => `<button class="pill${cur === r && (r !== 'parent' || owner() === who) ? ' active' : ''}" data-role="${r}" data-who="${who}">${text}</button>`;
-    return `<div class="card rolecard"><div class="h3">Whose device is this?</div><p class="small muted">A parent phone can tick for everyone and approves the kids' food and words quests. The kids' device shows only the kids. Becoming a parent phone asks for the device PIN.</p><div class="row">${parents().map((p) => pill('parent', p, `📱 ${esc(label(p))}'s phone`)).join('')}${pill('kids', '', "🧒 Kids' device")}</div></div>`;
+    return `<div class="card rolecard"><div class="h3">Whose device is this?</div><p class="small muted">A parent phone can tick for everyone and approves what the kids tick on their device. The kids' device shows only the kids, and every tick there waits for a parent's ✓. Becoming a parent phone asks for the device PIN.</p><div class="row">${parents().map((p) => pill('parent', p, `📱 ${esc(label(p))}'s phone`)).join('')}${pill('kids', '', "🧒 Kids' device")}</div></div>`;
   }
   function approvalsCard(st) {
     const pend = pendingAll(st);
     if (!isParentDevice() || !pend.length) return '';
     const eff = effective(st);
-    return `<div class="card approvals"><div class="h3">⏳ Waiting for a parent (${pend.length})</div>` + pend.map((it) => `<div class="approve-row"><span class="qe">${it.e}</span><div class="qt"><div class="qn">${view(st, it.player, eff).avatar} ${esc(label(it.player))}: ${esc(it.title)}</div><div class="qp">${it.pts} pts · ${esc(fmtDate(it.date))}</div></div><button class="qbtn yes" data-ok="${esc(it.key)}" aria-label="Approve">✓</button><button class="qbtn no" data-no="${esc(it.key)}" aria-label="Not this time">✗</button></div>`).join('') + `</div>`;
+    return `<div class="card approvals"><div class="h3 approvals-head"><span>⏳ Waiting for a parent (${pend.length})</span>${pend.length > 1 ? `<button class="qbtn yes all" data-ok-all aria-label="Approve all">✓ All ${pend.length}</button>` : ''}</div>` + pend.map((it) => `<div class="approve-row"><span class="qe">${it.e}</span><div class="qt"><div class="qn">${view(st, it.player, eff).avatar} ${esc(label(it.player))}: ${esc(it.title)}</div><div class="qp">${it.pts} pts · ${esc(fmtDate(it.date))}</div></div><button class="qbtn yes" data-ok="${esc(it.key)}" aria-label="Approve">✓</button><button class="qbtn no" data-no="${esc(it.key)}" aria-label="Not this time">✗</button></div>`).join('') + `</div>`;
   }
   function renderQuests() {
     const ctx = currentContext(), st = state(), player = st.active, eff = effective(st), pl = view(st, player, eff);
@@ -572,8 +578,9 @@ window.Quests = (() => {
     html += approvalsCard(st);
     html += playerChips(st, ctx);
     html += `<div class="levelcard"><div class="lv-top"><span class="lv-av">${pl.avatar}</span><div><div class="lv-name">${esc(label(player))} · ${lv.emoji} ${esc(lv.name)}</div><div class="lv-pts">${pts} points${lv.next ? ` · ${lv.next - pts} to ${esc(lv.nextName)}` : ' · top level!'}${pl.pending.length ? ` · ⏳ ${pl.pending.length} waiting` : ''}</div></div></div><div class="bar"><i style="width:${lv.pct}%"></i></div></div>`;
+    if (!isParentDevice()) html += `<p class="small muted kidnote">📨 Every tick on this device goes to Mum and Dad for a ✓ before the points count.</p>`;
     html += `<div class="row"><button class="btn block" data-go-passport>📘 Passport and badges</button></div>`;
-    html += `<div class="foodcard" data-key="food"><span class="qe">🍽️</span><div class="qt"><div class="qn">Tried a new food?</div><div class="qp">${FOOD_PTS} pts each · ${pl.foods.length} so far${isParentDevice() ? '' : ' · parent checks'}</div></div><button class="qbtn go" id="food-add">+1</button></div>`;
+    html += `<div class="foodcard" data-key="food"><span class="qe">🍽️</span><div class="qt"><div class="qn">Tried a new food?</div><div class="qp">${FOOD_PTS} pts each · ${pl.foods.length} so far</div></div><button class="qbtn go" id="food-add">+1</button></div>`;
     if (todays.length) html += `<h2 class="h2">${esc(here)}</h2>` + todays.map((q) => questCard(q, ctx, player, pl)).join('');
     html += `<h2 class="h2">Every day</h2>` + dailies.map((q) => questCard(q, ctx, player, pl)).join('');
     if (helpers.length) html += `<h2 class="h2">Any time</h2>` + helpers.map((q) => questCard(q, ctx, player, pl)).join('');
@@ -594,6 +601,16 @@ window.Quests = (() => {
     const decide = (b, yes) => { const row = b.closest('.approve-row'), key = yes ? b.dataset.ok : b.dataset.no; FX.haptic(20); if (row && !FX.reduce()) { row.classList.add(yes ? 'yes-out' : 'no-out'); setTimeout(() => approve(key, yes), 360); } else approve(key, yes); };
     el.querySelectorAll('[data-ok]').forEach((b) => b.onclick = () => decide(b, true));
     el.querySelectorAll('[data-no]').forEach((b) => b.onclick = () => decide(b, false));
+    const all = el.querySelector('[data-ok-all]');
+    if (all) all.onclick = () => {
+      all.disabled = true; FX.haptic([20, 30, 40]);
+      const rows = [...el.querySelectorAll('.approve-row')];
+      if (rows.length && !FX.reduce()) {
+        const [cx, cy] = FX.centreOf(all); FX.burst(cx, cy, FX.PAL.ok, 70);
+        rows.forEach((r, i) => { r.style.animationDelay = (i * 45) + 'ms'; r.classList.add('yes-out'); });
+        setTimeout(approveAll, 380 + rows.length * 45);
+      } else approveAll();
+    };
     el.querySelectorAll('[data-role]').forEach((b) => b.onclick = () => chooseRole(b.dataset.role, b.dataset.who));
     const fa = el.querySelector('#food-add'); if (fa) fa.onclick = () => { const what = prompt('What did you try?'); if (what !== null) addFood(player, what.trim(), ctx.date); };
     const gp = el.querySelector('[data-go-passport]'); if (gp) gp.onclick = () => show('passport');
@@ -665,7 +682,7 @@ window.Quests = (() => {
     FX.celebrate(Object.assign({ emoji, big, small, who: label(player), kind: kind || 'quest', points: points || 0 }, extra || {}));
   }
 
-  return { QUESTS, CITY_EMOJI, CITY_KEY, CITIES, dayCity, daysBetween, state, label, setActive, complete, undo, addFood, approve, summary, badges,
+  return { QUESTS, CITY_EMOJI, CITY_KEY, CITIES, dayCity, daysBetween, state, label, setActive, complete, undo, addFood, approve, approveAll, summary, badges,
     checkNewBadges, renderQuests, renderPassport, settingsCard, wireSettings, refreshTop, celebrate, reset, startSync, mergeRemote, mine,
     role, setRole, isParentDevice, pendingAll, view, points };
 })();

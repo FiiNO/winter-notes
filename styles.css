@@ -237,6 +237,9 @@ details .quest { margin: 6px 0; }
 .approvals { border-color: var(--c-newyork); }
 .approve-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
 .approve-row:first-of-type { border-top: 0; }
+.approvals-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.qbtn.all { min-height: 36px; padding: 4px 14px; font-size: 0.9em; }
+.kidnote { margin: 6px 2px 0; }
 .approve-row .qt { flex: 1 1 auto; min-width: 0; }
 .qbtn.yes { background: var(--c-home); color: #fff; min-width: 52px; }
 .qbtn.no { background: var(--red); color: #fff; min-width: 52px; }

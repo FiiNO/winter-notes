@@ -513,6 +513,7 @@ function renderMoves() {
 
 function renderStays() {
   const F = S.family;
+  if (!F) return;                                    // hidden before unlock: lockVault() calls this with nothing to draw
   const pins = {};
   if (S.vault) for (const p of S.vault.stay_pins) pins[p.conf] = p.pin;
   $('#screen-stays').innerHTML = `<h1 class="h1">Stays</h1>` + F.stays.map((s) => `<div class="card">

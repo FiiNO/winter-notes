@@ -15,7 +15,18 @@ window.Quests = (() => {
   const CITIES = ['Brisbane', 'Vancouver', 'Whistler', 'Toronto', 'New York', 'Montréal', 'Tokyo', 'Nagoya', 'Cairns', 'Townsville'];
   const CHAMPION_CITIES = ['Vancouver', 'Whistler', 'Toronto', 'New York', 'Montréal', 'Tokyo', 'Nagoya'];
   const AIRPORTS = { BNE: 'Brisbane', CNS: 'Cairns', TSV: 'Townsville' };   // the Australian stops live in the moves, not the days
-  const AVATARS = ['🦖', '🦄', '🐼', '🦊', '🐨', '🐯', '🦁', '🐸', '🦋', '🐙', '🚀', '🌟', '🎸', '🧙', '🦸', '🕵️'];
+  /* avatars in themed groups (1 Nov 2026, Andy: "many more icons/emojis"); Emoji 13 or older so the iPad, the
+     iPhone and Andy's Android all draw them. Nothing here hints at the 5 January plan. */
+  const AVATAR_GROUPS = [
+    ['Animals', ['🦖', '🦕', '🦄', '🐼', '🦊', '🐨', '🐯', '🦁', '🐸', '🦋', '🐙', '🐧', '🦈', '🐬', '🐳', '🦉', '🐺', '🐻‍❄️', '🦅', '🐉', '🦩', '🐢', '🦜', '🐝', '🦔', '🐵', '🐶', '🐱', '🐰', '🐮', '🐷', '🦒', '🦓', '🦘', '🐊', '🦎', '🐍', '🦀', '🐞', '🦚', '🦭', '🦦', '🦥', '🐿️', '🦇', '🐲']],
+    ['Snow and travel', ['⛷️', '🏂', '⛸️', '🛷', '🏔️', '⛄', '☃️', '❄️', '🧊', '🎿', '🚀', '✈️', '🛩️', '🚂', '🚅', '🚁', '🛸', '🚲', '🛶', '⛵', '🎈', '🧭', '🎒', '🚠', '🏕️', '🗼', '🗽', '🎌', '🍁']],
+    ['Sky and nature', ['🌟', '⭐', '🌙', '☀️', '🌈', '🌋', '🌊', '🔥', '⚡', '🌪️', '🪐', '🌍', '☄️', '🌸', '🌵', '🍄', '🌺', '🌻', '🍀', '🌴', '🎋', '🪨']],
+    ['Food', ['🍣', '🍜', '🍙', '🍡', '🍩', '🍕', '🍔', '🌮', '🍦', '🍓', '🍉', '🍒', '🥐', '🧁', '🍪', '🥞', '🧇', '🍫', '🍭', '🍿', '🥨', '🍱', '🍤', '🍧', '🥟', '🍋']],
+    ['Heroes and friends', ['🧙', '🦸', '🦹', '🕵️', '🧚', '🧜', '🧝', '🧞', '🧛', '🧟', '🥷', '🧑‍🚀', '🧑‍🚒', '🧑‍✈️', '🧑‍🎤', '🧑‍🔬', '🧑‍🍳', '🤖', '👻', '👽', '🤠', '🎅', '🤶', '👑', '🎃', '👾', '🧸', '🦺']],
+    ['Sport and play', ['⚽', '🏀', '🏈', '⚾', '🎾', '🏒', '🏓', '🎳', '🎯', '🎮', '🎸', '🥁', '🎺', '🎨', '🎭', '🎪', '🎲', '🏆', '🥇', '🎁', '🧩', '🪁', '🛹', '🛼', '🏹', '🥊', '🎤', '🎧']],
+    ['Faces', ['😀', '😎', '🤓', '🥳', '🤩', '😜', '🤪', '😇', '🥸', '🤗', '😺', '🙃', '🥶', '🤭', '😴', '🤔', '😈', '🤑', '🥰', '😤']],
+  ];
+  const AVATARS = AVATAR_GROUPS.flatMap((g) => g[1]);
   const DEFAULT_AVATAR = { Andrew: '🕵️', Sarah: '🌟', Vince: '🦖', Drew: '🦄' };
   const DISPLAY = { Andrew: 'Dad', Sarah: 'Mum' };          // the parents; everyone else is a kid
   const LEVELS = [[0, 'Rookie', '🥾'], [100, 'Explorer', '🧭'], [250, 'Adventurer', '🎒'], [500, 'Navigator', '🧭'], [900, 'Globetrotter', '🌏'], [1500, 'Legend', '👑']];
@@ -663,8 +674,16 @@ window.Quests = (() => {
   }
   function openAvatarPicker(p) {
     const st = state(), cur = view(st, p).avatar;
-    openModal(`<h2 class="h2">${esc(label(p))}: pick a face</h2><div class="avgrid">` + AVATARS.map((a) => `<button class="avpick${a === cur ? ' active' : ''}" data-pick="${a}">${a}</button>`).join('') + `</div>`);
-    $('#modal-inner').querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => { setAvatar(p, b.dataset.pick); closeModal(); refreshTop(); renderSettings(); });
+    const pick = (a) => `<button class="avpick${a === cur ? ' active' : ''}" data-pick="${a}" aria-label="${a}">${a}</button>`;
+    openModal(`<h2 class="h2">${esc(label(p))}: pick a face</h2><div class="row avtop"><span class="avnow">${cur}</span><button class="btn" id="av-random">🎲 Surprise me</button><span class="muted small">${AVATARS.length} to choose from</span></div>` +
+      AVATAR_GROUPS.map(([name, list]) => `<h3 class="h3 avhead">${esc(name)}</h3><div class="avgrid">${list.map(pick).join('')}</div>`).join(''));
+    const choose = (a) => { setAvatar(p, a); closeModal(); refreshTop(); renderSettings(); FX.haptic(15); };
+    const inner = $('#modal-inner');
+    inner.querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => choose(b.dataset.pick));
+    inner.querySelector('#av-random').onclick = () => {   // a short shuffle on the big face, then that one sticks
+      const now = inner.querySelector('.avnow'), rnd = () => AVATARS[Math.floor(Math.random() * AVATARS.length)];
+      let n = 0; const spin = setInterval(() => { now.textContent = rnd(); if (++n >= 12) { clearInterval(spin); choose(now.textContent); } }, 70);
+    };
   }
   let lastTop = null;                   // [player, points] the header pill last showed, for the count-up
   function refreshTop() {

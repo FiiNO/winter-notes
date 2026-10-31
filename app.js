@@ -16,7 +16,7 @@ const COUNTRY = { 'Vancouver': 'CA', 'Whistler': 'CA', 'Toronto': 'CA', 'Montré
 const EMERGENCY_NUMBER = { CA: '911', US: '911', JP: '119', AU: '000' };
 const POLICE_NUMBER = { CA: '911', US: '911', JP: '110', AU: '000' };
 
-const S = { family: null, vault: null, screen: 'today', vaultTimer: null, pendingPassphraseFor: null };
+const S = { family: null, vault: null, screen: 'home', vaultTimer: null, pendingPassphraseFor: null, preview: localStorage.getItem('previewDate') || null };
 const settings = {
   get theme() { return localStorage.getItem('theme') || 'auto'; }, set theme(v) { localStorage.setItem('theme', v); applyTheme(); },
   get readerMode() { return localStorage.getItem('readerMode') === '1'; }, set readerMode(v) { localStorage.setItem('readerMode', v ? '1' : '0'); },
@@ -64,10 +64,16 @@ function show(screen) {
   document.querySelectorAll('.screen').forEach((el) => el.classList.add('hidden'));
   const el = $('#screen-' + screen);
   if (el) el.classList.remove('hidden');
-  document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.screen === screen || (b.dataset.screen === 'more' && ['days', 'moves', 'stays', 'protocols', 'vault', 'settings'].includes(screen))));
+  const BOOK = ['days', 'moves', 'stays', 'taxi', 'protocols', 'vault', 'settings', 'gates'], QUEST = ['quests', 'passport'];
+  document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.screen === screen || (b.dataset.screen === 'book' && BOOK.includes(screen)) || (b.dataset.screen === 'quests' && QUEST.includes(screen))));
   S.screen = screen;
   window.scrollTo(0, 0);
   if (screen === 'sos') renderSOS();
+  if (screen === 'home') renderHome();
+  if (screen === 'quests') Quests.renderQuests();
+  if (screen === 'passport') Quests.renderPassport();
+  if (screen === 'book') renderBook();
+  if (screen === 'gates') renderGates();
   if (screen === 'vault') renderVault();
   if (screen === 'settings') renderSettings();
   if (screen === 'map') mountMap();
@@ -81,11 +87,12 @@ function applyBigText() { document.documentElement.classList.toggle('big-text', 
 
 /* ------------------------------------------------------------------ dates and time zones */
 function localDate(tz, d = new Date()) {
+  if (S.preview) return S.preview;            // Settings: preview a trip day
   const p = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
   const g = (t) => p.find((x) => x.type === t).value;
   return `${g('year')}-${g('month')}-${g('day')}`;
 }
-function localTime(tz, d = new Date()) { return new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' }).format(d); }
+function localTime(tz, d = new Date()) { if (S.preview) return '12:00'; return new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' }).format(d); }
 function fmtDate(iso) { if (!iso) return ''; const d = new Date(iso + 'T12:00:00Z'); return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }); }
 function tzOf(city) { return TZ[city] || TZ.Home; }
 function currentStay(now = new Date()) {
@@ -216,50 +223,115 @@ ui.fpin.onsubmit = async (e) => {
 function enterApp() {
   $('#screen-unlock').classList.add('hidden');
   $('#nav').classList.remove('hidden');
-  $('#sheet-vault').classList.toggle('hidden', settings.readerMode);
   renderAll();
-  show('today');
+  Quests.refreshTop();
+  show('home');
+  Quests.checkNewBadges(currentContext());
   checkForUpdate();
 }
 
 /* ------------------------------------------------------------------ rendering */
-function renderAll() { renderToday(); renderDays(); renderMoves(); renderStays(); renderMap(); renderTaxi(); renderSOS(); renderProtocols(); }
+function renderAll() { rerender(); renderMap(); }
+/* everything except the map (which must not be re-created once mounted) */
+function rerender() { renderHome(); renderDays(); renderMoves(); renderStays(); renderTaxi(); renderSOS(); renderProtocols(); renderBook(); renderGates(); }
 
-function renderToday() {
-  const F = S.family, ctx = currentContext();
-  const nm = nextMove(ctx);
+/* ------------------------------------------------------------------ home: the "today board" (31 Oct 2026)
+   Four questions, one tile each: where do we sleep, what is next, what is on today, who do we call. Plus quests,
+   passport, the taxi card for tonight, the kid's own card and SOS. The header and hero take the colour of the city. */
+function cityKeyOf(city) { return Quests.CITY_KEY[city] || 'home'; }
+function dayOf(date) { return S.family.days.find((d) => d.date === date); }
+function eventsOn(date) { return (S.family.events || []).filter((e) => e.date === date); }
+function sleepsUntil(ctx, iso) { return Math.max(0, Quests.daysBetween(ctx.date, iso)); }
+function setCityColour(city) {
+  const key = cityKeyOf(city);
+  document.documentElement.style.setProperty('--city', `var(--c-${key})`);
+  const m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.content = getComputedStyle(document.documentElement).getPropertyValue(`--c-${key}`).trim() || '#2A9D8F';
+}
+function dayStrip(ctx) {
+  const days = S.family.days;
+  let i = days.findIndex((d) => d.date === ctx.date);
+  if (i < 0) i = ctx.before ? 0 : days.length - 1;
+  const from = Math.max(0, Math.min(i - 3, days.length - 7));
+  return `<div class="strip">` + days.slice(from, from + 7).map((d) => {
+    const c = Quests.dayCity(d), cls = d.date === ctx.date ? ' today' : (d.date < ctx.date ? ' past' : '');
+    return `<button class="day${cls}" data-day="${d.date}"><span class="de">${Quests.CITY_EMOJI[c] || '📍'}</span><span class="dn">${+d.date.slice(8, 10)}</span><span class="dw">${esc(fmtDate(d.date).slice(0, 3))}</span></button>`;
+  }).join('') + `<button class="day more" data-go="days"><span class="de">📅</span><span class="dn">All</span><span class="dw">days</span></button></div>`;
+}
+function openDay(date) {
+  const d = dayOf(date); if (!d) return;
+  const c = Quests.dayCity(d), ev = eventsOn(date);
+  openModal(`<div class="hero mini" style="--city:var(--c-${cityKeyOf(c)})"><div class="hero-emoji">${Quests.CITY_EMOJI[c] || '📍'}</div><div class="hero-text"><div class="hero-kicker">${esc(d.where)}</div><div class="hero-date">${esc(d.label)}</div><div class="hero-sub">Sleep: ${esc(d.sleep)}</div></div></div>
+    <div class="card"><div class="h3">The plan</div><div>${nl(d.plan)}</div>${d.travel ? `<div class="small muted">${nl(d.travel)}</div>` : ''}${d.heads_up ? `<div class="small red">${nl(d.heads_up)}</div>` : ''}</div>` +
+    ev.map((e) => `<div class="card"><div class="h3">🎟️ ${esc(e.time)} · ${esc(e.event)}</div><div>${esc(e.venue)}</div><div class="small muted">${esc(e.who)}${e.seats ? ' · ' + esc(e.seats) : ''}</div></div>`).join(''));
+}
+function renderHome() {
+  const F = S.family, ctx = currentContext(), nm = nextMove(ctx);
+  const city = ctx.inAir ? 'Air' : ctx.city;
+  setCityColour(city);
+  const total = Quests.daysBetween(F.trip.start, F.trip.end) + 1, dayN = Quests.daysBetween(F.trip.start, ctx.date) + 1;
+  const q = Quests.summary(ctx);
   const photoKey = 'photo:' + ctx.date;
-  let html = `<h1 class="h1">Today</h1>`;
-  html += `<div class="card today-now"><div class="muted small">${esc(ctx.city)} · ${esc(ctx.date)} · local ${localTime(ctx.tz)}</div>`;
+  let html = '';
   if (ctx.before) {
-    const start = new Date('2026-11-29T20:05:00Z'); // 30 Nov 06:05 Townsville (UTC+10)
-    const days = Math.ceil((start - Date.now()) / 86400000);
-    html += `<div class="countdown">${days} days</div><div>until wheels-up: AC2756 Townsville 06:05, Mon 30 Nov</div>`;
-  } else if (ctx.stay) {
-    html += `<div class="h3">Tonight</div><div class="big">${esc(ctx.stay.property)}</div><div>${esc(ctx.stay.address)}</div>${ctx.stay.address_ja ? `<div class="ja">${esc(ctx.stay.address_ja)}</div>` : ''}`;
-    html += `<div class="row"><a class="btn" href="#" data-go="stays">Stay details</a>${ctx.stay.coord && ctx.stay.coord.lat ? `<a class="btn" href="#" data-focus="${esc(ctx.stay.ja_id || 'stay-' + ctx.stay.n)}">Show on map</a>` : ''}</div>`;
+    const sleeps = sleepsUntil(ctx, F.trip.start), m0 = F.moves[0] || {};
+    html += `<div class="hero"><div class="hero-emoji">🛫</div><div class="hero-text"><div class="hero-kicker">Getting ready · ${esc(fmtDate(ctx.date))}</div><div class="hero-date">${sleeps} sleep${sleeps === 1 ? '' : 's'} to go</div><div class="hero-sub">Wheels up ${esc(fmtDate(F.trip.start))} · ${esc(m0.depart || '')} from ${esc(m0.frm || 'home')}</div></div></div>`;
   } else {
-    html += `<div class="h3">Travel day</div><div>No bed tonight: you are in the air or between stays. Check Moves.</div>`;
+    html += `<div class="hero"><div class="hero-emoji">${Quests.CITY_EMOJI[city] || '📍'}</div><div class="hero-text"><div class="hero-kicker">Day ${dayN} of ${total} · ${esc(ctx.inAir ? 'In the air' : ctx.city)}${S.preview ? ' · preview' : ''}</div><div class="hero-date">${esc(fmtDate(ctx.date))}</div><div class="hero-sub">${esc(localTime(ctx.tz))} here · ${esc(localTime(TZ.Home))} at home</div></div></div>`;
   }
-  html += `</div>`;
+  html += dayStrip(ctx);
+  html += `<div class="tiles">`;
+  if (ctx.stay) {
+    html += `<button class="tile ht t1" data-go="stays"><span class="ico">🛏️</span><span class="tt">Tonight</span><span class="ts">${esc(ctx.stay.property)}</span><span class="ts small">${esc(ctx.stay.address)}</span></button>`;
+  } else if (!ctx.before) {
+    html += `<button class="tile ht t1" data-go="moves"><span class="ico">✈️</span><span class="tt">Tonight</span><span class="ts">In the air or between beds · see Moves</span></button>`;
+  }
   if (nm) {
-    html += `<div class="card"><div class="h3">Next move</div><div class="big">${esc(nm.carrier.split('·')[0].trim())} · ${esc(nm.frm)} → ${esc(nm.to)}</div>`;
-    html += `<div>${esc(fmtDate(nm.date))} · departs ${esc(nm.depart)} · arrives ${esc(nm.arrive)}</div>`;
-    if (nm.checkin) { const o = String(nm.checkin.opens || ''), c = String(nm.checkin.closes || ''); const first = (s) => s.split(/[.;(]/)[0].trim(); html += `<div class="small muted">Check-in: ${esc(first(o))}; closes ${esc(first(c))}. Details in Moves.</div>`; }
-    if (nm.ref) html += `<div class="mono">${esc(nm.ref)}</div>`;
-    html += `<div class="row"><a class="btn" href="#" data-go="moves">All moves</a></div></div>`;
+    const sl = sleepsUntil(ctx, nm.date), ico = /train/i.test(nm.mode || '') ? '🚆' : /coach|bus/i.test(nm.mode || '') ? '🚌' : '✈️';
+    html += `<button class="tile ht t2" data-go="moves"><span class="ico">${ico}</span><span class="tt">Next move</span><span class="ts">${esc(nm.carrier.split('·')[0].trim())} · ${esc(nm.frm)} → ${esc(nm.to)}</span><span class="ts small">${esc(fmtDate(nm.date))} ${esc(nm.depart)}${sl === 0 ? ' · today!' : sl === 1 ? ' · tomorrow' : ` · in ${sl} sleeps`}</span></button>`;
   }
-  const day = F.days.find((d) => d.date === ctx.date);
-  if (day) html += `<div class="card"><div class="h3">The plan</div><div>${nl(day.plan)}</div>${day.travel ? `<div class="small muted">${nl(day.travel)}</div>` : ''}${day.heads_up ? `<div class="small red">${nl(day.heads_up)}</div>` : ''}</div>`;
-  if (!localStorage.getItem(photoKey) && !ctx.before) {
-    html += `<div class="photo-reminder"><div><b>Morning photo</b><br><span class="small">Snap each kid in today's clothes.</span></div><button id="photo-done">Done</button></div>`;
-  }
-  html += `<button class="btn danger block sos" id="today-sos">🆘 SOS: lost kid, sick, disasters</button>`;
-  html += `<p class="tiny muted">Built ${esc(BUILT)} · ${esc(VERSION)}</p>`;
-  $('#screen-today').innerHTML = html;
-  const pd = $('#photo-done'); if (pd) pd.onclick = () => { localStorage.setItem(photoKey, '1'); renderToday(); };
-  $('#today-sos').onclick = () => show('sos');
-  wireGo($('#screen-today'));
+  const day = dayOf(ctx.date), ev = eventsOn(ctx.date);
+  if (day) html += `<button class="tile ht wide t3" data-day="${day.date}"><span class="ico">${ev.length ? '🎟️' : '📅'}</span><span class="tt">Today${ev.length ? ' · ' + esc(ev[0].time) + ' ' + esc(ev[0].event) : ''}</span><span class="ts">${esc(day.plan)}</span>${day.heads_up ? `<span class="ts small">⚠️ ${esc(day.heads_up)}</span>` : ''}</button>`;
+  html += `<button class="tile ht t7" data-go="quests"><span class="ico">🏆</span><span class="tt">Quests</span><span class="ts">${q.avatar} ${esc(q.name)} · ${q.points} pts · ${q.level.emoji} ${esc(q.level.name)}</span><span class="ts small">${q.todayLeft} to do today</span></button>`;
+  html += `<button class="tile ht t8" data-go="passport"><span class="ico">📘</span><span class="tt">Passport</span><span class="ts">${q.stamps} of ${q.stampsTotal} stamps</span><span class="ts small">Badges and levels</span></button>`;
+  html += `<button class="tile ht t4" data-taxi="${esc(ctx.stay ? (ctx.stay.ja_id || 'stay-' + ctx.stay.n) : '')}"><span class="ico">🚕</span><span class="tt">Taxi card</span><span class="ts">${ctx.stay ? "Show the driver tonight's bed" : 'All cards and phrases'}</span></button>`;
+  const mob = ((F.trip || {}).family || {}).mobiles || {};
+  const calls = [['Mum', mob.sarah], ['Dad', mob.andy], ctx.stay && ctx.stay.phone ? ['Host', ctx.stay.phone] : null, ['Emergency', EMERGENCY_NUMBER[ctx.country]]].filter((c) => c && c[1]);
+  html += `<button class="tile ht t5" data-call="1"><span class="ico">📞</span><span class="tt">Call</span><span class="ts">${calls.map((c) => esc(c[0])).join(' · ') || 'Numbers'}</span></button>`;
+  html += `<button class="tile ht wide t6" data-kid="1"><span class="ico">🙋</span><span class="tt">I'm lost</span><span class="ts">Your own card: big words, Mum and Dad's numbers, what to say</span></button>`;
+  html += `</div>`;
+  if (!localStorage.getItem(photoKey) && !ctx.before) html += `<div class="photo-reminder"><div><b>📸 Morning photo</b><br><span class="small">Snap each kid in today's clothes.</span></div><button id="photo-done">Done</button></div>`;
+  html += `<button class="btn danger block sos" id="home-sos">🆘 SOS · lost kid · sick · disasters</button>`;
+  html += `<p class="tiny muted">Built ${esc(BUILT)} · ${esc(VERSION)}${S.preview ? ' · previewing ' + esc(S.preview) + ' (clear it in Settings)' : ''}</p>`;
+  const el = $('#screen-home'); el.innerHTML = html;
+  const pd = $('#photo-done'); if (pd) pd.onclick = () => { localStorage.setItem(photoKey, '1'); Quests.complete(Quests.state().active, 'photo', ctx.date); renderHome(); };
+  $('#home-sos').onclick = () => show('sos');
+  el.querySelectorAll('[data-day]').forEach((b) => b.onclick = () => openDay(b.dataset.day));
+  el.querySelectorAll('[data-taxi]').forEach((b) => b.onclick = () => { if (b.dataset.taxi) openTaxiById(b.dataset.taxi); else show('taxi'); });
+  el.querySelectorAll('[data-kid]').forEach((b) => b.onclick = () => openKidCard());
+  el.querySelectorAll('[data-call]').forEach((b) => b.onclick = () => openCalls(calls));
+  wireGo(el);
+}
+function openCalls(calls) {
+  let html = `<h1 class="h1">📞 Call</h1>`;
+  if (!calls.some((c) => c[0] === 'Mum' || c[0] === 'Dad')) html += `<div class="card red">Mum and Dad's numbers appear here once they are in extra.yaml (family.mobiles).</div>`;
+  html += calls.map((c) => `<a class="btn block sos" href="tel:${String(c[1]).replace(/[^\d+]/g, '')}">${esc(c[0])} · ${esc(c[1])}</a>`).join('');
+  html += `<div class="row" style="margin-top:14px"><a class="btn" href="#" data-go="sos">All emergency numbers</a></div>`;
+  openModal(html);
+  $('#modal-inner').querySelectorAll('[data-go]').forEach((a) => a.onclick = (e) => { e.preventDefault(); closeModal(); show(a.dataset.go); });
+}
+function renderBook() {
+  const items = [['days', '📅', 'Days', 'The plan, day by day'], ['moves', '✈️', 'Moves', 'Flights, trains, buses, taxis'], ['stays', '🛏️', 'Stays', 'Every bed, check-in times'],
+    ['taxi', '🚕', 'Taxi cards', 'Japanese and French, phrases'], ['map', '🗺️', 'Map', 'Offline maps, places, GPS'], ['protocols', '📋', 'Protocols', 'Lost kid, PACE, phone stolen'],
+    ['gates', '✅', 'Before we go', "Mum and Dad's to-do list"], ['quests', '🏆', 'Quests', 'Points, levels, new foods'], ['passport', '📘', 'Passport', 'Stamps and badges'],
+    ['vault', '🔒', 'Vault', 'PINs and document numbers'], ['settings', '⚙️', 'Settings', 'Theme, text size, players']];
+  $('#screen-book').innerHTML = `<h1 class="h1">📖 Book</h1><div class="book">` + items.filter((i) => !(i[0] === 'vault' && settings.readerMode)).map((i, k) => `<button class="bk c${k % 8}" data-go="${i[0]}"><span class="ico">${i[1]}</span><span class="tt">${esc(i[2])}</span><span class="ts">${esc(i[3])}</span></button>`).join('') + `</div>`;
+  wireGo($('#screen-book'));
+}
+function renderGates() {
+  const g = S.family.gates || [];
+  $('#screen-gates').innerHTML = `<h1 class="h1">✅ Before we go</h1><p class="small muted">Open gates from the planner's Next Steps tab (Done ones drop off at the next build). Tick them off in the planner.</p>` +
+    (g.length ? `<ul class="list gates">` + g.map((x) => `<li><div><b>${esc(x.what)}</b> <span class="chip${/critical|high/i.test(x.priority) ? ' red' : ''}">${esc(x.priority || x.status)}</span></div><div class="small muted">${esc(x.label)}${x.when ? ' · ' + esc(x.when) : ''}${x.where ? ' · ' + esc(x.where) : ''}</div>${x.need ? `<div class="tiny muted">Need: ${esc(x.need)}</div>` : ''}</li>`).join('') + `</ul>` : `<div class="card">Nothing open. 🎉</div>`);
 }
 function wireGo(root) {
   root.querySelectorAll('[data-go]').forEach((a) => a.onclick = (e) => { e.preventDefault(); show(a.dataset.go); });
@@ -582,21 +654,27 @@ async function renderVault() {
 
 /* ------------------------------------------------------------------ settings and updates */
 function renderSettings() {
-  $('#screen-settings').innerHTML = `<h1 class="h1">Settings</h1>
+  $('#screen-settings').innerHTML = `<h1 class="h1">⚙️ Settings</h1>
     <div class="card"><div class="h3">Theme</div><div class="row">${['auto', 'light', 'dark'].map((t) => `<button class="pill${settings.theme === t ? ' active' : ''}" data-theme="${t}">${t}</button>`).join('')}</div></div>
     <div class="card"><div class="h3">Text size</div><label><input type="checkbox" id="opt-big" ${settings.bigText ? 'checked' : ''}> Big text (for the kids and tired eyes)</label></div>
+    ${Quests.settingsCard()}
+    <div class="card"><div class="h3">Preview a trip day</div><p class="small muted">Shows the app as it will look on that day: for testing and the dry run. Clear it before the trip.</p><input type="date" id="opt-preview" class="input" min="${esc(S.family.trip.start)}" max="${esc(S.family.trip.end)}" value="${esc(S.preview || '')}"><button class="btn block" id="opt-preview-clear">Back to today</button></div>
     <div class="card"><div class="h3">This device</div>
       <label><input type="checkbox" id="opt-reader" ${settings.readerMode ? 'checked' : ''}> Reader mode: hide the Vault (for the iPad)</label><br>
       <label><input type="checkbox" id="opt-auto" ${settings.autoFamily ? 'checked' : ''}> Open the family view without a PIN on this device</label>
-      <button class="btn block" id="opt-forget">Forget this device (wipe stored keys and PINs)</button></div>
+      <button class="btn block" id="opt-forget">Forget this device (wipe stored keys, PINs and quest scores)</button></div>
     <div class="card"><div class="h3">Build</div><div>${esc(VERSION)} · built ${esc(BUILT)}</div><button class="btn block" id="opt-update">Check for a newer build</button><div class="small muted" id="update-msg"></div></div>
     <div class="card small muted">Storage: <span id="storage-msg">…</span></div>`;
   document.querySelectorAll('[data-theme]').forEach((b) => b.onclick = () => { settings.theme = b.dataset.theme; renderSettings(); if (window.DossierMap) window.DossierMap.setTheme(currentTheme()); });
-  $('#opt-reader').onchange = (e) => { settings.readerMode = e.target.checked; $('#sheet-vault').classList.toggle('hidden', settings.readerMode); if (settings.readerMode) lockVault(); };
+  $('#opt-reader').onchange = (e) => { settings.readerMode = e.target.checked; renderBook(); if (settings.readerMode) lockVault(); };
   $('#opt-auto').onchange = (e) => { settings.autoFamily = e.target.checked; };
   $('#opt-big').onchange = (e) => { settings.bigText = e.target.checked; };
   $('#opt-forget').onclick = () => { if (confirm('Forget this device? You will need the passphrase again.')) forgetDevice(); };
   $('#opt-update').onclick = () => checkForUpdate(true);
+  const setPreview = (v) => { S.preview = v || null; if (v) localStorage.setItem('previewDate', v); else localStorage.removeItem('previewDate'); rerender(); Quests.refreshTop(); renderSettings(); Quests.checkNewBadges(currentContext()); };
+  $('#opt-preview').onchange = (e) => setPreview(e.target.value);
+  $('#opt-preview-clear').onclick = () => setPreview('');
+  Quests.wireSettings($('#screen-settings'));
   if (navigator.storage && navigator.storage.estimate) navigator.storage.estimate().then((e) => { $('#storage-msg').textContent = `${Math.round((e.usage || 0) / 1024)} KB used of ${Math.round((e.quota || 0) / 1048576)} MB available`; });
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 }
@@ -619,10 +697,8 @@ async function checkForUpdate(manual) {
 }
 
 /* ------------------------------------------------------------------ wiring */
-document.querySelectorAll('#nav button').forEach((b) => b.onclick = () => { if (b.dataset.screen === 'more') $('#sheet').classList.remove('hidden'); else show(b.dataset.screen); });
-document.querySelectorAll('.sheet-item[data-screen]').forEach((b) => b.onclick = () => { $('#sheet').classList.add('hidden'); show(b.dataset.screen); });
-$('#sheet-close').onclick = () => $('#sheet').classList.add('hidden');
-$('#sheet').onclick = (e) => { if (e.target === $('#sheet')) $('#sheet').classList.add('hidden'); };
+document.querySelectorAll('#nav button').forEach((b) => b.onclick = () => show(b.dataset.screen));
+$('#btn-points').onclick = () => { if (S.family) show('quests'); };
 $('#btn-settings').onclick = () => { if (S.family) show('settings'); };
 applyTheme();
 applyBigText();

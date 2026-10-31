@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0B1F3A">
+<meta name="theme-color" content="#2A9D8F">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Dossier">
@@ -15,12 +15,13 @@
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
 <link rel="stylesheet" href="styles.css">
 </head>
-<body data-version="v09" data-built="10 Oct 2026">
+<body data-version="v11" data-built="31 Oct 2026">
 
-<header class="top">
-  <div class="brand"><span class="stamp">TRAVEL DOSSIER</span><span class="edition" id="top-edition">Family</span></div>
+<header class="top" id="top">
+  <div class="brand"><span class="logo" aria-hidden="true">🧭</span><span class="stamp">Travel Dossier<span class="edition" id="top-edition"> · Family</span></span></div>
   <div class="top-actions">
-    <button class="icon-btn" id="btn-sos" title="Lost kid / emergency" aria-label="Lost kid">SOS</button>
+    <button class="icon-btn pts" id="btn-points" title="Quests" aria-label="Quests and points"><span id="top-points">⭐</span></button>
+    <button class="icon-btn sos" id="btn-sos" title="SOS" aria-label="SOS: lost kid or emergency">SOS</button>
     <button class="icon-btn" id="btn-settings" title="Settings" aria-label="Settings">⚙</button>
   </div>
 </header>
@@ -30,7 +31,8 @@
 <main id="main">
   <!-- Unlock / setup -->
   <section id="screen-unlock" class="screen">
-    <div class="card centre">
+    <div class="card centre unlock">
+      <div class="unlock-emoji" aria-hidden="true">🧭</div>
       <h1 class="h1">Travel Dossier</h1>
       <p class="muted" id="unlock-sub">Loading…</p>
       <form id="form-passphrase" class="hidden" autocomplete="off">
@@ -56,7 +58,11 @@
     </div>
   </section>
 
-  <section id="screen-today" class="screen hidden"></section>
+  <section id="screen-home" class="screen hidden"></section>
+  <section id="screen-quests" class="screen hidden"></section>
+  <section id="screen-passport" class="screen hidden"></section>
+  <section id="screen-book" class="screen hidden"></section>
+  <section id="screen-gates" class="screen hidden"></section>
   <section id="screen-days" class="screen hidden"></section>
   <section id="screen-moves" class="screen hidden"></section>
   <section id="screen-stays" class="screen hidden"></section>
@@ -69,30 +75,21 @@
 </main>
 
 <nav id="nav" class="nav hidden" aria-label="Sections">
-  <button data-screen="today"><span class="ico">🏠</span><span>Today</span></button>
+  <button data-screen="home"><span class="ico">🏠</span><span>Home</span></button>
   <button data-screen="map"><span class="ico">🗺️</span><span>Map</span></button>
-  <button data-screen="taxi"><span class="ico">🚕</span><span>Taxi</span></button>
+  <button data-screen="quests"><span class="ico">🏆</span><span>Quests</span></button>
+  <button data-screen="book"><span class="ico">📖</span><span>Book</span></button>
   <button data-screen="sos"><span class="ico">🆘</span><span>SOS</span></button>
-  <button data-screen="more" id="nav-more"><span class="ico">☰</span><span>More</span></button>
 </nav>
-
-<div id="sheet" class="sheet hidden" role="dialog" aria-modal="true">
-  <div class="sheet-inner">
-    <button class="sheet-item" data-screen="days"><span class="ico">📅</span>Days: the plan</button>
-    <button class="sheet-item" data-screen="moves"><span class="ico">✈️</span>Moves: flights, trains, buses</button>
-    <button class="sheet-item" data-screen="stays"><span class="ico">🛏️</span>Stays</button>
-    <button class="sheet-item" data-screen="protocols"><span class="ico">📋</span>Protocols</button>
-    <button class="sheet-item" data-screen="vault" id="sheet-vault"><span class="ico">🔒</span>Vault</button>
-    <button class="sheet-item" data-screen="settings"><span class="ico">⚙️</span>Settings</button>
-    <button class="sheet-item muted" id="sheet-close">Close</button>
-  </div>
-</div>
 
 <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
   <div class="modal-inner" id="modal-inner"></div>
 </div>
 
+<div id="party" class="party hidden" aria-live="polite"></div>
+
 <script src="vendor/pmtiles.js"></script>
+<script src="quests.js"></script>
 <script src="app.js"></script>
 <script type="module" src="map.js"></script>
 </body>

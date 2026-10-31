@@ -1,30 +1,37 @@
 /* Travel Dossier quests: badges, points and levels for the kids (and the grown-ups), 31 Oct 2026.
-   Progress lives only on this device (localStorage), so the iPad and each phone keep their own scores: the iPad is
-   the kids' scoreboard. Nothing here is secret and nothing names the 5 January plan beyond the family wording.
-   Loaded before app.js; it only touches app.js helpers ($, esc, fmtDate, currentContext, show, openModal) at call time. */
+   Scores are a set of facts (quest ticks, food notes, parent approvals, avatars), each stamped with a time and the
+   device that wrote it, so any number of devices merge without conflicts: the newest fact per key wins. With a sync
+   address in the family blob (see ../sync/README.md) the facts travel through the Worker; without one they stay here.
+   Roles: a device is Dad's phone, Mum's phone or the kids' device. On the kids' device, ticks on food and words
+   quests (and every "tried a new food") wait for a parent's ✓ before they count.
+   Nothing here is secret and nothing names the 5 January plan beyond the family wording.
+   Loaded after sync.js and before app.js; it only touches app.js helpers ($, esc, fmtDate, currentContext, show,
+   openModal, closeModal, verifyPin, renderHome, renderSettings) at call time. */
 'use strict';
 window.Quests = (() => {
-  const KEY = 'quests:v1';
+  const KEY = 'quests:v2', OLD_KEY = 'quests:v1';
   const CITY_EMOJI = { Home: '🏡', Vancouver: '🌲', Whistler: '⛄', Toronto: '🍁', 'New York': '🗽', 'Montréal': '🏒', Montreal: '🏒', Tokyo: '🗼', Nagoya: '🧱', Air: '✈️' };
   const CITY_KEY = { Home: 'home', Vancouver: 'vancouver', Whistler: 'whistler', Toronto: 'toronto', 'New York': 'newyork', 'Montréal': 'montreal', Montreal: 'montreal', Tokyo: 'tokyo', Nagoya: 'nagoya', Air: 'air' };
   const CITIES = ['Vancouver', 'Whistler', 'Toronto', 'New York', 'Montréal', 'Tokyo', 'Nagoya'];
   const AVATARS = ['🦖', '🦄', '🐼', '🦊', '🐨', '🐯', '🦁', '🐸', '🦋', '🐙', '🚀', '🌟', '🎸', '🧙', '🦸', '🕵️'];
   const DEFAULT_AVATAR = { Andrew: '🕵️', Sarah: '🌟', Vince: '🦖', Drew: '🦄' };
-  const DISPLAY = { Andrew: 'Dad', Sarah: 'Mum' };
+  const DISPLAY = { Andrew: 'Dad', Sarah: 'Mum' };          // the parents; everyone else is a kid
   const LEVELS = [[0, 'Rookie', '🥾'], [100, 'Explorer', '🧭'], [250, 'Adventurer', '🎒'], [500, 'Navigator', '🧭'], [900, 'Globetrotter', '🌏'], [1500, 'Legend', '👑']];
   const FOOD_PTS = 10;
+  const VERIFY_KINDS = ['food', 'words'];                    // a kid's tick on these waits for a parent
 
-  /* kind: food · explore · helper · words · travel · daily. where: a city, 'any' (whole trip), 'home' (before we go). */
+  /* kind: food · explore · helper · words · travel · daily. where: a city, 'any' (whole trip), 'home' (before we go).
+     verify: true makes a kid's tick wait for a parent even outside VERIFY_KINDS. */
   const QUESTS = [
     // before we go
     { id: 'pack-case', e: '🧳', t: 'Help pack your own suitcase', pts: 20, where: 'home', kind: 'helper' },
     { id: 'flu-shot', e: '💉', t: 'Brave the flu shot', pts: 30, where: 'home', kind: 'helper' },
     { id: 'learn-ja', e: '🇯🇵', t: 'Learn three Japanese words', pts: 20, where: 'home', kind: 'words' },
     { id: 'learn-fr', e: '🇫🇷', t: 'Learn three French words', pts: 20, where: 'home', kind: 'words' },
-    { id: 'know-numbers', e: '📱', t: "Know Mum and Dad's phone numbers by heart", pts: 50, where: 'any', kind: 'helper' },
+    { id: 'know-numbers', e: '📱', t: "Know Mum and Dad's phone numbers by heart", pts: 50, where: 'any', kind: 'helper', verify: true },
     { id: 'thermals', e: '🧤', t: 'Try on your thermals and gloves', pts: 10, where: 'home', kind: 'helper' },
     // every day, anywhere
-    { id: 'photo', e: '📸', t: 'Morning photo taken (grown-ups)', pts: 5, where: 'any', kind: 'daily', daily: true },
+    { id: 'photo', e: '📸', t: 'Morning photo taken (grown-ups)', pts: 5, where: 'any', kind: 'daily', daily: true, parents: true },
     { id: 'daypack', e: '🎒', t: 'Pack your own daypack', pts: 5, where: 'any', kind: 'daily', daily: true },
     { id: 'hands', e: '🤝', t: 'Hold hands at every crossing and station', pts: 5, where: 'any', kind: 'daily', daily: true },
     { id: 'thanks', e: '🙏', t: 'Say thank you in the local language', pts: 5, where: 'any', kind: 'daily', daily: true },
@@ -109,28 +116,108 @@ window.Quests = (() => {
     { id: 'legoland', e: '🧱', t: 'Build something at LEGOLAND', pts: 25, where: 'Nagoya', kind: 'explore' },
     { id: 'ekiben', e: '🍱', t: 'Eat an ekiben on the train', pts: 15, where: 'Nagoya', kind: 'food' },
   ];
+  const byId = Object.fromEntries(QUESTS.map((q) => [q.id, q]));
+  const needsVerify = (q) => !!(q && (q.verify || VERIFY_KINDS.includes(q.kind)));
 
-  /* ---------------------------------------------------------------- state */
-  function load() {
-    try { return JSON.parse(localStorage.getItem(KEY) || '') || {}; } catch (e) { return {}; }
-  }
-  function save(st) { localStorage.setItem(KEY, JSON.stringify(st)); }
+  /* ---------------------------------------------------------------- people and roles */
   function people() { return ((typeof S !== 'undefined' && S.family && S.family.trip && S.family.trip.people) || ['Andrew', 'Sarah', 'Vince', 'Drew']).slice(); }
+  const label = (p) => DISPLAY[p] || p;
+  const isParent = (p) => !!DISPLAY[p];
+  const parents = () => people().filter(isParent);
+  const kids = () => people().filter((p) => !isParent(p));
+  const role = () => localStorage.getItem('deviceRole') || '';            // 'parent' | 'kids' | '' (not chosen yet)
+  const owner = () => localStorage.getItem('deviceOwner') || '';          // the parent a parent phone belongs to
+  const isParentDevice = () => role() === 'parent';
+  const visiblePlayers = () => (isParentDevice() ? people() : kids());
+  function setRole(r, who) {
+    localStorage.setItem('deviceRole', r); localStorage.setItem('deviceOwner', who || '');
+    const st = state(); if (!visiblePlayers().includes(st.active)) { st.active = visiblePlayers()[0]; save(st); }
+    Sync.touch();
+  }
+  function deviceName() { return isParentDevice() ? `${label(owner() || 'Dad')}'s phone` : "Kids' device"; }
+
+  /* ---------------------------------------------------------------- state: facts, newest per key wins */
+  function load() { try { return JSON.parse(localStorage.getItem(KEY) || '') || null; } catch (e) { return null; } }
+  function save(st) { localStorage.setItem(KEY, JSON.stringify(st)); }
+  function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
   function state() {
-    const st = load();
-    st.players = st.players || {};
-    for (const p of people()) st.players[p] = st.players[p] || { avatar: DEFAULT_AVATAR[p] || '🙂', done: {}, foods: [], seen: {} };
-    if (!st.active || !st.players[st.active]) st.active = people().find((p) => !DISPLAY[p]) || people()[0];
+    let st = load();
+    if (!st) { st = migrate(); save(st); }
+    st.facts = st.facts || {}; st.seen = st.seen || {}; st.okSeen = st.okSeen || {}; st.devices = st.devices || {};
+    if (!st.device) { st.device = newId(); save(st); }
+    const vis = visiblePlayers();
+    if (!st.active || !vis.includes(st.active)) st.active = vis[0] || people()[0];
     return st;
   }
-  const label = (p) => DISPLAY[p] || p;
-  function setActive(p) { const st = state(); st.active = p; save(st); }
-  function setAvatar(p, a) { const st = state(); st.players[p].avatar = a; save(st); }
-  function reset() { localStorage.removeItem(KEY); }
-  const byId = Object.fromEntries(QUESTS.map((q) => [q.id, q]));
+  function migrate() {
+    /* the 31 Oct v1 layout (done dates per player) becomes facts written by this device; old ticks count as parent ticks */
+    const st = { device: newId(), active: null, facts: {}, seen: {}, okSeen: {}, devices: {} };
+    let old = null; try { old = JSON.parse(localStorage.getItem(OLD_KEY) || ''); } catch (e) { old = null; }
+    if (old && old.players) {
+      const t = Date.now();
+      for (const [p, pl] of Object.entries(old.players)) {
+        for (const [id, dates] of Object.entries(pl.done || {})) {
+          const q = byId[id]; if (!q || !dates.length) continue;
+          if (q.daily) dates.forEach((d) => { st.facts[tickKey(p, id, d)] = { v: { on: true, by: 'parent', date: d }, t, d: st.device }; });
+          else st.facts[tickKey(p, id, null)] = { v: { on: true, by: 'parent', date: dates[0] }, t, d: st.device };
+        }
+        (pl.foods || []).forEach((f) => { st.facts['food|' + p + '|' + newId()] = { v: { on: true, by: 'parent', date: f.date, what: f.what }, t, d: st.device }; });
+        if (pl.avatar) st.facts['avatar|' + p] = { v: pl.avatar, t, d: st.device };
+        for (const [b, d] of Object.entries(pl.seen || {})) st.seen[p + '|' + b] = d;
+      }
+      st.active = old.active || null;
+      localStorage.removeItem(OLD_KEY);
+    }
+    return st;
+  }
+  const tickKey = (p, id, date) => `tick|${p}|${id}|${date || '-'}`;
+  function put(st, key, v) { st.facts[key] = { v, t: Date.now(), d: st.device }; }
+  const wipeT = (st) => (st.facts.wipe ? st.facts.wipe.t : 0);
+  function effective(st) {               // facts that survive the last reset
+    const w = wipeT(st), out = {};
+    for (const [k, f] of Object.entries(st.facts)) if (k !== 'wipe' && f.t >= w) out[k] = f;
+    return out;
+  }
+  function liveOn(st, key) { const f = effective(st)[key]; return !!(f && f.v && f.v.on); }
 
-  function doneCount(pl, id) { return (pl.done[id] || []).length; }
-  function doneToday(pl, id, date) { return (pl.done[id] || []).includes(date); }
+  /* every tick and food note of one player, with its approval state */
+  function items(st, p, eff) {
+    eff = eff || effective(st);
+    const out = [];
+    for (const [k, f] of Object.entries(eff)) {
+      const parts = k.split('|');
+      if (parts[1] !== p || !f.v || !f.v.on) continue;
+      let it = null;
+      if (parts[0] === 'tick') { const q = byId[parts[2]]; if (!q) continue; it = { kind: 'tick', q, id: q.id, date: f.v.date || parts[3], pts: q.pts, title: q.t, e: q.e, verify: needsVerify(q) }; }
+      else if (parts[0] === 'food') it = { kind: 'food', date: f.v.date, what: f.v.what || '', pts: FOOD_PTS, title: f.v.what ? 'Tried: ' + f.v.what : 'Tried something new', e: '🍽️', verify: true };
+      if (!it) continue;
+      it.key = k; it.player = p; it.by = f.v.by || 'kid'; it.t = f.t;
+      it.needs = it.verify && it.by !== 'parent';
+      const ok = eff['ok|' + k];
+      const okValid = ok && ok.t >= f.t;             // a re-tick after a ✗ asks again
+      it.ok = okValid ? ok.v.a : null; it.okBy = okValid ? ok.v.who || '' : '';
+      it.pending = it.needs && !it.ok;
+      it.rejected = it.needs && it.ok === 'no';
+      it.counted = !it.needs || it.ok === 'yes';
+      out.push(it);
+    }
+    return out.sort((a, b) => b.t - a.t);
+  }
+  /* a player as the views see them: counted ticks by quest, counted foods, avatar, pending and rejected items */
+  function view(st, p, eff) {
+    eff = eff || effective(st);
+    const its = items(st, p, eff), done = {}, foods = [];
+    for (const it of its) {
+      if (!it.counted) continue;
+      if (it.kind === 'tick') (done[it.id] = done[it.id] || []).push(it.date); else foods.push({ date: it.date, what: it.what, key: it.key });
+    }
+    const av = eff['avatar|' + p];
+    return { name: p, avatar: av ? av.v : (DEFAULT_AVATAR[p] || '🙂'), done, foods, items: its, pending: its.filter((i) => i.pending), rejected: its.filter((i) => i.rejected) };
+  }
+  function pendingAll(st) { const eff = effective(st); return people().flatMap((p) => items(st, p, eff).filter((i) => i.pending)); }
+
+  const doneCount = (pl, id) => (pl.done[id] || []).length;
+  const doneToday = (pl, id, date) => (pl.done[id] || []).includes(date);
   function points(pl) {
     let pts = 0;
     for (const [id, dates] of Object.entries(pl.done)) pts += (byId[id] ? byId[id].pts : 0) * dates.length;
@@ -144,35 +231,106 @@ window.Quests = (() => {
     return { name: cur[1], emoji: cur[2], from: cur[0], next: next ? next[0] : null, nextName: next ? next[1] : null,
       pct: next ? Math.round(((pts - cur[0]) / (next[0] - cur[0])) * 100) : 100 };
   }
+
+  /* ---------------------------------------------------------------- changes (every one is a fact) */
+  const by = () => (isParentDevice() ? 'parent' : 'kid');
   function complete(player, id, date) {
-    const st = state(), pl = st.players[player];
-    const q = byId[id]; if (!q) return;
-    pl.done[id] = pl.done[id] || [];
-    if (!q.daily && pl.done[id].length) return;
-    if (q.daily && pl.done[id].includes(date)) return;
-    pl.done[id].push(date);
-    save(st);
-    celebrate(q.e, `+${q.pts} points`, q.t, player);
+    const st = state(), q = byId[id]; if (!q) return;
+    const key = tickKey(player, id, q.daily ? date : null);
+    if (liveOn(st, key)) return;
+    const who = by();
+    put(st, key, { on: true, by: who, date });
+    save(st); Sync.touch();
+    const waits = needsVerify(q) && who !== 'parent';
+    celebrate(waits ? '⏳' : q.e, waits ? 'Sent to Mum and Dad' : `+${q.pts} points`, waits ? `${q.t} · ${q.pts} points when they say yes` : q.t, player);
     afterChange();
   }
   function undo(player, id, date) {
-    const st = state(), pl = st.players[player];
-    if (!pl.done[id]) return;
-    const i = pl.done[id].indexOf(date);
-    if (i >= 0) pl.done[id].splice(i, 1); else pl.done[id].pop();
-    if (!pl.done[id].length) delete pl.done[id];
-    save(st); afterChange();
+    const st = state(), q = byId[id]; if (!q) return;
+    const key = tickKey(player, id, q.daily ? date : null);
+    if (!liveOn(st, key)) return;
+    put(st, key, { on: false, by: by(), date });
+    save(st); Sync.touch(); afterChange();
   }
   function addFood(player, what, date) {
-    const st = state(), pl = st.players[player];
-    pl.foods = pl.foods || [];
-    pl.foods.push({ date, what: String(what || '').slice(0, 60) });
-    save(st);
-    celebrate('🍽️', `+${FOOD_PTS} points`, what ? `Tried: ${what}` : 'Tried something new', player);
+    const st = state(), who = by();
+    put(st, 'food|' + player + '|' + newId(), { on: true, by: who, date, what: String(what || '').slice(0, 60) });
+    save(st); Sync.touch();
+    const waits = who !== 'parent';
+    celebrate(waits ? '⏳' : '🍽️', waits ? 'Sent to Mum and Dad' : `+${FOOD_PTS} points`, (what ? `Tried: ${what}` : 'Tried something new') + (waits ? ` · ${FOOD_PTS} points when they say yes` : ''), player);
     afterChange();
   }
-  function removeFood(player, i) { const st = state(), pl = st.players[player]; (pl.foods || []).splice(i, 1); save(st); afterChange(); }
-  function afterChange() { refreshTop(); if (S.screen === 'quests') renderQuests(); if (S.screen === 'passport') renderPassport(); if (S.screen === 'home') renderHome(); }
+  function removeFood(player, key) {
+    const st = state(), f = st.facts[key]; if (!f) return;
+    put(st, key, Object.assign({}, f.v, { on: false, by: by() }));
+    save(st); Sync.touch(); afterChange();
+  }
+  function approve(key, yes) {
+    if (!isParentDevice()) return;
+    const st = state();
+    put(st, 'ok|' + key, { a: yes ? 'yes' : 'no', who: label(owner() || 'Dad') });
+    save(st); Sync.touch(); afterChange();
+  }
+  function setActive(p) { const st = state(); st.active = p; save(st); }
+  function setAvatar(p, a) { const st = state(); put(st, 'avatar|' + p, a); save(st); Sync.touch(); }
+  function reset() {                     // every device: facts older than this moment stop counting
+    const st = state();
+    st.facts.wipe = { v: 1, t: Date.now(), d: st.device }; st.seen = {}; st.okSeen = {};
+    save(st); Sync.touch();
+  }
+  function afterChange() {
+    refreshTop();
+    if (S.screen === 'quests') renderQuests();
+    if (S.screen === 'passport') renderPassport();
+    if (S.screen === 'home') renderHome();
+    if (S.screen === 'settings') renderSettings();
+  }
+
+  /* ---------------------------------------------------------------- sync: what we send, how we merge */
+  function mine() { const st = state(), out = {}; for (const [k, f] of Object.entries(st.facts)) if (f.d === st.device) out[k] = f; return out; }
+  function mergeRemote(devices) {
+    const st = state();
+    const merged = {};
+    for (const [k, f] of Object.entries(st.facts)) if (f.d === st.device) merged[k] = f;       // ours always travel with us
+    for (const [id, blob] of Object.entries(devices || {})) {
+      if (id === st.device) continue;
+      for (const [k, f] of Object.entries((blob && blob.facts) || {})) {
+        if (!f || typeof f.t !== 'number' || !/^(tick|food|ok|avatar|wipe)\|?/.test(k)) continue;
+        const cur = merged[k];
+        if (!cur || f.t > cur.t || (f.t === cur.t && String(f.d) > String(cur.d))) merged[k] = Object.assign({}, f, { d: f.d || id });
+      }
+    }
+    st.facts = merged;
+    st.devices = Object.fromEntries(Object.entries(devices || {}).map(([id, b]) => [id, { role: b && b.role, name: b && b.name, at: b && b.at }]));
+    save(st);
+    celebrateApprovals(st);
+    afterChange();
+  }
+  function celebrateApprovals(st) {      // on a kids' device: a ✓ arriving from a parent pops the points
+    if (isParentDevice()) return;
+    const eff = effective(st), fresh = [];
+    for (const p of visiblePlayers()) for (const it of items(st, p, eff)) if (it.needs && it.ok && !st.okSeen[it.key]) { st.okSeen[it.key] = it.ok; if (it.ok === 'yes') fresh.push(it); }
+    save(st);
+    if (!fresh.length) return;
+    const it = fresh[0];
+    celebrate(it.e, fresh.length > 1 ? `${fresh.length} approved!` : `+${it.pts} points`, `${it.okBy || 'A parent'} said yes${fresh.length > 1 ? ' to ' + fresh.length + ' things' : ': ' + it.title}`, it.player);
+  }
+  function startSync() {
+    const sy = (S.family && S.family.trip && S.family.trip.sync) || {};
+    const st = state();
+    Sync.onStatus(() => { const el = $('#sync-line'); if (el) el.textContent = syncText(); refreshTop(); });
+    Sync.start({ url: sy.url, token: sy.token, device: st.device, mine, apply: mergeRemote, meta: () => ({ role: role() || 'kids', name: deviceName() }) });
+  }
+  function syncText() {
+    const s = Sync.status();
+    if (!s.enabled) return 'Scores stay on this device: no sync address in this build.';
+    if (s.error === 'offline') return 'Offline: scores sync when back online.' + (s.dirty ? ' Changes waiting.' : '');
+    if (s.error) return 'Sync problem: ' + s.error;
+    if (s.busy) return 'Syncing…';
+    if (!s.last) return 'Not synced yet.';
+    const m = Math.round((Date.now() - s.last) / 60000);
+    return `Synced ${m < 1 ? 'just now' : m + ' min ago'} · ${s.devices} device${s.devices === 1 ? '' : 's'}${s.dirty ? ' · changes waiting' : ''}`;
+  }
 
   /* ---------------------------------------------------------------- trip helpers */
   function dayCity(d) {
@@ -181,7 +339,6 @@ window.Quests = (() => {
     if (/nagoya/i.test(w)) return 'Nagoya';                       // the LEGOLAND day trip gets its own stamp
     const tail = w.includes('→') ? w.split('→').pop() : w;
     for (const c of CITIES) if (tail.toLowerCase().includes(c.toLowerCase())) return c;
-    if (/nagoya/i.test(w)) return 'Nagoya';
     if (/home|townsville|cairns/i.test(tail)) return 'Home';
     for (const c of CITIES) if (w.toLowerCase().includes(c.toLowerCase())) return c;
     return 'Home';
@@ -225,58 +382,77 @@ window.Quests = (() => {
     return out;
   }
   function checkNewBadges(ctx) {
-    /* celebrate badges the active player has earned since we last looked (once per device) */
-    const st = state(), pl = st.players[st.active];
-    const fresh = badges(pl, ctx).filter((b) => b.earned && !(pl.seen || {})[b.id]);
+    /* celebrate badges the active player has earned since this device last looked */
+    const st = state(), p = st.active, pl = view(st, p);
+    const fresh = badges(pl, ctx).filter((b) => b.earned && !st.seen[p + '|' + b.id]);
     if (!fresh.length) return;
-    pl.seen = pl.seen || {};
-    for (const b of fresh) pl.seen[b.id] = ctx.date;
+    for (const b of fresh) st.seen[p + '|' + b.id] = ctx.date;
     save(st);
     const b = fresh[0];
-    celebrate(b.e, fresh.length > 1 ? `${fresh.length} new badges` : 'New badge', b.t + (fresh.length > 1 ? ' and more' : ''), st.active);
+    celebrate(b.e, fresh.length > 1 ? `${fresh.length} new badges` : 'New badge', b.t + (fresh.length > 1 ? ' and more' : ''), p);
   }
 
   /* ---------------------------------------------------------------- views */
   function summary(ctx) {
-    const st = state(), pl = st.players[st.active], pts = points(pl), lv = level(pts);
+    const st = state(), pl = view(st, st.active), pts = points(pl), lv = level(pts);
     const todays = available(ctx, pl).filter((q) => !q.done);
     return { player: st.active, name: label(st.active), avatar: pl.avatar, points: pts, level: lv, todayLeft: todays.length,
-      stamps: badges(pl, ctx).filter((b) => b.kind === 'stamp' && b.earned).length, stampsTotal: Object.keys(firstDates()).length };
+      stamps: badges(pl, ctx).filter((b) => b.kind === 'stamp' && b.earned).length, stampsTotal: Object.keys(firstDates()).length,
+      pending: isParentDevice() ? pendingAll(st).length : pl.pending.length, role: role() };
   }
   function available(ctx, pl) {
     const here = ctx.before ? 'home' : ctx.city;
-    return QUESTS.filter((q) => q.where === 'any' || q.where === here || (ctx.before && q.where === 'home')).map((q) => ({
-      ...q, done: q.daily ? doneToday(pl, q.id, ctx.date) : doneCount(pl, q.id) > 0 }));
+    return QUESTS.filter((q) => (q.where === 'any' || q.where === here || (ctx.before && q.where === 'home')) && !(q.parents && !isParentDevice()))
+      .map((q) => ({ ...q, done: q.daily ? doneToday(pl, q.id, ctx.date) : doneCount(pl, q.id) > 0 }));
   }
   function playerChips(st, ctx) {
-    return `<div class="players">` + people().map((p) => { const pl = st.players[p], pts = points(pl); return `<button class="player${p === st.active ? ' active' : ''}" data-player="${esc(p)}"><span class="av">${pl.avatar}</span><span class="nm">${esc(label(p))}</span><span class="pt">${pts} pts</span></button>`; }).join('') + `</div>`;
+    const eff = effective(st);
+    return `<div class="players">` + visiblePlayers().map((p) => { const pl = view(st, p, eff), pts = points(pl); return `<button class="player${p === st.active ? ' active' : ''}" data-player="${esc(p)}"><span class="av">${pl.avatar}</span><span class="nm">${esc(label(p))}</span><span class="pt">${pts} pts</span></button>`; }).join('') + `</div>`;
   }
-  function questCard(q, ctx, player) {
-    const cls = 'quest' + (q.done ? ' done' : '');
-    const btn = q.done
-      ? `<button class="qbtn undo" data-undo="${q.id}">Undo</button>`
-      : `<button class="qbtn go" data-do="${q.id}">Done!</button>`;
-    return `<div class="${cls}"><span class="qe">${q.e}</span><div class="qt"><div class="qn">${esc(q.t)}</div><div class="qp">${q.daily ? 'every day · ' : ''}${q.pts} pts${q.done ? ' · ✓ done' : ''}</div></div>${btn}</div>`;
+  function itemState(pl, q, date) {    // the live tick for a quest card, if any
+    return pl.items.find((it) => it.kind === 'tick' && it.id === q.id && (!q.daily || it.date === date)) || null;
+  }
+  function questCard(q, ctx, player, pl) {
+    const it = itemState(pl, q, ctx.date);
+    const cls = 'quest' + (it ? (it.counted ? ' done' : it.rejected ? ' rejected' : ' pending') : '');
+    const status = !it ? '' : it.counted ? ' · ✓ done' : it.rejected ? ` · ✗ ${esc(it.okBy || 'a parent')} said not this time` : ' · ⏳ waiting for Mum or Dad';
+    const btn = it ? `<button class="qbtn undo" data-undo="${q.id}">Undo</button>` : `<button class="qbtn go" data-do="${q.id}">Done!</button>`;
+    return `<div class="${cls}"><span class="qe">${q.e}</span><div class="qt"><div class="qn">${esc(q.t)}</div><div class="qp">${q.daily ? 'every day · ' : ''}${q.pts} pts${needsVerify(q) && !isParentDevice() ? ' · parent checks' : ''}${status}</div></div>${btn}</div>`;
+  }
+  function roleCard() {
+    const cur = role();
+    const pill = (r, who, text) => `<button class="pill${cur === r && (r !== 'parent' || owner() === who) ? ' active' : ''}" data-role="${r}" data-who="${who}">${text}</button>`;
+    return `<div class="card rolecard"><div class="h3">Whose device is this?</div><p class="small muted">A parent phone can tick for everyone and approves the kids' food and words quests. The kids' device shows only the kids. Becoming a parent phone asks for the device PIN.</p><div class="row">${parents().map((p) => pill('parent', p, `📱 ${esc(label(p))}'s phone`)).join('')}${pill('kids', '', "🧒 Kids' device")}</div></div>`;
+  }
+  function approvalsCard(st) {
+    const pend = pendingAll(st);
+    if (!isParentDevice() || !pend.length) return '';
+    const eff = effective(st);
+    return `<div class="card approvals"><div class="h3">⏳ Waiting for a parent (${pend.length})</div>` + pend.map((it) => `<div class="approve-row"><span class="qe">${it.e}</span><div class="qt"><div class="qn">${view(st, it.player, eff).avatar} ${esc(label(it.player))}: ${esc(it.title)}</div><div class="qp">${it.pts} pts · ${esc(fmtDate(it.date))}</div></div><button class="qbtn yes" data-ok="${esc(it.key)}" aria-label="Approve">✓</button><button class="qbtn no" data-no="${esc(it.key)}" aria-label="Not this time">✗</button></div>`).join('') + `</div>`;
   }
   function renderQuests() {
-    const ctx = currentContext(), st = state(), player = st.active, pl = st.players[player];
+    const ctx = currentContext(), st = state(), player = st.active, eff = effective(st), pl = view(st, player, eff);
     const pts = points(pl), lv = level(pts);
     const here = ctx.before ? 'Before we go' : `Here in ${ctx.city}`;
     const avail = available(ctx, pl);
     const todays = avail.filter((q) => q.where !== 'any').concat(avail.filter((q) => q.where === 'any' && q.kind === 'travel'));
     const dailies = avail.filter((q) => q.daily);
     const helpers = avail.filter((q) => q.where === 'any' && !q.daily && q.kind !== 'travel');
-    let html = `<h1 class="h1">🏆 Quests</h1>` + playerChips(st, ctx);
-    html += `<div class="levelcard"><div class="lv-top"><span class="lv-av">${pl.avatar}</span><div><div class="lv-name">${esc(label(player))} · ${lv.emoji} ${esc(lv.name)}</div><div class="lv-pts">${pts} points${lv.next ? ` · ${lv.next - pts} to ${esc(lv.nextName)}` : ' · top level!'}</div></div></div><div class="bar"><i style="width:${lv.pct}%"></i></div></div>`;
+    let html = `<h1 class="h1">🏆 Quests</h1>`;
+    if (!role()) html += roleCard();
+    html += approvalsCard(st);
+    html += playerChips(st, ctx);
+    html += `<div class="levelcard"><div class="lv-top"><span class="lv-av">${pl.avatar}</span><div><div class="lv-name">${esc(label(player))} · ${lv.emoji} ${esc(lv.name)}</div><div class="lv-pts">${pts} points${lv.next ? ` · ${lv.next - pts} to ${esc(lv.nextName)}` : ' · top level!'}${pl.pending.length ? ` · ⏳ ${pl.pending.length} waiting` : ''}</div></div></div><div class="bar"><i style="width:${lv.pct}%"></i></div></div>`;
     html += `<div class="row"><button class="btn block" data-go-passport>📘 Passport and badges</button></div>`;
-    html += `<div class="foodcard"><span class="qe">🍽️</span><div class="qt"><div class="qn">Tried a new food?</div><div class="qp">${FOOD_PTS} pts each · ${(pl.foods || []).length} so far</div></div><button class="qbtn go" id="food-add">+1</button></div>`;
-    if (todays.length) html += `<h2 class="h2">${esc(here)}</h2>` + todays.map((q) => questCard(q, ctx, player)).join('');
-    html += `<h2 class="h2">Every day</h2>` + dailies.map((q) => questCard(q, ctx, player)).join('');
-    if (helpers.length) html += `<h2 class="h2">Any time</h2>` + helpers.map((q) => questCard(q, ctx, player)).join('');
+    html += `<div class="foodcard"><span class="qe">🍽️</span><div class="qt"><div class="qn">Tried a new food?</div><div class="qp">${FOOD_PTS} pts each · ${pl.foods.length} so far${isParentDevice() ? '' : ' · parent checks'}</div></div><button class="qbtn go" id="food-add">+1</button></div>`;
+    if (todays.length) html += `<h2 class="h2">${esc(here)}</h2>` + todays.map((q) => questCard(q, ctx, player, pl)).join('');
+    html += `<h2 class="h2">Every day</h2>` + dailies.map((q) => questCard(q, ctx, player, pl)).join('');
+    if (helpers.length) html += `<h2 class="h2">Any time</h2>` + helpers.map((q) => questCard(q, ctx, player, pl)).join('');
     const others = CITIES.filter((c) => c !== ctx.city);
-    html += `<h2 class="h2">Coming up</h2>` + others.map((c) => { const qs = QUESTS.filter((q) => q.where === c); return qs.length ? `<details><summary>${CITY_EMOJI[c]} ${esc(c)} <span class="chip">${qs.filter((q) => doneCount(pl, q.id)).length} / ${qs.length}</span></summary>${qs.map((q) => questCard({ ...q, done: doneCount(pl, q.id) > 0 }, ctx, player)).join('')}</details>` : ''; }).join('');
-    if ((pl.foods || []).length) html += `<details><summary>🍽️ New foods tried <span class="chip">${pl.foods.length}</span></summary><ul class="list">${pl.foods.map((f, i) => `<li>${esc(f.what || 'Something new')} <span class="muted small">· ${esc(fmtDate(f.date))}</span> <button class="qbtn undo small-undo" data-food-undo="${i}">Undo</button></li>`).join('')}</ul></details>`;
-    html += `<p class="tiny muted">Scores live on this device only. Mum and Dad can tick quests for the kids.</p>`;
+    html += `<h2 class="h2">Coming up</h2>` + others.map((c) => { const qs = QUESTS.filter((q) => q.where === c); return qs.length ? `<details><summary>${CITY_EMOJI[c]} ${esc(c)} <span class="chip">${qs.filter((q) => doneCount(pl, q.id)).length} / ${qs.length}</span></summary>${qs.map((q) => questCard(q, ctx, player, pl)).join('')}</details>` : ''; }).join('');
+    const foodItems = pl.items.filter((it) => it.kind === 'food');
+    if (foodItems.length) html += `<details><summary>🍽️ New foods tried <span class="chip">${pl.foods.length}</span></summary><ul class="list">${foodItems.map((it) => `<li>${esc(it.what || 'Something new')} <span class="muted small">· ${esc(fmtDate(it.date))}${it.pending ? ' · ⏳ waiting' : it.rejected ? ' · ✗ not this time' : ''}</span> <button class="qbtn undo small-undo" data-food-undo="${esc(it.key)}">Undo</button></li>`).join('')}</ul></details>`;
+    html += `<p class="tiny muted" id="sync-line">${esc(syncText())}</p>`;
     const el = $('#screen-quests'); el.innerHTML = html;
     wire(el, ctx, player);
   }
@@ -284,12 +460,24 @@ window.Quests = (() => {
     el.querySelectorAll('[data-player]').forEach((b) => b.onclick = () => { setActive(b.dataset.player); afterChange(); });
     el.querySelectorAll('[data-do]').forEach((b) => b.onclick = () => complete(player, b.dataset.do, ctx.date));
     el.querySelectorAll('[data-undo]').forEach((b) => b.onclick = () => undo(player, b.dataset.undo, ctx.date));
-    el.querySelectorAll('[data-food-undo]').forEach((b) => b.onclick = () => removeFood(player, +b.dataset.foodUndo));
-    const fa = el.querySelector('#food-add'); if (fa) fa.onclick = () => { const what = prompt('What did you try?') ; if (what !== null) addFood(player, what.trim(), ctx.date); };
+    el.querySelectorAll('[data-food-undo]').forEach((b) => b.onclick = () => removeFood(player, b.dataset.foodUndo));
+    el.querySelectorAll('[data-ok]').forEach((b) => b.onclick = () => approve(b.dataset.ok, true));
+    el.querySelectorAll('[data-no]').forEach((b) => b.onclick = () => approve(b.dataset.no, false));
+    el.querySelectorAll('[data-role]').forEach((b) => b.onclick = () => chooseRole(b.dataset.role, b.dataset.who));
+    const fa = el.querySelector('#food-add'); if (fa) fa.onclick = () => { const what = prompt('What did you try?'); if (what !== null) addFood(player, what.trim(), ctx.date); };
     const gp = el.querySelector('[data-go-passport]'); if (gp) gp.onclick = () => show('passport');
   }
+  async function chooseRole(r, who) {
+    if (r === 'parent') {
+      const pin = prompt(`Device PIN to make this ${label(who)}'s phone:`);
+      if (pin === null) return;
+      if (!(await verifyPin(pin))) { alert('That is not the PIN.'); return; }
+    }
+    setRole(r, who);
+    afterChange();
+  }
   function renderPassport() {
-    const ctx = currentContext(), st = state(), player = st.active, pl = st.players[player];
+    const ctx = currentContext(), st = state(), player = st.active, pl = view(st, player);
     const all = badges(pl, ctx), pts = points(pl), lv = level(pts);
     const stamps = all.filter((b) => b.kind === 'stamp'), rest = all.filter((b) => b.kind !== 'stamp');
     let html = `<h1 class="h1">📘 Passport</h1>` + playerChips(st, ctx);
@@ -301,24 +489,31 @@ window.Quests = (() => {
     wire(el, ctx, player);
   }
   function settingsCard() {
-    const st = state();
-    // Avatars are picked from a grid of buttons (a <select> was one more native control that phones tapped past).
-    return `<div class="card"><div class="h3">Quest players</div><p class="small muted">Tap a face to change it.</p>` + people().map((p) => `<button class="avrow" data-avatar="${esc(p)}" aria-label="Change ${esc(label(p))}'s avatar"><span class="av big-av">${st.players[p].avatar}</span><b>${esc(label(p))}</b><span class="muted small">${points(st.players[p])} pts</span><span class="muted small avgo">Change ›</span></button>`).join('') +
-      `<button class="btn block" id="opt-quests-reset">Reset all quest progress on this device</button></div>`;
+    const st = state(), eff = effective(st);
+    const devices = Object.values(st.devices || {}).filter((d) => d && d.name).map((d) => d.name);
+    return roleCard() +
+      `<div class="card"><div class="h3">Quest players</div><p class="small muted">Tap a face to change it.</p>` +
+      visiblePlayers().map((p) => { const pl = view(st, p, eff); return `<button class="avrow" data-avatar="${esc(p)}" aria-label="Change ${esc(label(p))}'s avatar"><span class="av big-av">${pl.avatar}</span><b>${esc(label(p))}</b><span class="muted small">${points(pl)} pts</span><span class="muted small avgo">Change ›</span></button>`; }).join('') +
+      `<div class="syncline" id="sync-line">${esc(syncText())}</div>${devices.length ? `<div class="tiny muted">Other devices seen: ${esc(devices.join(', '))}</div>` : ''}` +
+      `<div class="row"><button class="btn" id="opt-sync-now">Sync now</button>${isParentDevice() ? `<button class="btn" id="opt-quests-reset">Reset all quest progress</button>` : ''}</div></div>`;
   }
   function wireSettings(root) {
     root.querySelectorAll('[data-avatar]').forEach((b) => b.onclick = () => openAvatarPicker(b.dataset.avatar));
-    const r = root.querySelector('#opt-quests-reset'); if (r) r.onclick = () => { if (confirm('Reset every player\'s points, quests and badges on this device?')) { reset(); renderSettings(); refreshTop(); } };
+    root.querySelectorAll('[data-role]').forEach((b) => b.onclick = () => chooseRole(b.dataset.role, b.dataset.who));
+    const sn = root.querySelector('#opt-sync-now'); if (sn) sn.onclick = () => Sync.sync();
+    const r = root.querySelector('#opt-quests-reset'); if (r) r.onclick = () => { if (confirm('Reset every player\'s points, quests and badges on every device?')) { reset(); renderSettings(); refreshTop(); } };
   }
   function openAvatarPicker(p) {
-    const st = state(), cur = st.players[p].avatar;
+    const st = state(), cur = view(st, p).avatar;
     openModal(`<h2 class="h2">${esc(label(p))}: pick a face</h2><div class="avgrid">` + AVATARS.map((a) => `<button class="avpick${a === cur ? ' active' : ''}" data-pick="${a}">${a}</button>`).join('') + `</div>`);
     $('#modal-inner').querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => { setAvatar(p, b.dataset.pick); closeModal(); refreshTop(); renderSettings(); });
   }
   function refreshTop() {
     const el = $('#top-points'); if (!el || !S.family) return;
-    const st = state(), pl = st.players[st.active];
+    const st = state(), pl = view(st, st.active);
     el.textContent = `${pl.avatar} ${points(pl)}`;
+    const badge = $('#nav-quests-badge');
+    if (badge) { const n = isParentDevice() ? pendingAll(st).length : 0; badge.textContent = n ? String(n) : ''; badge.classList.toggle('hidden', !n); }
   }
 
   /* ---------------------------------------------------------------- party */
@@ -333,6 +528,7 @@ window.Quests = (() => {
     p.onclick = () => p.classList.add('hidden');
   }
 
-  return { QUESTS, CITY_EMOJI, CITY_KEY, CITIES, dayCity, daysBetween, state, label, setActive, complete, undo, addFood, summary, badges,
-    checkNewBadges, renderQuests, renderPassport, settingsCard, wireSettings, refreshTop, celebrate, reset };
+  return { QUESTS, CITY_EMOJI, CITY_KEY, CITIES, dayCity, daysBetween, state, label, setActive, complete, undo, addFood, approve, summary, badges,
+    checkNewBadges, renderQuests, renderPassport, settingsCard, wireSettings, refreshTop, celebrate, reset, startSync, mergeRemote, mine,
+    role, setRole, isParentDevice, pendingAll, view, points };
 })();

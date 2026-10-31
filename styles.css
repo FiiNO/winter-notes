@@ -224,6 +224,19 @@ details .quest { margin: 6px 0; }
 .sw-text { flex: 1 1 auto; }
 .sw-state { flex: 0 0 auto; font-size: 0.78em; font-weight: 800; text-transform: uppercase; color: var(--muted); }
 .switch.on .sw-state { color: var(--city); }
+/* quests: roles, approvals and sync (31 Oct, later) */
+.nav button { position: relative; }
+.nbadge { position: absolute; top: 4px; right: 12%; background: var(--red); color: #fff; font-size: 0.78em; font-weight: 900; border-radius: 999px; padding: 1px 7px; min-width: 20px; line-height: 1.4; }
+.quest.pending { border-style: dashed; border-color: var(--c-newyork); }
+.quest.rejected { opacity: 0.65; }
+.approvals { border-color: var(--c-newyork); }
+.approve-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
+.approve-row:first-of-type { border-top: 0; }
+.approve-row .qt { flex: 1 1 auto; min-width: 0; }
+.qbtn.yes { background: var(--c-home); color: #fff; min-width: 52px; }
+.qbtn.no { background: var(--red); color: #fff; min-width: 52px; }
+.rolecard .row .pill { min-height: 48px; padding: 8px 14px; }
+.syncline { font-size: 0.82em; color: var(--muted); font-weight: 700; margin-top: 10px; }
 .pv-strip { margin: 8px 0 4px; }
 .pv-strip .day { min-width: 58px; }
 .btn[disabled] { opacity: 0.4; }

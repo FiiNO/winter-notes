@@ -227,8 +227,11 @@ function enterApp() {
   Quests.refreshTop();
   show('home');
   Quests.checkNewBadges(currentContext());
+  Quests.startSync();                                // no-op unless the family blob carries a sync address
   checkForUpdate();
 }
+/* the device PIN, re-used as the gate for making a device a parent phone (same try counter as the lock screen) */
+async function verifyPin(pin) { const r = await checkPin('family', String(pin || '')); return r === 'ok' || r === 'nopin'; }
 
 /* ------------------------------------------------------------------ rendering */
 function renderAll() { rerender(); renderMap(); }
@@ -292,7 +295,7 @@ function renderHome() {
   }
   const day = dayOf(ctx.date), ev = eventsOn(ctx.date);
   if (day) html += `<button class="tile ht wide t3" data-day="${day.date}"><span class="ico">${ev.length ? '🎟️' : '📅'}</span><span class="tt">Today${ev.length ? ' · ' + esc(ev[0].time) + ' ' + esc(ev[0].event) : ''}</span><span class="ts">${esc(day.plan)}</span>${day.heads_up ? `<span class="ts small">⚠️ ${esc(day.heads_up)}</span>` : ''}</button>`;
-  html += `<button class="tile ht t7" data-go="quests"><span class="ico">🏆</span><span class="tt">Quests</span><span class="ts">${q.avatar} ${esc(q.name)} · ${q.points} pts · ${q.level.emoji} ${esc(q.level.name)}</span><span class="ts small">${q.todayLeft} to do today</span></button>`;
+  html += `<button class="tile ht t7" data-go="quests"><span class="ico">🏆</span><span class="tt">Quests</span><span class="ts">${q.avatar} ${esc(q.name)} · ${q.points} pts · ${q.level.emoji} ${esc(q.level.name)}</span><span class="ts small">${q.pending && q.role === 'parent' ? `⏳ ${q.pending} to approve` : `${q.todayLeft} to do today`}</span></button>`;
   html += `<button class="tile ht t8" data-go="passport"><span class="ico">📘</span><span class="tt">Passport</span><span class="ts">${q.stamps} of ${q.stampsTotal} stamps</span><span class="ts small">Badges and levels</span></button>`;
   html += `<button class="tile ht t4" data-taxi="${esc(ctx.stay ? (ctx.stay.ja_id || 'stay-' + ctx.stay.n) : '')}"><span class="ico">🚕</span><span class="tt">Taxi card</span><span class="ts">${ctx.stay ? "Show the driver tonight's bed" : 'All cards and phrases'}</span></button>`;
   const mob = ((F.trip || {}).family || {}).mobiles || {};

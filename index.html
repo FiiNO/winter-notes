@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
 <link rel="stylesheet" href="styles.css">
 </head>
-<body data-version="v12" data-built="31 Oct 2026">
+<body data-version="v13" data-built="31 Oct 2026">
 
 <header class="top" id="top">
   <div class="brand"><span class="logo" aria-hidden="true">🧭</span><span class="stamp">Travel Dossier<span class="edition" id="top-edition"> · Family</span></span></div>
@@ -77,7 +77,7 @@
 <nav id="nav" class="nav hidden" aria-label="Sections">
   <button data-screen="home"><span class="ico">🏠</span><span>Home</span></button>
   <button data-screen="map"><span class="ico">🗺️</span><span>Map</span></button>
-  <button data-screen="quests"><span class="ico">🏆</span><span>Quests</span></button>
+  <button data-screen="quests"><span class="ico">🏆</span><span>Quests</span><span class="nbadge hidden" id="nav-quests-badge"></span></button>
   <button data-screen="book"><span class="ico">📖</span><span>Book</span></button>
   <button data-screen="sos"><span class="ico">🆘</span><span>SOS</span></button>
 </nav>
@@ -89,6 +89,7 @@
 <div id="party" class="party hidden" aria-live="polite"></div>
 
 <script src="vendor/pmtiles.js"></script>
+<script src="sync.js"></script>
 <script src="quests.js"></script>
 <script src="app.js"></script>
 <script type="module" src="map.js"></script>

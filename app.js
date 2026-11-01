@@ -36,6 +36,14 @@ function tel(text) {
   });
 }
 const nl = (s) => esc(s).replace(/\n/g, '<br>');
+/* An Australian mobile typed as 04xx xxx xxx becomes +61 4xx xxx xxx: that is what a police officer in Tokyo or a shop in
+   Whistler can dial as written (1 Nov 2026, Andy: a memorised 04 number is no use abroad). */
+function intlNum(n) {
+  const d = String(n || '').replace(/[^\d+]/g, '');
+  if (/^04\d{8}$/.test(d)) return `+61 ${d.slice(1, 4)} ${d.slice(4, 7)} ${d.slice(7)}`;
+  if (/^\+614\d{8}$/.test(d)) return `+61 ${d.slice(3, 6)} ${d.slice(6, 9)} ${d.slice(9)}`;
+  return String(n || '');
+}
 function kv(rows) {
   return '<div class="kv">' + rows.filter((r) => r[1] !== undefined && r[1] !== null && String(r[1]) !== '').map(([k, v, raw]) =>
     `<div class="k">${esc(k)}</div><div class="v">${raw ? v : tel(v)}</div>`).join('') + '</div>';
@@ -61,10 +69,11 @@ function phraseCard(p, show) {
 }
 function coordLine(c) { return c && c.lat != null && c.lat !== '' ? `${(+c.lat).toFixed(5)}, ${(+c.lon).toFixed(5)}` : ''; }
 function show(screen) {
+  if (S.screen !== screen && window.Journal) Journal.onLeave(S.screen);
   document.querySelectorAll('.screen').forEach((el) => el.classList.add('hidden'));
   const el = $('#screen-' + screen);
   if (el) { el.classList.remove('hidden'); if (S.screen !== screen) { el.classList.add('enter'); clearTimeout(el._enter); el._enter = setTimeout(() => el.classList.remove('enter'), 1100); } }
-  const BOOK = ['days', 'moves', 'stays', 'taxi', 'protocols', 'vault', 'settings', 'gates'], QUEST = ['quests', 'passport'];
+  const BOOK = ['days', 'moves', 'stays', 'taxi', 'protocols', 'vault', 'settings', 'gates', 'story', 'page'], QUEST = ['quests', 'passport'];
   document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.screen === screen || (b.dataset.screen === 'book' && BOOK.includes(screen)) || (b.dataset.screen === 'quests' && QUEST.includes(screen))));
   S.screen = screen;
   window.scrollTo(0, 0);
@@ -76,6 +85,8 @@ function show(screen) {
   if (screen === 'gates') renderGates();
   if (screen === 'vault') renderVault();
   if (screen === 'settings') renderSettings();
+  if (screen === 'page') Journal.renderPage();
+  if (screen === 'story') Journal.renderStory();
   if (screen === 'map') mountMap();
   if (window.DossierMap) window.DossierMap.setVisible(screen === 'map');
 }
@@ -120,12 +131,20 @@ function nextMove(ctx) {
 }
 
 /* ------------------------------------------------------------------ IndexedDB key store */
+let dbOpen = null;                                  // one connection, shared with media.js
 function idb() {
-  return new Promise((res, rej) => {
-    const r = indexedDB.open('dossier', 1);
-    r.onupgradeneeded = () => r.result.createObjectStore('kv');
-    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  if (dbOpen) return dbOpen;
+  dbOpen = new Promise((res, rej) => {
+    const r = indexedDB.open('dossier', 2);           // v2 (1 Nov 2026): the media store for photos and drawings
+    r.onupgradeneeded = () => {
+      const db = r.result;
+      if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
+      if (!db.objectStoreNames.contains('media')) db.createObjectStore('media', { keyPath: 'id' });
+    };
+    r.onsuccess = () => { const db = r.result; db.onversionchange = () => { db.close(); dbOpen = null; }; res(db); };
+    r.onerror = () => { dbOpen = null; rej(r.error); };
   });
+  return dbOpen;
 }
 async function kvGet(k) { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction('kv').objectStore('kv').get(k); t.onsuccess = () => res(t.result); t.onerror = () => rej(t.error); }); }
 async function kvSet(k, v) { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite').objectStore('kv').put(v, k); t.onsuccess = () => res(); t.onerror = () => rej(t.error); }); }
@@ -133,7 +152,7 @@ async function kvDel(k) { const db = await idb(); return new Promise((res, rej) 
 
 /* ------------------------------------------------------------------ crypto */
 const b64d = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
-const b64e = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const b64e = (buf) => { const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 8192) s += String.fromCharCode.apply(null, u.subarray(i, i + 8192)); return btoa(s); };
 async function loadEnvelope(edition) { const r = await fetch(`./${edition}.enc`); if (!r.ok) throw new Error(`${edition}.enc not found`); return r.json(); }
 async function deriveKey(passphrase, env) {
   const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(passphrase), 'PBKDF2', false, ['deriveKey']);
@@ -160,6 +179,7 @@ async function checkPin(edition, pin) {
 }
 async function forgetDevice() {
   for (const k of ['key:family', 'key:vault', 'pin:family', 'pin:vault']) await kvDel(k);
+  try { await Media.wipe(); } catch (e) { /* no media store yet */ }
   localStorage.clear();
   location.reload();
 }
@@ -220,7 +240,10 @@ ui.fpin.onsubmit = async (e) => {
   unlockError(r === 'nopin' ? 'No PIN set.' : `Wrong PIN. ${r.split(':')[1]} tries left before the passphrase is needed again.`);
 };
 
-function enterApp() {
+async function enterApp() {
+  const sy = (S.family.trip || {}).sync || {};
+  await Media.init(sy.media); delete sy.media;       // the raw media key leaves the plaintext family object at once
+  Journal.init();
   $('#screen-unlock').classList.add('hidden');
   $('#nav').classList.remove('hidden');
   renderAll();
@@ -299,15 +322,23 @@ function renderHome() {
   html += `<button class="tile ht t8" data-go="passport"><span class="ico">📘</span><span class="tt">Passport</span><span class="ts">${q.stamps} of ${q.stampsTotal} stamps</span><span class="ts small">Badges and levels</span></button>`;
   html += `<button class="tile ht t4" data-taxi="${esc(ctx.stay ? (ctx.stay.ja_id || 'stay-' + ctx.stay.n) : '')}"><span class="ico">🚕</span><span class="tt">Taxi card</span><span class="ts">${ctx.stay ? "Show the driver tonight's bed" : 'All cards and phrases'}</span></button>`;
   const mob = ((F.trip || {}).family || {}).mobiles || {};
-  const calls = [['Mum', mob.sarah], ['Dad', mob.andy], ctx.stay && ctx.stay.phone ? ['Host', ctx.stay.phone] : null, ['Emergency', EMERGENCY_NUMBER[ctx.country]]].filter((c) => c && c[1]);
+  const calls = [['Mum', intlNum(mob.sarah)], ['Dad', intlNum(mob.andy)], ctx.stay && ctx.stay.phone ? ['Host', ctx.stay.phone] : null, ['Emergency', EMERGENCY_NUMBER[ctx.country]]].filter((c) => c && c[1]);
   html += `<button class="tile ht t5" data-call="1"><span class="ico">📞</span><span class="tt">Call</span><span class="ts">${calls.map((c) => esc(c[0])).join(' · ') || 'Numbers'}</span></button>`;
   html += `<button class="tile ht wide t6" data-kid="1"><span class="ico">🙋</span><span class="tt">I'm lost</span><span class="ts">Your own card: big words, Mum and Dad's numbers, what to say</span></button>`;
+  html += Journal.todayTileHtml(ctx);
   html += `</div>`;
-  if (!localStorage.getItem(photoKey) && !ctx.before) html += `<div class="photo-reminder"><div><b>📸 Morning photo</b><br><span class="small">Snap each kid in today's clothes.</span></div><button id="photo-done">Done</button></div>`;
+  const morning = Media.enabled ? Journal.index().filter((m) => m.k === 'photo' && m.tag === 'morning' && m.d === ctx.date).length : 0;
+  if (!ctx.before && (!Quests.role() || Quests.isParentDevice())) {
+    const snap = Media.enabled ? `<button id="photo-snap">📷 Snap</button>` : '';
+    if (morning || localStorage.getItem(photoKey)) html += `<div class="photo-reminder done"><div><b>📸 ${morning ? `${morning} morning photo${morning === 1 ? '' : 's'} in the app` : 'Morning photo done'}</b><br><span class="small">${morning ? 'Ready on the lost-kid card, on every parent phone.' : 'Snap one into the app for the lost-kid card?'}</span></div>${snap}</div>`;
+    else html += `<div class="photo-reminder"><div><b>📸 Morning photo</b><br><span class="small">Snap each kid in today's clothes.</span></div>${snap}<button id="photo-done">Done</button></div>`;
+  }
   html += `<button class="btn danger block sos" id="home-sos">🆘 SOS · lost kid · sick · disasters</button>`;
   html += `<p class="tiny muted">Built ${esc(BUILT)} · ${esc(VERSION)}${S.preview ? ' · previewing ' + esc(S.preview) + ' (clear it in Settings)' : ''}</p>`;
   const el = $('#screen-home'); el.innerHTML = html;
   const pd = $('#photo-done'); if (pd) pd.onclick = () => { localStorage.setItem(photoKey, '1'); Quests.complete(Quests.state().active, 'photo', ctx.date); renderHome(); };
+  const ps = $('#photo-snap'); if (ps) ps.onclick = () => Journal.addPhoto(Quests.state().active, ctx.date, 'morning', true).then((id) => { if (!id) return; localStorage.setItem(photoKey, '1'); if (Quests.isParentDevice()) Quests.complete(Quests.state().active, 'photo', ctx.date); renderHome(); });
+  el.querySelectorAll('[data-page]').forEach((b) => b.onclick = () => Journal.openPage(Quests.state().active, ctx.date));
   $('#home-sos').onclick = () => show('sos');
   el.querySelectorAll('[data-day]').forEach((b) => b.onclick = () => openDay(b.dataset.day));
   el.querySelectorAll('[data-taxi]').forEach((b) => b.onclick = () => { if (b.dataset.taxi) openTaxiById(b.dataset.taxi); else show('taxi'); });
@@ -327,6 +358,7 @@ function renderBook() {
   const items = [['days', '📅', 'Days', 'The plan, day by day'], ['moves', '✈️', 'Moves', 'Flights, trains, buses, taxis'], ['stays', '🛏️', 'Stays', 'Every bed, check-in times'],
     ['taxi', '🚕', 'Taxi cards', 'Japanese and French, phrases'], ['map', '🗺️', 'Map', 'Offline maps, places, GPS'], ['protocols', '📋', 'Protocols', 'Lost kid, PACE, phone stolen'],
     ['gates', '✅', 'Before we go', "Mum and Dad's to-do list"], ['quests', '🏆', 'Quests', 'Points, levels, new foods'], ['passport', '📘', 'Passport', 'Stamps and badges'],
+    ['story', '📖', 'Our story', 'Photos, pages and stamps, day by day'], ['page', '📓', "Today's page", 'A mood, one line, a drawing'],
     ['vault', '🔒', 'Vault', 'PINs and document numbers'], ['settings', '⚙️', 'Settings', 'Theme, text size, players']];
   $('#screen-book').innerHTML = `<h1 class="h1">📖 Book</h1><div class="book">` + items.filter((i) => !(i[0] === 'vault' && settings.readerMode)).map((i, k) => `<button class="bk c${k % 8}" data-go="${i[0]}"><span class="ico">${i[1]}</span><span class="tt">${esc(i[2])}</span><span class="ts">${esc(i[3])}</span></button>`).join('') + `</div>`;
   wireGo($('#screen-book'));
@@ -396,12 +428,12 @@ function openLostKid() {
     const onMap = (k) => (F.overlay.features || []).some((f) => f.properties.id === 'koban-' + k.venue_id) ? ` <a class="btn small-btn" href="#" data-focus="koban-${esc(k.venue_id)}">Map</a>` : '';
     html += `<div class="card"><div class="h3">Nearest police box</div>${stayKoban ? `<div>${tel(stayKoban.note)}${onMap(stayKoban)}</div>` : ''}${kobans.filter((k) => k !== stayKoban).slice(0, 4).map((k) => `<div class="small muted" style="margin-top:6px">${esc(k.venue_id)}: ${tel(k.note)}${onMap(k)}</div>`).join('')}</div>`;
   }
-  html += `<div class="card red"><b>This morning's photo</b>: open Photos now and have it ready to show.</div>`;
-  openModal(html); wireGo($('#modal-inner')); wireSay($('#modal-inner'));
+  html += Journal.morningHtml(ctx.date) || `<div class="card red"><b>This morning's photo</b>: open Photos now and have it ready to show.</div>`;
+  openModal(html); wireGo($('#modal-inner')); wireSay($('#modal-inner')); Journal.fill($('#modal-inner'));
 }
 function openKidCard() {
   const F = S.family, ctx = currentContext(), kc = (F.protocols || {}).kid_card || {}, mob = ((F.trip || {}).family || {}).mobiles || {};
-  const nums = [['Mum', mob.sarah], ['Dad', mob.andy]].filter((x) => x[1]);
+  const nums = [['Mum', intlNum(mob.sarah)], ['Dad', intlNum(mob.andy)]].filter((x) => x[1]);
   let html = `<div class="kid-card"><h1 class="h1">🙋 ${esc(kc.title || "I'm lost")}</h1>${stepsList(kc.steps, ctx)}`;
   html += sayLines(kc, ctx).map((l) => `<div class="say-full"><div class="local ${l.lang === 'en' ? '' : l.lang}">${esc(l.local)}</div>${l.sub ? `<div class="sub muted">${esc(l.sub)}</div>` : ''}${l.en && l.lang !== 'en' ? `<div class="en">${esc(l.en)}</div>` : ''}</div>`).join('');
   html += nums.length ? nums.map(([who, n]) => `<a class="btn danger block sos" href="tel:${esc(String(n).replace(/[^\d+]/g, ''))}">📞 ${esc(who)} ${esc(n)}</a>`).join('')
@@ -677,6 +709,7 @@ function renderSettings() {
     <div class="card"><div class="h3">Text size</div>${switchRow('bigText', 'Big text (for the kids and tired eyes)')}</div>
     <div class="card"><div class="h3">Confetti and animations</div><p class="small muted">Auto follows the phone's reduce-motion setting.</p><div class="row">${['auto', 'on', 'off'].map((t) => `<button class="pill${FX.pref() === t ? ' active' : ''}" data-fx="${t}">${t}</button>`).join('')}<button class="btn small-btn" id="opt-fx-demo">Show me</button></div></div>
     ${Quests.settingsCard()}
+    <div class="card"><div class="h3">Photos and journal</div><div class="small" id="media-msg">…</div><div class="row"><button class="btn" id="opt-media-dl">Download all pictures (Wi-Fi)</button>${Quests.isParentDevice() ? `<button class="btn" id="opt-media-clear">Clear downloaded pictures here</button>` : ''}</div><p class="tiny muted">Pictures and pages are encrypted on this device and in the cloud; only an unlocked device can open them, so the PIN and the phone's own lock are the gate.</p></div>
     <div class="card"><div class="h3">Preview a trip day</div><p class="small muted">Shows the app as it will look on that day: for testing and the dry run. Tap a day; tap Now to come back.</p>${previewPicker()}</div>
     <div class="card"><div class="h3">This device</div>
       ${switchRow('readerMode', 'Reader mode: hide the Vault (for the iPad)')}
@@ -702,6 +735,11 @@ function renderSettings() {
   $('#opt-preview-clear').onclick = () => setPreview('');
   const cur = $('#pv-strip .day.today'); if (cur) cur.scrollIntoView({ inline: 'center', block: 'nearest' });
   Quests.wireSettings($('#screen-settings'));
+  const mm = $('#media-msg');
+  if (!Media.enabled) mm.textContent = 'This build has no picture key: pages and photos need a full rebuild of the app.';
+  else Media.usage().then((u) => { mm.textContent = `${u.count} picture${u.count === 1 ? '' : 's'} on this device · ${u.bytes < 1048576 ? Math.round(u.bytes / 1024) + ' KB' : (u.bytes / 1048576).toFixed(1) + ' MB'}${u.pending ? ` · ${u.pending} waiting to upload` : ''}`; });
+  const dl = $('#opt-media-dl'); if (dl) dl.onclick = () => { dl.disabled = true; Journal.downloadAll((done, total) => { mm.textContent = `Downloading ${done} of ${total}…`; }).then(() => { dl.disabled = false; renderSettings(); }); };
+  const mc = $('#opt-media-clear'); if (mc) mc.onclick = () => { if (confirm("Remove downloaded pictures from this device? Cloud copies stay, and so do this device's own pictures that are still waiting to upload.")) Media.clearDownloaded().then(() => renderSettings()); };
   if (navigator.storage && navigator.storage.estimate) navigator.storage.estimate().then((e) => { $('#storage-msg').textContent = `${Math.round((e.usage || 0) / 1024)} KB used of ${Math.round((e.quota || 0) / 1048576)} MB available`; });
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 }

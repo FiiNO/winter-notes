@@ -41,7 +41,7 @@ window.Quests = (() => {
     { id: 'flu-shot', e: '💉', t: 'Brave the flu shot', pts: 30, where: 'home', kind: 'helper' },
     { id: 'learn-ja', e: '🇯🇵', t: 'Learn three Japanese words', pts: 20, where: 'home', kind: 'words' },
     { id: 'learn-fr', e: '🇫🇷', t: 'Learn three French words', pts: 20, where: 'home', kind: 'words' },
-    { id: 'know-numbers', e: '📱', t: "Know Mum and Dad's phone numbers by heart", pts: 50, where: 'any', kind: 'helper' },
+    { id: 'know-numbers', e: '📱', t: "Know Mum and Dad's numbers by heart, and that we are from Australia", pts: 50, where: 'any', kind: 'helper' },
     { id: 'thermals', e: '🧤', t: 'Try on your thermals and gloves', pts: 10, where: 'home', kind: 'helper' },
     // every day, anywhere
     { id: 'photo', e: '📸', t: 'Morning photo taken (grown-ups)', pts: 5, where: 'any', kind: 'daily', daily: true, parents: true },
@@ -243,10 +243,17 @@ window.Quests = (() => {
   }
   const tickKey = (p, id, date) => `tick|${p}|${id}|${date || '-'}`;
   function put(st, key, v) { st.facts[key] = { v, t: Date.now(), d: st.device }; }
+  /* facts for the other modules (journal.js, media.js): write one, read one, read a prefix, hear about changes */
+  const factsListeners = [];
+  function onFacts(fn) { factsListeners.push(fn); }
+  function notifyFacts(why) { for (const fn of factsListeners) { try { fn(why); } catch (e) { /* a listener's own problem */ } } }
+  function setFact(key, v) { const st = state(); put(st, key, v); save(st); Sync.touch(); notifyFacts('local'); }
+  function getFact(key) { const f = effective(state())[key]; return f ? f.v : null; }
+  function factsByPrefix(prefix) { const out = {}; for (const [k, f] of Object.entries(effective(state()))) if (k.startsWith(prefix)) out[k] = f; return out; }
   const wipeT = (st) => (st.facts.wipe ? st.facts.wipe.t : 0);
   function effective(st) {               // facts that survive the last reset
     const w = wipeT(st), out = {};
-    for (const [k, f] of Object.entries(st.facts)) if (k !== 'wipe' && f.t >= w) out[k] = f;
+    for (const [k, f] of Object.entries(st.facts)) if (k !== 'wipe' && (f.t >= w || /^(page|media)\|/.test(k))) out[k] = f;   // pages and pictures outlive a reset
     return out;
   }
   function liveOn(st, key) { const f = effective(st)[key]; return !!(f && f.v && f.v.on); }
@@ -257,6 +264,7 @@ window.Quests = (() => {
     const out = [];
     for (const [k, f] of Object.entries(eff)) {
       const parts = k.split('|');
+      if (parts[0] !== 'tick' && parts[0] !== 'food') continue;
       if (parts[1] !== p || !f.v || !f.v.on) continue;
       let it = null;
       if (parts[0] === 'tick') { const q = byId[parts[2]]; if (!q) continue; it = { kind: 'tick', q, id: q.id, date: f.v.date || parts[3], pts: q.pts, title: q.t, e: q.e, verify: needsVerify(q) }; }
@@ -384,6 +392,7 @@ window.Quests = (() => {
     if (S.screen === 'passport') renderPassport();
     if (S.screen === 'home') renderHome();
     if (S.screen === 'settings') renderSettings();
+    if (S.screen === 'story' && window.Journal) Journal.renderStory();
     fx = null;
     checkLevelUp(state());
   }
@@ -397,7 +406,7 @@ window.Quests = (() => {
     for (const [id, blob] of Object.entries(devices || {})) {
       if (id === st.device) continue;
       for (const [k, f] of Object.entries((blob && blob.facts) || {})) {
-        if (!f || typeof f.t !== 'number' || !/^(tick|food|ok|avatar|wipe)\|?/.test(k)) continue;
+        if (!f || typeof f.t !== 'number' || !/^(tick|food|ok|avatar|wipe|page|media)\|?/.test(k)) continue;
         const cur = merged[k];
         if (!cur || f.t > cur.t || (f.t === cur.t && String(f.d) > String(cur.d))) merged[k] = Object.assign({}, f, { d: f.d || id });
       }
@@ -406,6 +415,7 @@ window.Quests = (() => {
     st.devices = Object.fromEntries(Object.entries(devices || {}).map(([id, b]) => [id, { role: b && b.role, name: b && b.name, at: b && b.at }]));
     save(st);
     celebrateApprovals(st);
+    notifyFacts('remote');
     afterChange();
   }
   function celebrateApprovals(st) {      // on a kids' device: a ✓ arriving from a parent pops the points
@@ -421,17 +431,18 @@ window.Quests = (() => {
     const sy = (S.family && S.family.trip && S.family.trip.sync) || {};
     const st = state();
     Sync.onStatus(() => { const el = $('#sync-line'); if (el) el.textContent = syncText(); refreshTop(); });
-    Sync.start({ url: sy.url, token: sy.token, device: st.device, mine, apply: mergeRemote, meta: () => ({ role: role() || 'kids', name: deviceName() }) });
+    Sync.start({ url: sy.url, token: sy.token, device: st.device, mine, apply: mergeRemote, meta: () => ({ role: role() || 'kids', name: deviceName() }), work: () => (window.Media ? Media.flush() : null) });
   }
   function syncText() {
     const s = Sync.status();
+    const pend = () => { const n = window.Media ? Media.pendingCount() : 0; return n ? ` · ${n} picture${n === 1 ? '' : 's'} to upload` : ''; };
     if (!s.enabled) return 'Scores stay on this device: no sync address in this build.';
-    if (s.error === 'offline') return 'Offline: scores sync when back online.' + (s.dirty ? ' Changes waiting.' : '');
+    if (s.error === 'offline') return 'Offline: scores sync when back online.' + (s.dirty ? ' Changes waiting.' : '') + pend();
     if (s.error) return 'Sync problem: ' + s.error;
     if (s.busy) return 'Syncing…';
     if (!s.last) return 'Not synced yet.';
     const m = Math.round((Date.now() - s.last) / 60000);
-    return `Synced ${m < 1 ? 'just now' : m + ' min ago'} · ${s.devices} device${s.devices === 1 ? '' : 's'}${s.dirty ? ' · changes waiting' : ''}`;
+    return `Synced ${m < 1 ? 'just now' : m + ' min ago'} · ${s.devices} device${s.devices === 1 ? '' : 's'}${s.dirty ? ' · changes waiting' : ''}` + pend();
   }
 
   /* ---------------------------------------------------------------- trip helpers */
@@ -486,12 +497,12 @@ window.Quests = (() => {
     const nyd = F.days.find((d) => d.date >= '2027-01-01');
     const bday = F.days.find((d) => /birthday/i.test(d.plan || ''));
     const dateLine = F.days.find((d) => dayCity(d) === 'Air');
-    out.push({ id: 'first-flight', e: '🛫', t: 'Wheels up', kind: 'milestone', pts: 50, earned: today >= start, hint: `Opens ${fmtDate(start)}` });
-    out.push({ id: 'halfway', e: '🏁', t: 'Halfway there', kind: 'milestone', pts: 50, earned: dayN >= Math.ceil(total / 2), hint: `Day ${Math.ceil(total / 2)} of ${total}` });
-    if (dateLine) out.push({ id: 'date-line', e: '🌐', t: 'Date-line crosser', kind: 'milestone', pts: 50, earned: today > dateLine.date, hint: 'Lose a day in the air' });
-    if (nyd) out.push({ id: 'new-year', e: '🎆', t: 'New Year in Tokyo', kind: 'milestone', pts: 50, earned: today >= nyd.date, hint: `Opens ${fmtDate(nyd.date)}` });
-    if (bday) out.push({ id: 'birthday', e: '🎂', t: 'Birthday on tour', kind: 'milestone', pts: 50, earned: today >= bday.date, hint: `Opens ${fmtDate(bday.date)}` });
-    out.push({ id: 'home-again', e: '🏡', t: 'Home again', kind: 'milestone', pts: 50, earned: today >= end, hint: `Opens ${fmtDate(end)}` });
+    out.push({ id: 'first-flight', e: '🛫', t: 'Wheels up', kind: 'milestone', pts: 50, on: start, earned: today >= start, hint: `Opens ${fmtDate(start)}` });
+    out.push({ id: 'halfway', e: '🏁', t: 'Halfway there', kind: 'milestone', pts: 50, on: addDays(start, Math.ceil(total / 2) - 1), earned: dayN >= Math.ceil(total / 2), hint: `Day ${Math.ceil(total / 2)} of ${total}` });
+    if (dateLine) out.push({ id: 'date-line', e: '🌐', t: 'Date-line crosser', kind: 'milestone', pts: 50, on: addDays(dateLine.date, 1), earned: today > dateLine.date, hint: 'Lose a day in the air' });
+    if (nyd) out.push({ id: 'new-year', e: '🎆', t: 'New Year in Tokyo', kind: 'milestone', pts: 50, on: nyd.date, earned: today >= nyd.date, hint: `Opens ${fmtDate(nyd.date)}` });
+    if (bday) out.push({ id: 'birthday', e: '🎂', t: 'Birthday on tour', kind: 'milestone', pts: 50, on: bday.date, earned: today >= bday.date, hint: `Opens ${fmtDate(bday.date)}` });
+    out.push({ id: 'home-again', e: '🏡', t: 'Home again', kind: 'milestone', pts: 50, on: end, earned: today >= end, hint: `Opens ${fmtDate(end)}` });
     const foods = (pl.foods || []).length;
     for (const [n, t, e] of [[5, 'Taste tester', '🍴'], [10, 'Food explorer', '🍜'], [20, 'Snack legend', '🍣']])
       out.push({ id: 'food-' + n, e, t, kind: 'skill', pts: 30, earned: foods >= n, hint: `${Math.min(foods, n)} of ${n} new foods` });
@@ -502,9 +513,9 @@ window.Quests = (() => {
     out.push({ id: 'photo-7', e: '📸', t: 'Photo streak', kind: 'skill', pts: 30, earned: photos >= 7, hint: `${Math.min(photos, 7)} of 7 morning photos` });
     // 31 Oct additions: three more milestones, dailies badges, a champion per city, and two big counters
     const firstUS = F.days.find((d) => dayCity(d) === 'New York'), firstJP = F.days.find((d) => dayCity(d) === 'Tokyo'), xmas = F.days.find((d) => d.date === '2026-12-25');
-    if (firstUS) out.push({ id: 'border-hopper', e: '🛂', t: 'Border hopper', kind: 'milestone', pts: 50, earned: today >= firstUS.date, hint: `Opens ${fmtDate(firstUS.date)}` });
-    if (xmas) out.push({ id: 'christmas', e: '🎄', t: 'Christmas away', kind: 'milestone', pts: 50, earned: today >= xmas.date, hint: `Opens ${fmtDate(xmas.date)}` });
-    if (firstJP) out.push({ id: 'four-countries', e: '🌍', t: 'Four countries', kind: 'milestone', pts: 50, earned: today >= firstJP.date, hint: `Opens ${fmtDate(firstJP.date)}` });
+    if (firstUS) out.push({ id: 'border-hopper', e: '🛂', t: 'Border hopper', kind: 'milestone', pts: 50, on: firstUS.date, earned: today >= firstUS.date, hint: `Opens ${fmtDate(firstUS.date)}` });
+    if (xmas) out.push({ id: 'christmas', e: '🎄', t: 'Christmas away', kind: 'milestone', pts: 50, on: xmas.date, earned: today >= xmas.date, hint: `Opens ${fmtDate(xmas.date)}` });
+    if (firstJP) out.push({ id: 'four-countries', e: '🌍', t: 'Four countries', kind: 'milestone', pts: 50, on: firstJP.date, earned: today >= firstJP.date, hint: `Opens ${fmtDate(firstJP.date)}` });
     const dailyIds = QUESTS.filter((q) => q.daily && !q.parents).map((q) => q.id);
     const dailyDates = new Set(); for (const id of dailyIds) for (const d of (pl.done[id] || [])) dailyDates.add(d);
     const perfect = [...dailyDates].some((d) => dailyIds.every((id) => (pl.done[id] || []).includes(d)));
@@ -512,10 +523,12 @@ window.Quests = (() => {
     const sorted = [...dailyDates].sort(); let run = 0, best = 0;
     for (let i = 0; i < sorted.length; i++) { run = i > 0 && daysBetween(sorted[i - 1], sorted[i]) === 1 ? run + 1 : 1; best = Math.max(best, run); }
     out.push({ id: 'streak-7', e: '🔥', t: 'Seven-day streak', kind: 'skill', pts: 30, earned: best >= 7, hint: `${Math.min(best, 7)} of 7 days running` });
-    for (const [id, n, t, e] of [['water', 10, 'Hydration hero', '💧'], ['hands', 20, 'Hand holder', '🤝'], ['daypack', 10, 'Packer', '🎒'], ['thanks', 10, 'Polite traveller', '🙏']]) {
+    for (const [id, n, t, e] of [['water', 10, 'Hydration hero', '💧'], ['hands', 20, 'Hand holder', '🤝'], ['daypack', 10, 'Packer', '🎒'], ['thanks', 10, 'Polite traveller', '🙏'], ['diary', 7, 'Storyteller', '📓']]) {
       const c = (pl.done[id] || []).length;
       out.push({ id: 'daily-' + id, e, t, kind: 'skill', pts: 30, earned: c >= n, hint: `${Math.min(c, n)} of ${n} days` });
     }
+    const diaryDays = (pl.done.diary || []).length;
+    out.push({ id: 'story-master', e: '📚', t: 'Story master', kind: 'skill', pts: 40, earned: diaryDays >= 20, hint: `${Math.min(diaryDays, 20)} of 20 pages` });
     for (const c of CHAMPION_CITIES) {
       const qs = QUESTS.filter((q) => q.where === c), done = qs.filter((q) => doneCount(pl, q.id)).length;
       out.push({ id: 'champ-' + CITY_KEY[c], e: '🏆', t: `${c} champion`, kind: 'skill', pts: 40, earned: qs.length > 0 && done === qs.length, hint: `${done} of ${qs.length} ${c} quests` });
@@ -703,5 +716,5 @@ window.Quests = (() => {
 
   return { QUESTS, CITY_EMOJI, CITY_KEY, CITIES, dayCity, daysBetween, state, label, setActive, complete, undo, addFood, approve, approveAll, summary, badges,
     checkNewBadges, renderQuests, renderPassport, settingsCard, wireSettings, refreshTop, celebrate, reset, startSync, mergeRemote, mine,
-    role, setRole, isParentDevice, pendingAll, view, points };
+    role, setRole, isParentDevice, pendingAll, view, points, setFact, getFact, factsByPrefix, onFacts, visiblePlayers, addDays, syncText };
 })();

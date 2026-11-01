@@ -370,5 +370,61 @@ html[data-fx="off"] .fx-canvas { display: none !important; }
 .maplibregl-ctrl-attrib { font-size: 10px !important; }
 .maplibregl-ctrl-top-right { top: 44px; }
 
-@media (min-width: 700px) { :root { --fs: 19px; } main { padding: 20px; } #map { height: 70vh; } .tiles, .book { grid-template-columns: repeat(3, minmax(0, 1fr)); } .stamps { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* journal and pictures (1 Nov 2026): the page, the drawing pad, the story, the viewer */
+.vhidden { position: absolute; left: -1px; top: -1px; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
+img.missing { opacity: 0.3; }
+.photo-reminder.done { background: var(--t4); color: var(--t4-ink); }
+.pagehead { display: flex; align-items: center; gap: 10px; margin: 6px 0 2px; }
+.pagehead .se { font-size: 2em; line-height: 1; }
+.moods { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 8px 0 2px; }
+.mood { min-height: 76px; border-radius: 20px; border: 2px solid var(--border); background: var(--card); color: var(--text); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 6px 2px; }
+.mood .me { font-size: 2em; line-height: 1; }
+.mood .mt { font-size: 0.66em; font-weight: 800; color: var(--muted); }
+.mood.on { border-color: var(--city); background: var(--pale); transform: scale(1.06); }
+.mood.on .mt { color: var(--city); }
+.page-q { font-size: 1.15em; font-weight: 900; line-height: 1.3; margin-bottom: 6px; }
+.page-text { width: 100%; min-height: 96px; font: inherit; font-size: 1.1em; padding: 12px; border: 2px solid var(--border); border-radius: 16px; background: var(--bg); color: var(--text); resize: vertical; }
+.page-text:focus { outline: none; border-color: var(--city); }
+.page-media { display: flex; gap: 10px; flex-wrap: wrap; margin: 6px 0; }
+.page-media .phbtn { width: 46%; }
+.phbtn { padding: 0; border: 0; background: transparent; border-radius: 16px; overflow: hidden; display: block; }
+.ph { aspect-ratio: 1; width: 100%; object-fit: cover; background: var(--pale); border-radius: 14px; border: 0; display: block; }
+.dr { background: #fff; border-radius: 14px; width: 100%; display: block; border: 2px solid var(--border); }
+.stickers { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.sticker { display: inline-flex; align-items: center; gap: 4px; background: var(--t1); color: var(--t1-ink); border-radius: 999px; padding: 4px 10px; font-size: 0.82em; font-weight: 800; }
+.story-day { border-left: 6px solid var(--city); }
+.story-head { display: flex; align-items: center; gap: 10px; }
+.story-head .se { font-size: 1.7em; line-height: 1; }
+.story-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 8px 0; }
+.story-grid button { padding: 0; border: 0; background: transparent; border-radius: 14px; overflow: hidden; }
+.story-page { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--border); margin-top: 6px; }
+.story-page .av { font-size: 1.8em; line-height: 1; flex: 0 0 auto; }
+.story-page .pt { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.story-page .phbtn { max-width: 70%; margin-top: 6px; }
+.story-empty { opacity: 0.72; }
+.morning-strip { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0; }
+.morning-strip button { flex: 0 0 auto; width: 120px; padding: 0; border: 0; background: transparent; border-radius: 14px; overflow: hidden; }
+.overlay { position: fixed; inset: 0; z-index: 55; background: var(--bg); overscroll-behavior: none; display: flex; flex-direction: column; }
+.pad-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; padding: calc(8px + env(safe-area-inset-top)) 10px 8px; flex: 0 0 auto; background: var(--card); border-bottom: 2px solid var(--border); }
+.pad-bar button, .pad-foot button { flex: 0 0 auto; min-width: 48px; min-height: 48px; border-radius: 999px; border: 0; background: var(--pale); color: var(--text); font-weight: 900; font-size: 1.1em; }
+.pad-bar .dot { width: 40px; height: 40px; min-width: 40px; min-height: 40px; padding: 0; box-shadow: 0 0 0 2px var(--border); }
+.pad-bar .dot.on { box-shadow: 0 0 0 3px var(--text); transform: scale(1.12); }
+.pad-bar .sz { width: 40px; min-width: 40px; min-height: 40px; background: var(--card); box-shadow: 0 0 0 2px var(--border); display: flex; align-items: center; justify-content: center; margin-left: 4px; }
+.pad-bar .sz i { display: block; border-radius: 50%; background: var(--text); }
+.pad-bar .sz.on { box-shadow: 0 0 0 3px var(--city); }
+.pad-foot { display: flex; align-items: center; gap: 6px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); flex: 0 0 auto; background: var(--card); border-top: 2px solid var(--border); }
+.pad-foot #pad-undo { padding: 0 10px; }
+.pad-foot .done { background: var(--city); color: #fff; padding: 0 12px; flex: 1 1 auto; min-width: 0; font-size: 1.15em; white-space: nowrap; }
+@media (max-width: 360px) { .pad-foot .lbl { display: none; } }
+.pad-wrap { flex: 1 1 auto; min-height: 0; position: relative; background: #fff; }
+.pad-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; cursor: crosshair; }
+.viewer { position: absolute; inset: 0; background: #000; display: flex; flex-direction: column; }
+.viewer-img { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; touch-action: pan-y; }
+.viewer-img img { max-width: 100vw; max-height: 100%; object-fit: contain; }
+.viewer-bar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); background: #111; color: #fff; }
+.viewer-bar .vi { flex: 1 1 auto; min-width: 0; font-size: 0.85em; font-weight: 700; }
+.viewer-bar button { flex: 0 0 auto; min-width: 48px; min-height: 48px; border-radius: 999px; border: 0; background: rgba(255,255,255,0.15); color: #fff; font-weight: 900; font-size: 1.2em; }
+.viewer-bar button.del { background: var(--red); }
+@media (min-width: 700px) { :root { --fs: 19px; } main { padding: 20px; } #map { height: 70vh; } .tiles, .book { grid-template-columns: repeat(3, minmax(0, 1fr)); } .stamps { grid-template-columns: repeat(4, minmax(0, 1fr)); } .story-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media print { .nav, .top, .banner { display: none; } }

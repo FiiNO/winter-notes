@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
 <link rel="stylesheet" href="styles.css">
 </head>
-<body data-version="v18" data-built="01 Nov 2026">
+<body data-version="v20" data-built="01 Nov 2026">
 
 <header class="top" id="top">
   <div class="brand"><span class="logo" aria-hidden="true">🌏</span><span class="stamp">World Adventure<span class="edition" id="top-edition"> · Family</span></span></div>
@@ -72,6 +72,8 @@
   <section id="screen-protocols" class="screen hidden"></section>
   <section id="screen-vault" class="screen hidden"></section>
   <section id="screen-settings" class="screen hidden"></section>
+  <section id="screen-page" class="screen hidden"></section>
+  <section id="screen-story" class="screen hidden"></section>
 </main>
 
 <nav id="nav" class="nav hidden" aria-label="Sections">
@@ -87,11 +89,16 @@
 </div>
 
 <div id="party" class="party hidden" aria-live="polite"></div>
+<div id="overlay" class="overlay hidden"></div>
+<input id="pick-camera" type="file" accept="image/*" capture="environment" class="vhidden" tabindex="-1" aria-hidden="true">
+<input id="pick-library" type="file" accept="image/*" class="vhidden" tabindex="-1" aria-hidden="true">
 
 <script src="vendor/pmtiles.js"></script>
 <script src="fx.js"></script>
 <script src="sync.js"></script>
+<script src="media.js"></script>
 <script src="quests.js"></script>
+<script src="journal.js"></script>
 <script src="app.js"></script>
 <script type="module" src="map.js"></script>
 </body>

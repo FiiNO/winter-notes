@@ -1,12 +1,12 @@
 {
- "version": 18,
- "label": "v18",
+ "version": 20,
+ "label": "v20",
  "built": "01 Nov 2026",
  "counts": {
   "days": 39,
   "moves": 15,
   "stays": 9,
-  "events": 6,
+  "events": 8,
   "taxi_cards": 29,
   "hospitals": 14,
   "places": 86,

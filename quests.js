@@ -269,7 +269,7 @@ window.Quests = (() => {
   const wipeT = (st) => (st.facts.wipe ? st.facts.wipe.t : 0);
   function effective(st) {               // facts that survive the last reset
     const w = wipeT(st), out = {};
-    for (const [k, f] of Object.entries(st.facts)) if (k !== 'wipe' && (f.t >= w || /^(page|media)\|/.test(k))) out[k] = f;   // pages and pictures outlive a reset
+    for (const [k, f] of Object.entries(st.facts)) if (k !== 'wipe' && (f.t >= w || /^(page|media|post|cmt)\|/.test(k))) out[k] = f;   // pages, stories, replies and pictures outlive a reset
     return out;
   }
   function liveOn(st, key) { const f = effective(st)[key]; return !!(f && f.v && f.v.on); }
@@ -422,7 +422,7 @@ window.Quests = (() => {
     for (const [id, blob] of Object.entries(devices || {})) {
       if (id === st.device) continue;
       for (const [k, f] of Object.entries((blob && blob.facts) || {})) {
-        if (!f || typeof f.t !== 'number' || !/^(tick|food|ok|avatar|wipe|page|media|stamp)\|?/.test(k)) continue;
+        if (!f || typeof f.t !== 'number' || !/^(tick|food|ok|avatar|wipe|page|media|stamp|post|cmt)\|?/.test(k)) continue;
         const cur = merged[k];
         if (!cur || f.t > cur.t || (f.t === cur.t && String(f.d) > String(cur.d))) merged[k] = Object.assign({}, f, { d: f.d || id });
       }

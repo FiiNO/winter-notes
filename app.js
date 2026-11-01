@@ -112,7 +112,7 @@ function show(screen, fromHistory) {
   document.querySelectorAll('.screen').forEach((el) => el.classList.add('hidden'));
   const el = $('#screen-' + screen);
   if (el) { el.classList.remove('hidden'); if (S.screen !== screen) { el.classList.add('enter'); clearTimeout(el._enter); el._enter = setTimeout(() => el.classList.remove('enter'), 1100); } }
-  const BOOK = ['days', 'moves', 'stays', 'taxi', 'protocols', 'vault', 'settings', 'gates', 'story', 'page'], QUEST = ['quests', 'passport'];
+  const BOOK = ['days', 'moves', 'stays', 'taxi', 'protocols', 'vault', 'settings', 'gates'], QUEST = ['quests', 'passport'];
   document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.screen === screen || (b.dataset.screen === 'book' && BOOK.includes(screen)) || (b.dataset.screen === 'quests' && QUEST.includes(screen))));
   S.screen = screen;
   window.scrollTo(0, 0);
@@ -124,7 +124,6 @@ function show(screen, fromHistory) {
   if (screen === 'gates') renderGates();
   if (screen === 'vault') renderVault();
   if (screen === 'settings') renderSettings();
-  if (screen === 'page') Journal.renderPage();
   if (screen === 'story') Journal.renderStory();
   if (screen === 'map') mountMap();
   if (window.DossierMap) window.DossierMap.setVisible(screen === 'map');
@@ -287,6 +286,7 @@ async function enterApp() {
   $('#nav').classList.remove('hidden');
   renderAll();
   Quests.refreshTop();
+  Journal.refreshBadge();
   show('home');
   Quests.checkNewBadges(currentContext());
   Quests.startSync();                                // no-op unless the family blob carries a sync address
@@ -366,7 +366,7 @@ function renderHome() {
   const calls = [['Mum', intlNum(mob.sarah)], ['Dad', intlNum(mob.andy)], ctx.stay && ctx.stay.phone ? ['Host', ctx.stay.phone] : null, ['Emergency', EMERGENCY_NUMBER[ctx.country]]].filter((c) => c && c[1]);
   html += `<button class="tile ht t5" data-call="1"><span class="ico">📞</span><span class="tt">Call</span><span class="ts">${calls.map((c) => esc(c[0])).join(' · ') || 'Numbers'}</span></button>`;
   html += `<button class="tile ht wide t6" data-kid="1"><span class="ico">🙋</span><span class="tt">I'm lost</span><span class="ts">Your own card: big words, Mum and Dad's numbers, what to say</span></button>`;
-  html += Journal.todayTileHtml(ctx);
+  html += Journal.storiesTileHtml(ctx);
   html += `</div>`;
   const morning = Media.enabled ? Journal.index().filter((m) => m.k === 'photo' && m.tag === 'morning' && m.d === ctx.date).length : 0;
   if (!ctx.before && (!Quests.role() || Quests.isParentDevice())) {
@@ -379,7 +379,6 @@ function renderHome() {
   const el = $('#screen-home'); el.innerHTML = html;
   const pd = $('#photo-done'); if (pd) pd.onclick = () => { localStorage.setItem(photoKey, '1'); Quests.complete(Quests.state().active, 'photo', ctx.date); renderHome(); };
   const ps = $('#photo-snap'); if (ps) ps.onclick = () => Journal.addPhoto(Quests.state().active, ctx.date, 'morning', true).then((id) => { if (!id) return; localStorage.setItem(photoKey, '1'); if (Quests.isParentDevice()) Quests.complete(Quests.state().active, 'photo', ctx.date); renderHome(); });
-  el.querySelectorAll('[data-page]').forEach((b) => b.onclick = () => Journal.openPage(Quests.state().active, ctx.date));
   $('#home-sos').onclick = () => show('sos');
   el.querySelectorAll('[data-day]').forEach((b) => b.onclick = () => openDay(b.dataset.day));
   el.querySelectorAll('[data-taxi]').forEach((b) => b.onclick = () => { if (b.dataset.taxi) openTaxiById(b.dataset.taxi); else show('taxi'); });
@@ -399,7 +398,6 @@ function renderBook() {
   const items = [['days', '📅', 'Days', 'The plan, day by day'], ['moves', '✈️', 'Moves', 'Flights, trains, buses, taxis'], ['stays', '🛏️', 'Stays', 'Every bed, check-in times'],
     ['taxi', '🚕', 'Taxi cards', 'Japanese and French, phrases'], ['map', '🗺️', 'Map', 'Offline maps, places, GPS'], ['protocols', '📋', 'Protocols', 'Lost kid, PACE, phone stolen'],
     ['gates', '✅', 'Before we go', "Mum and Dad's to-do list"], ['quests', '🏆', 'Quests', 'Points, levels, new foods'], ['passport', '📘', 'Passport', 'Stamps and badges'],
-    ['story', '📖', 'Our story', 'Photos, pages and stamps, day by day'], ['page', '📓', "Today's page", 'A mood, one line, a drawing'],
     ['vault', '🔒', 'Vault', 'PINs and document numbers'], ['settings', '⚙️', 'Settings', 'Theme, text size, players']];
   $('#screen-book').innerHTML = `<h1 class="h1">📖 Book</h1><div class="book">` + items.filter((i) => !(i[0] === 'vault' && settings.readerMode)).map((i, k) => `<button class="bk c${k % 8}" data-go="${i[0]}"><span class="ico">${i[1]}</span><span class="tt">${esc(i[2])}</span><span class="ts">${esc(i[3])}</span></button>`).join('') + `</div>`;
   wireGo($('#screen-book'));

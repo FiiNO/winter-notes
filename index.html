@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
 <link rel="stylesheet" href="styles.css">
 </head>
-<body data-version="v23" data-built="01 Nov 2026">
+<body data-version="v24" data-built="01 Nov 2026">
 
 <header class="top" id="top">
   <div class="brand"><span class="logo" aria-hidden="true">🌏</span><span class="stamp">World Adventure<span class="edition" id="top-edition"> · Family</span></span></div>
@@ -72,7 +72,6 @@
   <section id="screen-protocols" class="screen hidden"></section>
   <section id="screen-vault" class="screen hidden"></section>
   <section id="screen-settings" class="screen hidden"></section>
-  <section id="screen-page" class="screen hidden"></section>
   <section id="screen-story" class="screen hidden"></section>
 </main>
 
@@ -80,8 +79,8 @@
   <button data-screen="home"><span class="ico">🏠</span><span>Home</span></button>
   <button data-screen="map"><span class="ico">🗺️</span><span>Map</span></button>
   <button data-screen="quests"><span class="ico">🏆</span><span>Quests</span><span class="nbadge hidden" id="nav-quests-badge"></span></button>
-  <button data-screen="book"><span class="ico">📖</span><span>Book</span></button>
-  <button data-screen="sos"><span class="ico">🆘</span><span>SOS</span></button>
+  <button data-screen="story"><span class="ico">📖</span><span>Stories</span><span class="nbadge hidden" id="nav-stories-badge"></span></button>
+  <button data-screen="book"><span class="ico">📚</span><span>Book</span></button>
 </nav>
 
 <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
@@ -91,7 +90,7 @@
 <div id="party" class="party hidden" aria-live="polite"></div>
 <div id="overlay" class="overlay hidden"></div>
 <input id="pick-camera" type="file" accept="image/*" capture="environment" class="vhidden" tabindex="-1" aria-hidden="true">
-<input id="pick-library" type="file" accept="image/*" class="vhidden" tabindex="-1" aria-hidden="true">
+<input id="pick-library" type="file" accept="image/*" multiple class="vhidden" tabindex="-1" aria-hidden="true">
 
 <script src="vendor/pmtiles.js"></script>
 <script src="fx.js"></script>

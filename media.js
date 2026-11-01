@@ -304,7 +304,7 @@ window.Media = (() => {
   }
   async function usage() { const all = await dbAll().then((a) => a.filter((r) => r.k !== 'orig')); return { count: all.filter((r) => r.k !== 'thumb').length, bytes: all.reduce((n, r) => n + (r.n || 0), 0), pending: all.filter((r) => !r.up).length }; }
   async function remove(id) { for (const u of [id, id + 't']) { const v = M.urls.get(u); if (v) { URL.revokeObjectURL(v); M.urls.delete(u); } await dbDel(u); } }
-  async function wipe() { release(); try { await dbClear(); } catch (e) { /* no store yet */ } M.pending = 0; }
+  async function wipe() { release(); M.prepared = null; try { await dbClear(); } catch (e) { /* no store yet */ } M.pending = 0; await countPending(); }
   async function clearDownloaded() { release(); for (const r of await dbAll()) if (r.up === 1) await dbDel(r.id); }
   function changed() { if (M.onChange) { try { M.onChange(); } catch (e) { /* UI not ready */ } } }
 

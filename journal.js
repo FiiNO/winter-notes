@@ -123,6 +123,7 @@ window.Journal = (() => {
   }
 
   /* ---------------------------------------------------------------- stories and replies: reading */
+  function post(id) { return J.posts[id] || null; }
   function postsOn(date) { return Object.values(J.posts).filter((po) => po.d === date).sort((a, b) => (a.t || 0) - (b.t || 0)); }
   function usedMediaIds() {
     const s = new Set();
@@ -360,7 +361,8 @@ window.Journal = (() => {
   }
   function wireComposer(ov, prompt, max) {
     const dr = J.draft, ta = ov.querySelector('#c-text'), postBtn = ov.querySelector('#c-post');
-    const refresh = () => { postBtn.disabled = !(String(dr.text || '').trim() || dr.media.length); };
+    let busy = 0;                                                        // pictures still being shrunk and sealed: Post waits for them
+    const refresh = () => { postBtn.disabled = busy > 0 || !(String(dr.text || '').trim() || dr.media.length); postBtn.textContent = busy > 0 ? '…' : (dr.mode === 'reply' ? 'Reply' : 'Post'); };
     refresh();
     ov.querySelectorAll('[data-pl]').forEach((b) => b.onclick = () => { dr.p = b.dataset.pl; Quests.setActive(dr.p); ov.querySelectorAll('.player').forEach((x) => x.classList.toggle('active', x === b)); saveDraft(); });
     ov.querySelectorAll('[data-mood]').forEach((b) => b.onclick = () => { dr.mood = dr.mood === b.dataset.mood ? '' : b.dataset.mood; ov.querySelectorAll('.mood').forEach((x) => x.classList.toggle('on', x.dataset.mood === dr.mood)); FX.haptic(15); saveDraft(); });
@@ -380,10 +382,11 @@ window.Journal = (() => {
     const full = () => { alert(max === 1 ? 'A reply carries one picture.' : `Up to ${max} pictures in one story.`); };
     ov.querySelectorAll('[data-snap]').forEach((b) => b.onclick = () => {
       const left = max - dr.media.length; if (left <= 0) return full();
+      busy++; refresh();
       addPhotos(dr.p, dr.d, 'story', b.dataset.snap === 'camera', left).then((ids) => {
         for (const id of ids) dr.media.push({ id, k: 'photo' });
-        saveDraft(); const cm = ov.querySelector('#c-media'); if (cm) { cm.innerHTML = mediaThumbs(dr); wireThumbs(ov); fillMedia(ov); } refresh();
-      });
+        saveDraft(); const cm = ov.querySelector('#c-media'); if (cm) { cm.innerHTML = mediaThumbs(dr); wireThumbs(ov); fillMedia(ov); }
+      }).finally(() => { busy--; refresh(); });
     });
     ov.querySelector('#c-draw').onclick = () => {
       if (dr.media.length >= max) return full();
@@ -432,10 +435,10 @@ window.Journal = (() => {
     try { return new Intl.DateTimeFormat('en-GB', { timeZone: tzOf(cityOf(po.d, ctx)), hour: '2-digit', minute: '2-digit' }).format(new Date(po.t || 0)); } catch (e) { return ''; }
   }
   function pic(m) { return `<img class="${m.k === 'drawing' ? 'dr' : 'ph'}" data-oid="${esc(m.k === 'drawing' ? m.id : m.id + 't')}" data-kind="${m.k === 'drawing' ? 'drawing' : 'thumb'}" alt="">`; }
-  function postHtml(po, st, ctx, av) {
+  function postHtml(po, st, ctx, av, cards) {
     const cm = J.cmts[po.id] || [], reacts = cm.filter((c) => !c.media && isEmojiOnly(c.text)), replies = cm.filter((c) => !reacts.includes(c));
     const media = (po.media || []).filter((m) => J.media[m.id]);
-    let h = `<div class="post" data-post="${esc(po.id)}"><div class="post-head"><span class="av">${av(po.p)}</span><b>${esc(Quests.label(po.p))}</b>${MOOD[po.mood] ? `<span class="pmood">${MOOD[po.mood][1]}</span>` : ''}<span class="post-time">${po.legacy ? '' : esc(timeOf(po, ctx))}</span></div>`;
+    let h = `<div class="post" data-post="${esc(po.id)}"><div class="post-head"><span class="av">${av(po.p)}</span><b>${esc(Quests.label(po.p))}</b>${MOOD[po.mood] ? `<span class="pmood">${MOOD[po.mood][1]}</span>` : ''}${cards && cards[po.id] ? (cards[po.id].sent ? '<span class="chip pc">📮 sent</span>' : cards[po.id].pending ? '<span class="chip pc">📮 waiting</span>' : '') : ''}<span class="post-time">${po.legacy ? '' : esc(timeOf(po, ctx))}</span></div>`;
     if (po.q) h += `<div class="post-q">${esc(po.q)}</div>`;
     if (po.text) h += `<div class="post-text">${esc(po.text)}</div>`;
     if (media.length) h += `<div class="post-grid${media.length === 1 ? ' one' : ''}">${media.map((m) => `<button data-view="${esc(m.id)}" data-group="post:${esc(po.id)}">${pic(m)}</button>`).join('')}</div>`;
@@ -444,7 +447,7 @@ window.Journal = (() => {
       h += `<div class="reacts">${Object.entries(by).map(([e, rs]) => `<span class="react">${esc(e)} ${rs.map((r) => av(r.p)).join('')}</span>`).join('')}</div>`;
     }
     if (replies.length) h += `<div class="cmts">${replies.map((c) => `<div class="cmt"><span class="av">${av(c.p)}</span><div class="ct"><b>${esc(Quests.label(c.p))}</b> ${esc(c.text || '')}${c.media && J.media[c.media.id] ? `<button class="phbtn" data-view="${esc(c.media.id)}">${pic(c.media)}</button>` : ''}</div>${canDelete(c, st) ? `<button class="xdel" data-del-cmt="${esc(po.id)}|${esc(c.id)}" aria-label="Delete reply">🗑️</button>` : ''}</div>`).join('')}</div>`;
-    h += `<div class="post-foot">${QUICK.map((e) => { const mine = reacts.some((r) => r.p === st.active && r.text.trim() === e); return `<button class="quick${mine ? ' on' : ''}" data-quick="${esc(po.id)}|${e}" aria-label="${e}">${e}</button>`; }).join('')}<button class="btn small-btn" data-reply="${esc(po.id)}">💬 Reply</button>${canDelete(po, st) ? `<button class="btn small-btn del" data-del-post="${esc(po.id)}" aria-label="Delete story">🗑️</button>` : ''}</div></div>`;
+    h += `<div class="post-foot">${QUICK.map((e) => { const mine = reacts.some((r) => r.p === st.active && r.text.trim() === e); return `<button class="quick${mine ? ' on' : ''}" data-quick="${esc(po.id)}|${e}" aria-label="${e}">${e}</button>`; }).join('')}<button class="btn small-btn" data-reply="${esc(po.id)}">💬 Reply</button><button class="btn small-btn" data-card="${esc(po.id)}">📮 Postcard</button>${canDelete(po, st) ? `<button class="btn small-btn del" data-del-post="${esc(po.id)}" aria-label="Delete story">🗑️</button>` : ''}</div></div>`;
     return h;
   }
   function renderStory() { return guarded($('#screen-story'), '📖 Stories', renderStoryInner); }
@@ -453,7 +456,7 @@ window.Journal = (() => {
     if (!Media.enabled) { el.innerHTML = `<h1 class="h1">📖 Stories</h1><div class="card">Stories and photos need a full rebuild of the app: this build has no media key.</div>`; return; }
     if (!J.warmed) { el.innerHTML = `<h1 class="h1">📖 Stories</h1><p class="muted">Opening the stories…</p>`; warm(); return; }
     const avc = {}, av = (p) => avc[p] || (avc[p] = Quests.view(st, p).avatar);
-    const used = usedMediaIds(), dates = new Set();
+    const used = usedMediaIds(), dates = new Set(), cards = Quests.cardStatuses ? Quests.cardStatuses(st) : {};
     for (let d = F.trip.start; d <= ctx.date && d <= F.trip.end; d = Quests.addDays(d, 1)) dates.add(d);
     for (const po of Object.values(J.posts)) if (po.d) dates.add(po.d);
     for (const m of index()) if (m.d && m.tag !== 'story') dates.add(m.d);
@@ -477,7 +480,7 @@ window.Journal = (() => {
       if (moves.length) html += moves.map((m) => `<div class="small">${/train/i.test(m.mode || '') ? '🚆' : /coach|bus/i.test(m.mode || '') ? '🚌' : '✈️'} ${esc(m.frm)} → ${esc(m.to)} · ${esc(m.depart)}</div>`).join('');
       if (stamps.length) html += `<div class="stickers">${stamps.map((b) => `<span class="sticker">${b.e} ${esc(b.t)}</span>`).join('')}</div>`;
       if (photos.length) html += `<div class="story-grid">${photos.map((m) => `<button data-view="${esc(m.id)}" data-group="${esc(date)}"><img class="ph" data-oid="${esc(m.id)}t" data-kind="thumb" alt=""></button>`).join('')}</div>`;
-      for (const po of posts) html += postHtml(po, st, ctx, av);
+      for (const po of posts) html += postHtml(po, st, ctx, av, cards);
       html += `<div class="row"><button class="btn small-btn" data-new="${esc(date)}">＋ Add a story to this day</button></div></div>`;
     }
     if (!any) html += `<p class="small muted">No stories yet. Tap ✏️ New story.</p>`;
@@ -487,6 +490,7 @@ window.Journal = (() => {
     wireViews(el);
     el.querySelectorAll('[data-new]').forEach((b) => b.onclick = () => openComposer({ mode: 'post', d: b.dataset.new }));
     el.querySelectorAll('[data-reply]').forEach((b) => b.onclick = () => openComposer({ mode: 'reply', postId: b.dataset.reply, d: (J.posts[b.dataset.reply] || {}).d }));
+    el.querySelectorAll('[data-card]').forEach((b) => b.onclick = () => { if (window.Postcard) Postcard.openPreview(b.dataset.card); });
     el.querySelectorAll('[data-quick]').forEach((b) => b.onclick = () => {
       const [postId, e] = b.dataset.quick.split('|'); b.disabled = true; FX.pulse(b, 'bump', 600);
       const mine = (J.cmts[postId] || []).find((c) => c.p === st.active && !c.media && c.text.trim() === e);
@@ -516,6 +520,7 @@ window.Journal = (() => {
   function onLeave(screen) {
     if (screen !== 'story') return;
     if (J.observer) { J.observer.disconnect(); J.observer = null; }
+    if (window.Postcard) Postcard.releaseUrls();
     Media.release();
   }
   async function downloadAll(onProgress) {
@@ -527,6 +532,6 @@ window.Journal = (() => {
     }
   }
 
-  return { init, warm, page, promptFor, index, storiesTileHtml, morningHtml, fill, renderStory, openComposer, openDraw, openViewer, onLeave, addPhoto, addPhotos, downloadAll, refreshBadge,
+  return { init, warm, page, promptFor, index, storiesTileHtml, morningHtml, fill, renderStory, openComposer, openDraw, openViewer, onLeave, addPhoto, addPhotos, downloadAll, refreshBadge, post, cityOf,
     overlayOpen: () => !!J.overlay, overlayBack: () => (J.overlay ? J.overlay.back() : true), diag };
 })();

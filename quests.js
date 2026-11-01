@@ -198,7 +198,7 @@ window.Quests = (() => {
     { id: 'unpack', e: '🧳', t: 'Unpack your own suitcase', pts: 20, where: 'Townsville', kind: 'helper' },
     { id: 'own-bed', e: '🛏️', t: 'Sleep in your own bed again', pts: 10, where: 'Townsville', kind: 'explore' },
     { id: 'tell-grandparents', e: '📖', t: 'Tell Grandma or Grandpa three things about the trip', pts: 20, where: 'Townsville', kind: 'words' },
-    { id: 'postcard', e: '📮', t: 'Send a postcard home', pts: 15, where: 'any', kind: 'helper' },
+    { id: 'postcard', e: '📮', t: 'Send a postcard to the grandparents', pts: 15, where: 'any', kind: 'helper', daily: true },   // 1 Nov: ticked when a story goes out as a postcard
     { id: 'flags', e: '🏳️', t: 'Spot five different flags in one day', pts: 10, where: 'any', kind: 'explore' },
     { id: 'carry-bag', e: '🪜', t: 'Carry a bag up the stairs for someone', pts: 10, where: 'any', kind: 'helper' },
     { id: 'new-friend', e: '🤝', t: 'Make a friend who speaks another language', pts: 25, where: 'any', kind: 'words' },
@@ -267,10 +267,26 @@ window.Quests = (() => {
   function getFact(key) { const f = effective(state())[key]; return f ? f.v : null; }
   function factsByPrefix(prefix) { const out = {}; for (const [k, f] of Object.entries(effective(state()))) if (k.startsWith(prefix)) out[k] = f; return out; }
   const wipeT = (st) => (st.facts.wipe ? st.facts.wipe.t : 0);
-  function effective(st) {               // facts that survive the last reset
-    const w = wipeT(st), out = {};
-    for (const [k, f] of Object.entries(st.facts)) if (k !== 'wipe' && (f.t >= w || /^(page|media|post|cmt)\|/.test(k))) out[k] = f;   // pages, stories, replies and pictures outlive a reset
+  const swipeT = (st) => (st.facts.swipe ? st.facts.swipe.t : 0);   // the stories wipe (1 Nov 2026): stories, replies, pages and pictures older than it are gone everywhere
+  const STORY_KEY = /^(page|media|post|cmt|card)\|/;
+  function effective(st) {               // facts that survive the last quest reset and the last stories wipe
+    const w = wipeT(st), sw = swipeT(st), out = {};
+    for (const [k, f] of Object.entries(st.facts)) {
+      if (k === 'wipe' || k === 'swipe') continue;
+      if (STORY_KEY.test(k) ? f.t >= sw : f.t >= w) out[k] = f;     // stories outlive a quest reset; only the stories wipe takes them
+    }
     return out;
+  }
+  function gcStories(st) {               // drop the story facts a wipe made invisible, so this device's blob shrinks (a device that has not seen the wipe re-sends them; the others ignore and drop them again)
+    const sw = swipeT(st); if (!sw) return;
+    for (const k of Object.keys(st.facts)) if (STORY_KEY.test(k) && st.facts[k].t < sw) delete st.facts[k];
+  }
+  function wipeStories() {               // a parent: every story, reply, page and picture, for the whole family, on every device
+    if (!isParentDevice()) return;
+    const st = state();
+    st.facts.swipe = { v: 1, t: Date.now(), d: st.device };
+    gcStories(st);
+    save(st); Sync.touch(); notifyFacts('local'); afterChange();
   }
   function liveOn(st, key) { const f = effective(st)[key]; return !!(f && f.v && f.v.on); }
 
@@ -309,7 +325,7 @@ window.Quests = (() => {
     const av = eff['avatar|' + p];
     return { name: p, avatar: av ? av.v : (DEFAULT_AVATAR[p] || '🙂'), done, foods, items: its, pending: its.filter((i) => i.pending), rejected: its.filter((i) => i.rejected) };
   }
-  function pendingAll(st) { const eff = effective(st); return people().flatMap((p) => items(st, p, eff).filter((i) => i.pending)).concat(pendingStamps(st, eff)); }
+  function pendingAll(st) { const eff = effective(st); return people().flatMap((p) => items(st, p, eff).filter((i) => i.pending)).concat(pendingStamps(st, eff), pendingCards(st, eff)); }
 
   const doneCount = (pl, id) => (pl.done[id] || []).length;
   const doneToday = (pl, id, date) => (pl.done[id] || []).includes(date);
@@ -392,7 +408,7 @@ window.Quests = (() => {
   function approveAll() {               // every pending item, one fact each, one sync
     if (!isParentDevice()) return;
     const st = state(), who = label(owner() || 'Dad');
-    for (const it of pendingAll(st)) put(st, 'ok|' + it.key, { a: 'yes', who });
+    for (const it of pendingAll(st)) if (it.kind !== 'card') put(st, 'ok|' + it.key, { a: 'yes', who });   // a postcard needs the share sheet: one at a time
     save(st); Sync.touch(); afterChange();
   }
   function setActive(p) { const st = state(); st.active = p; save(st); }
@@ -416,23 +432,27 @@ window.Quests = (() => {
   /* ---------------------------------------------------------------- sync: what we send, how we merge */
   function mine() { const st = state(), out = {}; for (const [k, f] of Object.entries(st.facts)) if (f.d === st.device) out[k] = f; return out; }
   function mergeRemote(devices) {
-    const st = state();
+    const st = state(), sw0 = swipeT(st);
     const merged = {};
     for (const [k, f] of Object.entries(st.facts)) if (f.d === st.device) merged[k] = f;       // ours always travel with us
     for (const [id, blob] of Object.entries(devices || {})) {
       if (id === st.device) continue;
       for (const [k, f] of Object.entries((blob && blob.facts) || {})) {
-        if (!f || typeof f.t !== 'number' || !/^(tick|food|ok|avatar|wipe|page|media|stamp|post|cmt)\|?/.test(k)) continue;
+        if (!f || typeof f.t !== 'number' || !/^(tick|food|ok|avatar|wipe|swipe|page|media|stamp|post|cmt|card)\|?/.test(k)) continue;
         const cur = merged[k];
         if (!cur || f.t > cur.t || (f.t === cur.t && String(f.d) > String(cur.d))) merged[k] = Object.assign({}, f, { d: f.d || id });
       }
     }
     st.facts = merged;
+    gcStories(st);
     st.devices = Object.fromEntries(Object.entries(devices || {}).map(([id, b]) => [id, { role: b && b.role, name: b && b.name, at: b && b.at }]));
     save(st);
     celebrateApprovals(st);
     notifyFacts('remote');
     afterChange();
+    if (swipeT(st) > sw0 && window.Media) {                                  // a stories wipe arrived: this device's pictures belong to the wiped stories
+      Media.wipe().then(() => { try { localStorage.removeItem('storyDraft'); } catch (e) { /* blocked */ } notifyFacts('remote'); });
+    }
   }
   function celebrateApprovals(st) {      // on a kids' device: a ✓ arriving from a parent pops the points
     if (isParentDevice()) return;
@@ -518,6 +538,43 @@ window.Quests = (() => {
       player: f.v.player || st.active, verify: needs, needs, ok: a, okBy: okValid ? ok.v.who || '' : '', pending: needs && !a, rejected: needs && a === 'no', counted: !needs || a === 'yes' };
   }
   function pendingStamps(st, eff) { return Object.keys(arrivals()).map((c) => stampItem(st, eff, c)).filter((it) => it && it.pending); }
+  /* postcards (1 Nov 2026): the kids' "ask Mum and Dad to send it" is the fact card|<postId>; the parent's ✓ shares
+     from the parent's phone (postcard.js sendApproved) and then writes ok|card|<postId>; a parent's direct Share writes
+     the ok alone. Either way the story's author gets the postcard quest for that day. */
+  function cardItem(st, eff, postId) {
+    const key = 'card|' + postId, f = eff[key], ok = eff['ok|' + key];
+    const okValid = ok && (!f || ok.t >= f.t), a = okValid ? ok.v.a : null;
+    if (!(f && f.v && f.v.on) && !okValid) return null;
+    const po = window.Journal && Journal.post ? Journal.post(postId) : null;
+    const line = po && window.Postcard ? Postcard.firstLine(po) : '';
+    const by = f ? (f.v.by || 'kid') : 'parent', needs = by !== 'parent';
+    return { kind: 'card', key, id: postId, title: `Postcard to the grandparents${line ? ': “' + line + '”' : ''}`, e: '📮', pts: 15, date: (f && f.v.date) || (po && po.d) || '', by, t: f ? f.t : 0,
+      player: (f && f.v.p) || (po && po.p) || st.active, verify: needs, needs, ok: a, okBy: okValid ? ok.v.who || '' : '', pending: !!f && needs && !a, rejected: !!f && needs && a === 'no', counted: a === 'yes' || (!!f && !needs) };
+  }
+  function pendingCards(st, eff) { const out = []; for (const k of Object.keys(eff)) if (k.startsWith('card|')) { const it = cardItem(st, eff, k.slice(5)); if (it && it.pending) out.push(it); } return out; }
+  function cardStatuses(st) {            // postId → {pending, rejected, sent} for every story that has a request or a sent mark
+    const eff = effective(st), out = {};
+    for (const k of Object.keys(eff)) { const m = k.match(/^(?:ok\|)?card\|(.+)$/); if (m && !out[m[1]]) { const it = cardItem(st, eff, m[1]); if (it) out[m[1]] = { pending: it.pending, rejected: it.rejected, sent: it.counted, who: it.okBy }; } }
+    return out;
+  }
+  function cardStatus(postId) { return cardStatuses(state())[postId] || { pending: false, rejected: false, sent: false, who: '' }; }
+  function requestCard(postId) {         // the kids' iPad: ask Mum and Dad to send this story as a postcard
+    const po = window.Journal && Journal.post ? Journal.post(postId) : null; if (!po) return;
+    const st = state(), key = 'card|' + postId, cur = cardItem(st, effective(st), postId);
+    if (cur && cur.pending) return;
+    if (cur && cur.counted) { celebrate('📮', 'Already sent', 'That postcard has gone to the grandparents', po.p, 'ok'); return; }
+    put(st, key, { on: true, by: by(), p: po.p, date: po.d });
+    save(st); Sync.touch();
+    if (by() !== 'parent') celebrate('⏳', 'Sent to Mum and Dad', 'Postcard · 15 points when they send it', po.p, 'wait');
+    afterChange();
+  }
+  function approveCard(postId) {         // a parent's phone, after the share sheet closed: mark it sent and pay the author
+    const st = state(), po = window.Journal && Journal.post ? Journal.post(postId) : null;
+    put(st, 'ok|card|' + postId, { a: 'yes', who: label(owner() || 'Dad') });
+    save(st); Sync.touch();
+    if (po && !liveOn(st, tickKey(po.p, 'postcard', po.d))) complete(po.p, 'postcard', po.d);   // its own "+15 points" party and afterChange
+    else afterChange();
+  }
   function stampCity(c) {              // the tap on a ready stamp (Passport) or the Home prompt
     const st = state(), key = 'stamp|' + CITY_KEY[c], cur = stampItem(st, effective(st), c);
     if (cur && !cur.rejected) return;
@@ -652,6 +709,7 @@ window.Quests = (() => {
   function approvalsCard(st) {
     const pend = pendingAll(st);
     if (!isParentDevice() || !pend.length) return '';
+    for (const it of pend) if (it.kind === 'card' && window.Postcard) Postcard.prepare(it.id);   // drawn now, so the ✓ can share inside its own tap
     const eff = effective(st);
     return `<div class="card approvals"><div class="h3 approvals-head"><span>⏳ Waiting for a parent (${pend.length})</span>${pend.length > 1 ? `<button class="qbtn yes all" data-ok-all aria-label="Approve all">✓ All ${pend.length}</button>` : ''}</div>` + pend.map((it) => `<div class="approve-row"><span class="qe">${it.e}</span><div class="qt"><div class="qn">${view(st, it.player, eff).avatar} ${esc(label(it.player))}: ${esc(it.title)}</div><div class="qp">${it.pts} pts · ${esc(fmtDate(it.date))}</div></div><button class="qbtn yes" data-ok="${esc(it.key)}" aria-label="Approve">✓</button><button class="qbtn no" data-no="${esc(it.key)}" aria-label="Not this time">✗</button></div>`).join('') + `</div>`;
   }
@@ -689,7 +747,7 @@ window.Quests = (() => {
     el.querySelectorAll('[data-do]').forEach((b) => b.onclick = () => complete(player, b.dataset.do, ctx.date));
     el.querySelectorAll('[data-undo]').forEach((b) => b.onclick = () => undo(player, b.dataset.undo, ctx.date));
     el.querySelectorAll('[data-food-undo]').forEach((b) => b.onclick = () => removeFood(player, b.dataset.foodUndo));
-    const decide = (b, yes) => { const row = b.closest('.approve-row'), key = yes ? b.dataset.ok : b.dataset.no; FX.haptic(20); if (row && !FX.reduce()) { row.classList.add(yes ? 'yes-out' : 'no-out'); setTimeout(() => approve(key, yes), 360); } else approve(key, yes); };
+    const decide = (b, yes) => { const row = b.closest('.approve-row'), key = yes ? b.dataset.ok : b.dataset.no; FX.haptic(20); if (yes && key.startsWith('card|')) { if (window.Postcard) Postcard.sendApproved(key); return; } if (row && !FX.reduce()) { row.classList.add(yes ? 'yes-out' : 'no-out'); setTimeout(() => approve(key, yes), 360); } else approve(key, yes); };
     el.querySelectorAll('[data-ok]').forEach((b) => b.onclick = () => decide(b, true));
     el.querySelectorAll('[data-no]').forEach((b) => b.onclick = () => decide(b, false));
     const all = el.querySelector('[data-ok-all]');
@@ -785,5 +843,5 @@ window.Quests = (() => {
   return { QUESTS, CITY_EMOJI, CITY_KEY, CITIES, dayCity, daysBetween, state, label, setActive, complete, undo, addFood, approve, approveAll, summary, badges,
     checkNewBadges, renderQuests, renderPassport, settingsCard, wireSettings, refreshTop, celebrate, reset, startSync, mergeRemote, mine,
     role, setRole, isParentDevice, pendingAll, view, points, setFact, getFact, factsByPrefix, onFacts, visiblePlayers, addDays, syncText,
-    arrivals, stampCity, stampsReady };
+    arrivals, stampCity, stampsReady, wipeStories, cardStatus, cardStatuses, requestCard, approveCard };
 })();

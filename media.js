@@ -9,7 +9,7 @@
 window.Media = (() => {
   const LIMITS = { full: 1280, thumb: 320, draw: 1024, qFull: 0.8, qThumb: 0.72, maxBytes: 1.5 * 1024 * 1024, lru: 80, shareBatch: 12 };
   const M = { key: null, enabled: false, urls: new Map(), order: [], inflight: new Map(), flushing: false, backoffUntil: 0,
-    pending: 0, queue: Promise.resolve(), active: 0, waiters: [], onChange: null };
+    pending: 0, queue: Promise.resolve(), active: 0, waiters: [], onChange: null, last: { up: '', down: '', open: '' } };
   const enc = (s) => new TextEncoder().encode(String(s));
 
   /* base64 in chunks: a photo-sized buffer would overflow a spread into String.fromCharCode */
@@ -199,17 +199,18 @@ window.Media = (() => {
   function ungate() { M.active--; const w = M.waiters.shift(); if (w) w(); }
   async function download(oid, kind) {
     const ep = Sync.endpoint();
-    if (!ep.enabled || !navigator.onLine) return null;
+    if (!ep.enabled || !navigator.onLine) { M.last.down = ep.enabled ? 'offline' : 'sync off'; return null; }
     await gate();
     try {
       const r = await fetch(`${ep.url}/m/${ep.room}/${oid}`);
+      M.last.down = `${oid.slice(-6)} → ${r.status}`;
       if (!r.ok) return null;
       const ct = await r.arrayBuffer();
       if (ct.byteLength < 29) return null;
       const rec = { id: oid, ct, n: ct.byteLength, up: 1, bad: 0, k: kind || 'photo', at: Date.now() };
       await dbPut(rec);
       return rec;
-    } catch (e) { return null; } finally { ungate(); }
+    } catch (e) { M.last.down = 'network: ' + ((e && e.message) || e); return null; } finally { ungate(); }
   }
   function url(oid, kind) {
     if (!oid || !M.enabled) return Promise.resolve(null);
@@ -224,7 +225,7 @@ window.Media = (() => {
         const u = URL.createObjectURL(new Blob([pt], { type: rec.k === 'drawing' ? 'image/png' : 'image/jpeg' }));
         remember(oid, u);
         return u;
-      } catch (e) { return null; }
+      } catch (e) { M.last.open = 'decrypt failed ' + oid.slice(-6); return null; }
     })();
     M.inflight.set(oid, p);
     return p.finally(() => M.inflight.delete(oid));
@@ -246,8 +247,8 @@ window.Media = (() => {
       M.pending = pend.length; changed();
       for (const rec of pend) {
         let r;
-        try { r = await fetch(`${ep.url}/m/${ep.room}/${rec.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: rec.ct }); }
-        catch (e) { M.backoffUntil = Date.now() + 60000; break; }                      // the connection dropped: a minute, then again
+        try { r = await fetch(`${ep.url}/m/${ep.room}/${rec.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: rec.ct }); M.last.up = `${rec.id.slice(-6)} → ${r.status}`; }
+        catch (e) { M.last.up = 'network: ' + ((e && e.message) || e); M.backoffUntil = Date.now() + 60000; break; }                      // the connection dropped: a minute, then again
         if (r.status === 503 || r.status === 429) { M.backoffUntil = Date.now() + 600000; break; }   // KV quota: ten minutes
         if (!r.ok) { rec.bad = (rec.bad || 0) + 1; await dbPut(rec); continue; }
         rec.up = 1; await dbPut(rec); M.pending = Math.max(0, M.pending - 1); changed();
@@ -282,5 +283,6 @@ window.Media = (() => {
   return { init, get enabled() { return M.enabled; }, seal, open, pick, addImage, addCanvas, url, has, ensure, release, flush, pendingList, pendingCount,
     countPending, usage, remove, wipe, clearDownloaded, onChange: (fn) => { M.onChange = fn; }, LIMITS,
     newId, keepOriginal, originals, originalsSummary, canSaveOriginals, origHint, prepareOriginals, saveOriginals, clearSavedOriginals,
-    get origMode() { return M.origMode; }, setOrigMode: (m) => { M.origMode = m; M.prepared = null; } };
+    get origMode() { return M.origMode; }, setOrigMode: (m) => { M.origMode = m; M.prepared = null; },
+    diag: () => ({ up: M.last.up, down: M.last.down, open: M.last.open, mode: M.origMode, enabled: M.enabled, pending: M.pending }) };
 })();

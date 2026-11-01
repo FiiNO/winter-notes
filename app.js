@@ -14,6 +14,11 @@ const TZ = { 'Vancouver': 'America/Vancouver', 'Whistler': 'America/Vancouver', 
   'Nagoya': 'Asia/Tokyo', 'Home': 'Australia/Brisbane', 'Brisbane': 'Australia/Brisbane', 'Cairns': 'Australia/Brisbane', 'Townsville': 'Australia/Brisbane' };
 const COUNTRY = { 'Vancouver': 'CA', 'Whistler': 'CA', 'Toronto': 'CA', 'Montréal': 'CA', 'Montreal': 'CA', 'New York': 'US', 'Tokyo': 'JP', 'Nagoya': 'JP', 'Brisbane': 'AU', 'Cairns': 'AU', 'Townsville': 'AU' };
 const EMERGENCY_NUMBER = { CA: '911', US: '911', JP: '119', AU: '000' };
+/* error log (1 Nov 2026): the last few script errors, kept across reloads, shown in Settings → Photos and journal.
+   Andy saw "just a blank page" on the iPad and the Android phone; from here the pane cannot see those devices. */
+function logErr(msg) { try { const log = JSON.parse(localStorage.getItem('errlog') || '[]'); log.push(new Date().toISOString().slice(5, 16).replace('T', ' ') + ' ' + String(msg).slice(0, 300)); localStorage.setItem('errlog', JSON.stringify(log.slice(-6))); } catch (e) { /* storage blocked */ } }
+window.addEventListener('error', (e) => logErr((e.message || 'error') + ' @ ' + String(e.filename || '').split('/').pop() + ':' + (e.lineno || 0)));
+window.addEventListener('unhandledrejection', (e) => logErr('promise: ' + ((e.reason && (e.reason.message || e.reason.stack)) || e.reason)));
 const POLICE_NUMBER = { CA: '911', US: '911', JP: '110', AU: '000' };
 
 const S = { family: null, vault: null, screen: 'home', vaultTimer: null, pendingPassphraseFor: null, preview: localStorage.getItem('previewDate') || null };
@@ -778,7 +783,7 @@ function renderSettings() {
     <div class="card"><div class="h3">Text size</div>${switchRow('bigText', 'Big text (for the kids and tired eyes)')}</div>
     <div class="card"><div class="h3">Confetti and animations</div><p class="small muted">Auto follows the phone's reduce-motion setting.</p><div class="row">${['auto', 'on', 'off'].map((t) => `<button class="pill${FX.pref() === t ? ' active' : ''}" data-fx="${t}">${t}</button>`).join('')}<button class="btn small-btn" id="opt-fx-demo">Show me</button></div></div>
     ${Quests.settingsCard()}
-    <div class="card"><div class="h3">Photos and journal</div><div class="small" id="media-msg">…</div>${Media.canSaveOriginals() ? `<div class="small" id="orig-msg"></div>` : ''}<div class="row"><button class="btn" id="opt-media-dl">Download all pictures (Wi-Fi)</button>${Quests.isParentDevice() ? `<button class="btn" id="opt-media-clear">Clear downloaded pictures here</button>` : ''}${Media.canSaveOriginals() ? `<button class="btn" id="opt-orig-save">Save originals to Photos</button><button class="btn" id="opt-orig-clear">Clear saved originals</button>` : ''}</div>${Media.origHint() ? `<p class="tiny muted">${esc(Media.origHint())}</p>` : ''}<p class="tiny muted">Pictures and pages are encrypted on this device and in the cloud; only an unlocked device can open them, so the PIN and the phone's own lock are the gate.</p></div>
+    <div class="card"><div class="h3">Photos and journal</div><div class="small" id="media-msg">…</div>${Media.canSaveOriginals() ? `<div class="small" id="orig-msg"></div>` : ''}<div class="row"><button class="btn" id="opt-media-dl">Download all pictures (Wi-Fi)</button>${Quests.isParentDevice() ? `<button class="btn" id="opt-media-clear">Clear downloaded pictures here</button>` : ''}${Media.canSaveOriginals() ? `<button class="btn" id="opt-orig-save">Save originals to Photos</button><button class="btn" id="opt-orig-clear">Clear saved originals</button>` : ''}</div>${Media.origHint() ? `<p class="tiny muted">${esc(Media.origHint())}</p>` : ''}<div class="tiny mono" id="diag" style="margin-top:8px;white-space:pre-wrap"></div><div class="row"><button class="btn" id="opt-errlog-clear">Clear error log</button></div><p class="tiny muted">Pictures and pages are encrypted on this device and in the cloud; only an unlocked device can open them, so the PIN and the phone's own lock are the gate.</p></div>
     <div class="card"><div class="h3">Preview a trip day</div><p class="small muted">Shows the app as it will look on that day: for testing and the dry run. Tap a day; tap Now to come back.</p>${previewPicker()}</div>
     <div class="card"><div class="h3">This device</div>
       ${switchRow('readerMode', 'Reader mode: hide the Vault (for the iPad)')}
@@ -813,6 +818,23 @@ function renderSettings() {
   const osv = $('#opt-orig-save'); if (osv) osv.onclick = () => { osv.disabled = true; Media.saveOriginals().then(() => renderSettings()).catch((e) => { osv.disabled = false; if (e && e.name !== 'AbortError') alert(e.message || 'Could not hand the photos over.'); }); };
   const ocl = $('#opt-orig-clear'); if (ocl) ocl.onclick = () => { if (confirm('Remove the full-size originals that are already in Photos from the app?')) Media.clearSavedOriginals().then(() => renderSettings()); };
   const mc = $('#opt-media-clear'); if (mc) mc.onclick = () => { if (confirm("Remove downloaded pictures from this device? Cloud copies stay, and so do this device's own pictures that are still waiting to upload.")) Media.clearDownloaded().then(() => renderSettings()); };
+  const dg = $('#diag');
+  if (dg) {
+    const sy = Sync.status ? Sync.status() : {}, md = Media.diag ? Media.diag() : {};
+    let log = []; try { log = JSON.parse(localStorage.getItem('errlog') || '[]'); } catch (e) { /* none */ }
+    const when = (t) => (t ? new Date(t).toTimeString().slice(0, 8) : 'never');
+    Media.usage().catch(() => null).then((u) => {
+      dg.textContent = [
+        `${VERSION} · built ${BUILT} · ${navigator.onLine ? 'online' : 'offline'} · ${navigator.serviceWorker && navigator.serviceWorker.controller ? 'sw on' : 'no sw'} · ${Quests.role() || 'no role'}`,
+        `picture key: ${Media.enabled ? 'yes' : 'NO'} · mode ${md.mode || '?'} · pictures here ${u ? u.count : '?'} · waiting to upload ${u ? u.pending : '?'}`,
+        `sync: ${sy.enabled ? 'on' : 'OFF'} · last ${when(sy.last)} · ${sy.error ? 'error ' + sy.error : 'ok'}${sy.busy ? ' · busy' : ''}${sy.dirty ? ' · unsent' : ''}`,
+        `last upload: ${md.up || '-'} · last download: ${md.down || '-'} · last open: ${md.open || '-'}`,
+        `journal: ${Journal.diag ? Journal.diag() : '-'}`,
+        log.length ? 'errors:\n' + log.join('\n') : 'errors: none',
+      ].join('\n');
+    });
+  }
+  const ec = $('#opt-errlog-clear'); if (ec) ec.onclick = () => { localStorage.removeItem('errlog'); renderSettings(); };
   if (navigator.storage && navigator.storage.estimate) navigator.storage.estimate().then((e) => { $('#storage-msg').textContent = `${Math.round((e.usage || 0) / 1024)} KB used of ${Math.round((e.quota || 0) / 1048576)} MB available`; });
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 }

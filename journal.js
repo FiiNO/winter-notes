@@ -28,6 +28,16 @@ window.Journal = (() => {
     J.cache[k] = { t: f.t, v };
     return v;
   }
+  function guarded(el, title, fn) {   // a render that hits a problem says so on the screen instead of leaving it blank
+    try { return fn(); }
+    catch (e) {
+      const msg = (e && e.message) || String(e), where = String((e && e.stack) || '').split('\n').slice(0, 2).join(' · ').slice(0, 200);
+      if (window.logErr) logErr(title + ': ' + msg + ' ' + where);
+      if (el) el.innerHTML = `<h1 class="h1">${title}</h1><div class="card red"><b>This screen hit a problem.</b><div class="small">${esc(msg)}</div><div class="tiny mono">${esc(where)}</div><div class="small" style="margin-top:8px">Tell Andy what it says, then try Settings → Sync now.</div></div>`;
+      return null;
+    }
+  }
+  function diag() { return `warmed ${J.warmed} · ${J.error ? 'error ' + J.error : 'ok'} · pages ${Object.keys(J.pages).length} · pictures ${Object.keys(J.media).length}`; }
   function warm() {
     if (J.warming) { J.again = true; return J.warming; }
     J.warming = (async () => {
@@ -45,9 +55,13 @@ window.Journal = (() => {
           const id = k.slice(6); media[id] = Object.assign({ id }, v);
         }));
         for (const r of await Media.pendingList()) if (!media[r.id]) media[r.id] = { id: r.id, k: r.k, p: r.p, d: r.d, tag: r.tag || '', n: r.n, w: r.w, h: r.h, t: r.at, local: true };
-        J.pages = pages; J.media = media; J.warmed = true;
+        J.pages = pages; J.media = media; J.warmed = true; J.error = null;
         prefetchMorning();
         if (S.screen === 'home') renderHome();
+        if (S.screen === 'story') renderStory();
+      } catch (e) {
+        J.error = (e && e.message) || String(e); J.warmed = true;              // show the screens with the error, not "Opening…" forever
+        if (window.logErr) logErr('journal warm: ' + J.error);
         if (S.screen === 'story') renderStory();
       } finally { J.warming = null; if (J.again) { J.again = false; warm(); } }
     })();
@@ -91,6 +105,10 @@ window.Journal = (() => {
 
   /* ---------------------------------------------------------------- Home tile and the lost-kid strip */
   function todayTileHtml(ctx) {
+    try { return todayTileInner(ctx); }
+    catch (e) { if (window.logErr) logErr('today tile: ' + ((e && e.message) || e)); return `<div class="tile wide t3"><span class="ico">📓</span><span class="tt">Today's page</span><span class="ts">hit a problem: ${esc((e && e.message) || e)}</span></div>`; }
+  }
+  function todayTileInner(ctx) {
     if (!Media.enabled) return '';
     const who = Quests.visiblePlayers().map((p) => { const pg = page(p, ctx.date), has = pg.mood || pg.text || pg.photo || pg.draw; return `${avatarOf(p)} ${esc(Quests.label(p))} ${has ? (MOOD[pg.mood] ? MOOD[pg.mood][1] : '✓') : '–'}`; }).join(' · ');
     const n = mediaOn(ctx.date, (m) => m.k === 'photo').length;
@@ -127,7 +145,8 @@ window.Journal = (() => {
 
   /* ---------------------------------------------------------------- the page screen */
   function openPage(p, d) { J.sel = { p, d }; show('page'); }
-  function renderPage() {
+  function renderPage() { return guarded($('#screen-page'), "📓 Today's page", renderPageInner); }
+  function renderPageInner() {
     const el = $('#screen-page'), ctx = currentContext(), st = Quests.state();
     if (!Media.enabled) { el.innerHTML = `<h1 class="h1">📓 Today's page</h1><div class="card">Pages and photos need a full rebuild of the app: this build has no media key.</div>`; return; }
     const sel = J.sel && J.sel.d <= ctx.date ? J.sel : { p: st.active, d: ctx.date };
@@ -260,7 +279,8 @@ window.Journal = (() => {
   }
 
   /* ---------------------------------------------------------------- Our story: every day, newest first */
-  function renderStory() {
+  function renderStory() { return guarded($('#screen-story'), '📖 Our story', renderStoryInner); }
+  function renderStoryInner() {
     const el = $('#screen-story'), ctx = currentContext(), F = S.family, st = Quests.state();
     if (!Media.enabled) { el.innerHTML = `<h1 class="h1">📖 Our story</h1><div class="card">Pages and photos need a full rebuild of the app: this build has no media key.</div>`; return; }
     if (!J.warmed) { el.innerHTML = `<h1 class="h1">📖 Our story</h1><p class="muted">Opening the pages…</p>`; warm(); return; }
@@ -271,6 +291,7 @@ window.Journal = (() => {
     const badgeDates = {};
     for (const b of Quests.badges(Quests.view(st, st.active), ctx)) { const on = b.opens || b.on; if (b.earned && on && (b.kind === 'stamp' || b.kind === 'milestone')) (badgeDates[on] = badgeDates[on] || []).push(b); }
     let html = `<h1 class="h1">📖 Our story</h1>`, any = false;
+    if (J.error) html += `<div class="card red"><b>Could not open the pages.</b><div class="small">${esc(J.error)}</div><div class="small">Tell Andy what it says, then try Settings → Sync now.</div></div>`;
     const o = Media.originalsSummary();
     if (Media.canSaveOriginals() && o.waiting) {
       html += `<div class="card originals"><b>📥 ${o.waiting} full-size photo${o.waiting === 1 ? '' : 's'} not yet in Photos</b> <span class="muted small">(${(o.waitingBytes / 1048576).toFixed(1)} MB)</span><div class="row"><button class="btn" id="orig-save">Save to Photos</button></div><div class="tiny muted">One tap saves up to ${Media.LIMITS.shareBatch} at a time. Then Photos has the originals and the app keeps the small copies.</div></div>`;
@@ -332,5 +353,5 @@ window.Journal = (() => {
   }
 
   return { init, warm, page, setField, promptFor, index, todayTileHtml, morningHtml, fill, renderPage, renderStory, openPage, openDraw, openViewer, onLeave, addPhoto, downloadAll, MOODS,
-    overlayOpen: () => !!J.overlay, overlayBack: () => (J.overlay ? J.overlay.back() : true) };
+    overlayOpen: () => !!J.overlay, overlayBack: () => (J.overlay ? J.overlay.back() : true), diag };
 })();

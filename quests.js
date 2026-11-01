@@ -50,7 +50,7 @@ window.Quests = (() => {
 
   /* kind: food · explore · helper · words · travel · daily. where: a city, 'any' (whole trip), 'home' (before we go).
      A kid's tick on any quest waits for a parent's ✓ (Andy, 1 Nov: "parent approval for most of the kids' challenges");
-     auto: true lets a quest count at once on the kids' device (none at the moment). Parent ticks never wait. */
+     auto: true lets a quest count at once on the kids' device (the diary: a story post never waits). Parent ticks never wait. */
   const QUESTS = [
     // before we go
     { id: 'pack-case', e: '🧳', t: 'Help pack your own suitcase', pts: 20, where: 'home', kind: 'helper' },
@@ -65,7 +65,7 @@ window.Quests = (() => {
     { id: 'hands', e: '🤝', t: 'Hold hands at every crossing and station', pts: 5, where: 'any', kind: 'daily', daily: true },
     { id: 'thanks', e: '🙏', t: 'Say thank you in the local language', pts: 5, where: 'any', kind: 'daily', daily: true },
     { id: 'water', e: '💧', t: 'Drink water before bed', pts: 5, where: 'any', kind: 'daily', daily: true },
-    { id: 'diary', e: '📓', t: 'Draw or write one line about today', pts: 5, where: 'any', kind: 'daily', daily: true },
+    { id: 'diary', e: '📓', t: 'Draw or write one line about today', pts: 5, where: 'any', kind: 'daily', daily: true, auto: true },   // 1 Nov: story posts never wait for a parent (Andy)
     // travel days
     { id: 'first-flight', e: '🛫', t: 'Take off on the first flight', pts: 30, where: 'any', kind: 'travel' },
     { id: 'window', e: '🪟', t: 'Spot mountains or clouds from the window seat', pts: 10, where: 'any', kind: 'travel' },

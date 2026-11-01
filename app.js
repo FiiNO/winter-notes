@@ -68,7 +68,41 @@ function phraseCard(p, show) {
   return `<div class="card phrase${lang !== show ? ' hidden' : ''}" data-lang="${lang}"><div class="small muted">${esc(p.en || '')}</div><div class="${lang}">${esc(main || '')}</div><div class="tiny muted">${esc(sub || '')}</div></div>`;
 }
 function coordLine(c) { return c && c.lat != null && c.lat !== '' ? `${(+c.lat).toFixed(5)}, ${(+c.lon).toFixed(5)}` : ''; }
-function show(screen) {
+/* ------------------------------------------------------------------ the back gesture
+   1 Nov 2026, Andy: "by habit I swipe backwards on the android phone all the time to go to the previous page, but this
+   always crashed the app and it needs to be reloaded every time." An installed PWA with nothing in its history closes
+   on Android's back gesture (it looks like a crash). Every screen change, modal and overlay now pushes a history entry
+   and popstate walks back through them: overlay → modal → the screen we came from → Home. Back from Home with nothing
+   open stays in the app (Android's home gesture leaves it). A modal or overlay closed with its own button leaves a
+   stale entry behind; the next open reuses it when it is on top, and a pop that lands on one keeps going back. */
+const Nav = {
+  push(nav, screen) { try { history.pushState({ nav, screen: screen || null, t: Date.now() }, ''); } catch (e) {} },
+  top() { return (history.state && history.state.nav) || ''; },
+  modalOpen() { return !$('#modal').classList.contains('hidden'); },
+  pushModal() { if (!Nav.modalOpen() && Nav.top() !== 'modal') Nav.push('modal'); },
+  pushOverlay() { if (Nav.top() !== 'overlay') Nav.push('overlay'); },
+  start() {
+    try { history.replaceState({ nav: 'root' }, ''); history.pushState({ nav: 'screen', screen: 'home' }, ''); } catch (e) {}
+    window.addEventListener('popstate', (e) => Nav.onPop(e.state));
+  },
+  onPop(st) {
+    if (!st || !st.nav) { history.back(); return; }                         // not one of ours (a # link): keep going
+    if (st.nav === 'root') { Nav.push('screen', 'home'); if (S.family && S.screen !== 'home') show('home', true); return; }
+    if (!S.family) return;                                                  // locked: nothing to walk back through
+    const overlay = window.Journal && Journal.overlayOpen();
+    if (overlay) {
+      if (st.nav === 'overlay') return;
+      if (!Journal.overlayBack()) { Nav.push('overlay'); return; }          // kept the drawing: put the entry back
+      if (st.nav === 'modal' && Nav.modalOpen()) return;                    // back to the modal underneath
+    } else if (st.nav === 'overlay') { history.back(); return; }            // stale: closed with its own ✕
+    if (Nav.modalOpen()) closeModal();
+    if (st.nav === 'modal') { history.back(); return; }                     // stale: closed with its own button
+    if (st.nav === 'screen' && st.screen !== S.screen) show(st.screen, true);
+  },
+};
+
+function show(screen, fromHistory) {
+  if (!fromHistory && S.screen !== screen) Nav.push('screen', screen);
   if (S.screen !== screen && window.Journal) Journal.onLeave(S.screen);
   document.querySelectorAll('.screen').forEach((el) => el.classList.add('hidden'));
   const el = $('#screen-' + screen);
@@ -91,7 +125,7 @@ function show(screen) {
   if (window.DossierMap) window.DossierMap.setVisible(screen === 'map');
 }
 function focusOnMap(placeId) { show('map'); const go = () => window.DossierMap && window.DossierMap.focusPlace(placeId); S.mapMounted ? setTimeout(go, 400) : setTimeout(go, 1500); }
-function openModal(html) { $('#modal-inner').innerHTML = `<button class="btn close" id="modal-close">Close</button>${html}`; $('#modal').classList.remove('hidden'); $('#modal-close').onclick = closeModal; }
+function openModal(html) { Nav.pushModal(); $('#modal-inner').innerHTML = `<button class="btn close" id="modal-close">Close</button>${html}`; $('#modal').classList.remove('hidden'); $('#modal-close').onclick = closeModal; }
 function closeModal() { $('#modal').classList.add('hidden'); $('#modal-inner').innerHTML = ''; }
 function applyTheme() { const t = settings.theme; if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t); }
 function applyBigText() { document.documentElement.classList.toggle('big-text', settings.bigText); }
@@ -307,6 +341,8 @@ function renderHome() {
   }
   html += dayStrip(ctx);
   html += `<div class="tiles">`;
+  const landed = Quests.stampsReady(ctx);        // we have landed somewhere and nobody has stamped the passport yet
+  if (landed.length) html += `<button class="tile ht wide stampt" data-go="passport"><span class="ico">${Quests.CITY_EMOJI[landed[0]] || '🛬'}</span><span class="tt">We made it to ${esc(landed.join(' and '))}!</span><span class="ts">Tap to stamp the passport${Quests.isParentDevice() ? '' : ' (Mum or Dad say yes)'}</span></button>`;
   if (ctx.stay) {
     html += `<button class="tile ht t1" data-go="stays"><span class="ico">🛏️</span><span class="tt">Tonight</span><span class="ts">${esc(ctx.stay.property)}</span><span class="ts small">${esc(ctx.stay.address)}</span></button>`;
   } else if (!ctx.before) {
@@ -330,8 +366,8 @@ function renderHome() {
   const morning = Media.enabled ? Journal.index().filter((m) => m.k === 'photo' && m.tag === 'morning' && m.d === ctx.date).length : 0;
   if (!ctx.before && (!Quests.role() || Quests.isParentDevice())) {
     const snap = Media.enabled ? `<button id="photo-snap">📷 Snap</button>` : '';
-    if (morning || localStorage.getItem(photoKey)) html += `<div class="photo-reminder done"><div><b>📸 ${morning ? `${morning} morning photo${morning === 1 ? '' : 's'} in the app` : 'Morning photo done'}</b><br><span class="small">${morning ? 'Ready on the lost-kid card, on every parent phone.' : 'Snap one into the app for the lost-kid card?'}</span></div>${snap}</div>`;
-    else html += `<div class="photo-reminder"><div><b>📸 Morning photo</b><br><span class="small">Snap each kid in today's clothes.</span></div>${snap}<button id="photo-done">Done</button></div>`;
+    if (morning || localStorage.getItem(photoKey)) html += `<div class="photo-reminder done"><div><b>📸 ${morning ? `${morning} morning photo${morning === 1 ? '' : 's'} in the app` : 'Morning photo done'}</b><br><span class="small">${morning ? 'Ready on the lost-kid card, on every parent phone.' : 'Add one here for the lost-kid card?'}</span></div>${snap}</div>`;
+    else html += `<div class="photo-reminder"><div><b>📸 Morning photo</b><br><span class="small">Snap each kid in today's clothes: it goes on the lost-kid card.</span></div>${snap}<button id="photo-done">Done</button></div>`;
   }
   html += `<button class="btn danger block sos" id="home-sos">🆘 SOS · lost kid · sick · disasters</button>`;
   html += `<p class="tiny muted">Built ${esc(BUILT)} · ${esc(VERSION)}${S.preview ? ' · previewing ' + esc(S.preview) + ' (clear it in Settings)' : ''}</p>`;
@@ -442,7 +478,7 @@ function openKidCard() {
   openModal(html);
 }
 function openSick() {
-  const F = S.family, ctx = currentContext(), sk = (F.protocols || {}).sick || {}, E = F.emergency[ctx.country === 'AU' ? 'JP' : ctx.country] || {};
+  const F = S.family, ctx = currentContext(), sk = (F.protocols || {}).sick || {}, E = cityEmergency(hereCity(ctx)) || F.emergency[ctx.country === 'AU' ? 'JP' : ctx.country] || {};
   let html = `<h1 class="h1 red">🤕 Sick or hurt</h1>` + callButtons(ctx);
   html += `<div class="card">${stepsList(sk.steps, ctx)}</div>`;
   if (E.hospitals && E.hospitals.length) html += `<div class="card"><div class="h3">Children's hospital</div>${E.hospitals.slice(0, 2).map((h) => `<div class="hosp"><b>${esc(h.name)}</b><div>${tel(h.address_en + ' · ' + h.phone)}</div>${h.address_ja ? `<div class="ja">${esc(h.address_ja)}</div>` : ''}${h.coord && h.coord.lat != null ? mapsLink(h.coord.lat, h.coord.lon, h.name) : ''}</div>`).join('<hr>')}</div>`;
@@ -487,20 +523,53 @@ function openSayList() {
   }
   openModal(html); wireSay($('#modal-inner'));
 }
+/* Numbers by city (1 Nov 2026). Andy: "on a date when we are in Montreal we go to Numbers and have to scroll through
+   all the Canada numbers from Vancouver, Toronto before we get to any Montreal numbers." The blob groups the emergency
+   data by country (F.emergency[cc]); every hospital, pharmacy and consulate carries its base and every health line a
+   region, so the app regroups it per city here, at render time. The Sick card uses the same view. */
+const BASE_OF_CITY = { Vancouver: 'vancouver', Whistler: 'whistler', Toronto: 'toronto', 'New York': 'newyork', 'Montréal': 'montreal', Montreal: 'montreal', Tokyo: 'tokyo', Nagoya: 'nagoya' };
+const REGION_BASES = [['aichi', ['nagoya']], ['nagoya', ['nagoya']], ['tokyo', ['tokyo']], ['japan', ['tokyo', 'nagoya']],
+  ['nyc', ['newyork']], ['new york', ['newyork']], ['usa', ['newyork']], ['united states', ['newyork']],
+  ['québec', ['montreal']], ['quebec', ['montreal']], ['ontario', ['toronto']], ['british columbia', ['vancouver', 'whistler']], ['bc', ['vancouver', 'whistler']],
+  ['canada', ['vancouver', 'whistler', 'toronto', 'montreal']]];
+const CONSULATE_BASE = { whistler: 'vancouver', nagoya: 'tokyo' };   // bases without an Australian post of their own
+function regionBases(region) { const r = String(region || '').toLowerCase(); const hit = REGION_BASES.find(([k]) => r.includes(k)); return hit ? hit[1] : []; }
+function hereCity(ctx) {
+  const day = S.family.days.find((d) => d.date === ctx.date), c = day ? Quests.dayCity(day) : '';
+  return BASE_OF_CITY[c] ? c : ctx.city;             // a Nagoya day trip counts as Nagoya, not the Tokyo bed
+}
+function tripCities() {
+  const out = [];
+  for (const d of S.family.days) { const c = Quests.dayCity(d); if (BASE_OF_CITY[c] && !out.includes(c)) out.push(c); }
+  for (const s of S.family.stays) if (BASE_OF_CITY[s.city] && !out.includes(s.city)) out.push(s.city);
+  return out;
+}
+function cityEmergency(city) {
+  const F = S.family, base = BASE_OF_CITY[city], cc = COUNTRY[city], E = (F.emergency || {})[cc];
+  if (!base || !E) return null;
+  const mine = (list, b = base) => (list || []).filter((x) => x.base === b);
+  let consulates = mine(E.consulates_verified);
+  if (!consulates.length && CONSULATE_BASE[base]) consulates = mine(E.consulates_verified, CONSULATE_BASE[base]);
+  if (!consulates.length) consulates = E.consulates || [];
+  return { city, base, cc, country: E.name, numbers: E.numbers || [], hospitals: mine(E.hospitals), pharmacies: mine(E.pharmacies),
+    health_lines: (E.health_lines || []).filter((h) => regionBases(h.region).includes(base)),
+    consulates, insurers: E.insurers || [], medicine: E.medicine || [] };
+}
 function openNumbers() {
-  const F = S.family, ctx = currentContext();
-  const order = ['CA', 'US', 'JP'].sort((a, b) => (a === ctx.country ? -1 : b === ctx.country ? 1 : 0));
-  let html = `<h1 class="h1">📒 Numbers</h1>`;
-  for (const cc of order) {
-    const E = F.emergency[cc];
-    html += `<details ${cc === ctx.country ? 'open' : ''}><summary>${esc(E.name)}${cc === ctx.country ? '<span class="chip red">here</span>' : ''}</summary>`;
+  const ctx = currentContext(), here = hereCity(ctx), cities = tripCities();
+  const order = cities.includes(here) ? [here].concat(cities.filter((c) => c !== here)) : cities;
+  let html = `<h1 class="h1">📒 Numbers</h1><p class="small muted">${order.includes(here) ? `${esc(here)} is open. Tap another city for its numbers.` : 'Tap a city for its numbers.'}</p>`;
+  for (const city of order) {
+    const E = cityEmergency(city);
+    if (!E) continue;
+    const isHere = city === here, key = Quests.CITY_KEY[city] || 'home';
+    html += `<details class="numbers-city" style="border-left-color: var(--c-${esc(key)})"${isHere ? ' open' : ''}><summary>${Quests.CITY_EMOJI[city] || '📍'} ${esc(city)} <span class="muted">· ${esc(E.country)}</span>${isHere ? '<span class="chip red">here</span>' : ''}</summary>`;
     html += kv(E.numbers.map((c) => [c.who, c.phone + (c.ref ? ' · ' + c.ref : '')]));
     if (E.hospitals.length) html += `<div class="h3">Hospital for a sick child</div>` + E.hospitals.map((h) => `<div class="card"><b>${esc(h.name)}</b><div>${tel(h.address_en + ' · ' + h.phone + (h.open_24h ? ' · 24 h' : ''))}</div>${h.address_ja ? `<div class="ja">${esc(h.address_ja)}</div>` : ''}${coordLine(h.coord) ? `<div class="mono small">${coordLine(h.coord)}</div>` : ''}<div class="small muted">${esc(h.notes)}</div>${h.coord && h.coord.lat != null ? mapsLink(h.coord.lat, h.coord.lon, h.name) : ''}</div>`).join('');
-    if (E.pharmacies && E.pharmacies.length) html += `<div class="h3">Pharmacy at night</div>` + E.pharmacies.map((p) => `<div class="card"><b>${esc(p.name)}</b><div>${tel(p.address_en + ' · ' + p.phone + ' · ' + p.hours)}</div>${p.address_ja ? `<div class="ja">${esc(p.address_ja)}</div>` : ''}<div class="small muted">${tel(p.notes)}</div></div>`).join('');
-    if (E.medicine) html += E.medicine.map((m) => `<div class="small muted">${esc(m)}</div>`).join('');
+    if (E.pharmacies.length) html += `<div class="h3">Pharmacy at night</div>` + E.pharmacies.map((p) => `<div class="card"><b>${esc(p.name)}</b><div>${tel(p.address_en + ' · ' + p.phone + ' · ' + p.hours)}</div>${p.address_ja ? `<div class="ja">${esc(p.address_ja)}</div>` : ''}<div class="small muted">${tel(p.notes)}</div></div>`).join('');
+    if (E.medicine.length) html += E.medicine.map((m) => `<div class="small muted">${esc(m)}</div>`).join('');
     if (E.health_lines.length) html += `<div class="h3">Health lines</div>` + kv(E.health_lines.map((h) => [h.name, `${h.number} · ${h.hours}`]));
-    const cons = E.consulates_verified || E.consulates;
-    if (cons && cons.length) html += `<div class="h3">Australian consulate</div>` + cons.map((c) => `<div class="card">${c.who ? tel(`${c.who} — ${c.phone} · ${c.ref}`) : tel(`${c.name} — ${c.address_en} · ${c.phone} · ${c.hours}`)}${c.after_hours ? `<div class="small muted">${tel(c.after_hours)}</div>` : ''}</div>`).join('');
+    if (E.consulates.length) html += `<div class="h3">Australian consulate</div>` + E.consulates.map((c) => `<div class="card">${c.who ? tel(`${c.who} — ${c.phone} · ${c.ref}`) : tel(`${c.name} — ${c.address_en} · ${c.phone} · ${c.hours}`)}${c.after_hours ? `<div class="small muted">${tel(c.after_hours)}</div>` : ''}</div>`).join('');
     if (E.insurers.length) html += `<div class="h3">Insurance</div>` + kv(E.insurers.map((c) => [c.who, c.phone + (c.ref ? ' · ' + c.ref : '')]));
     html += `</details>`;
   }
@@ -709,7 +778,7 @@ function renderSettings() {
     <div class="card"><div class="h3">Text size</div>${switchRow('bigText', 'Big text (for the kids and tired eyes)')}</div>
     <div class="card"><div class="h3">Confetti and animations</div><p class="small muted">Auto follows the phone's reduce-motion setting.</p><div class="row">${['auto', 'on', 'off'].map((t) => `<button class="pill${FX.pref() === t ? ' active' : ''}" data-fx="${t}">${t}</button>`).join('')}<button class="btn small-btn" id="opt-fx-demo">Show me</button></div></div>
     ${Quests.settingsCard()}
-    <div class="card"><div class="h3">Photos and journal</div><div class="small" id="media-msg">…</div><div class="row"><button class="btn" id="opt-media-dl">Download all pictures (Wi-Fi)</button>${Quests.isParentDevice() ? `<button class="btn" id="opt-media-clear">Clear downloaded pictures here</button>` : ''}</div><p class="tiny muted">Pictures and pages are encrypted on this device and in the cloud; only an unlocked device can open them, so the PIN and the phone's own lock are the gate.</p></div>
+    <div class="card"><div class="h3">Photos and journal</div><div class="small" id="media-msg">…</div>${Media.canSaveOriginals() ? `<div class="small" id="orig-msg"></div>` : ''}<div class="row"><button class="btn" id="opt-media-dl">Download all pictures (Wi-Fi)</button>${Quests.isParentDevice() ? `<button class="btn" id="opt-media-clear">Clear downloaded pictures here</button>` : ''}${Media.canSaveOriginals() ? `<button class="btn" id="opt-orig-save">Save originals to Photos</button><button class="btn" id="opt-orig-clear">Clear saved originals</button>` : ''}</div>${Media.origHint() ? `<p class="tiny muted">${esc(Media.origHint())}</p>` : ''}<p class="tiny muted">Pictures and pages are encrypted on this device and in the cloud; only an unlocked device can open them, so the PIN and the phone's own lock are the gate.</p></div>
     <div class="card"><div class="h3">Preview a trip day</div><p class="small muted">Shows the app as it will look on that day: for testing and the dry run. Tap a day; tap Now to come back.</p>${previewPicker()}</div>
     <div class="card"><div class="h3">This device</div>
       ${switchRow('readerMode', 'Reader mode: hide the Vault (for the iPad)')}
@@ -739,6 +808,10 @@ function renderSettings() {
   if (!Media.enabled) mm.textContent = 'This build has no picture key: pages and photos need a full rebuild of the app.';
   else Media.usage().then((u) => { mm.textContent = `${u.count} picture${u.count === 1 ? '' : 's'} on this device · ${u.bytes < 1048576 ? Math.round(u.bytes / 1024) + ' KB' : (u.bytes / 1048576).toFixed(1) + ' MB'}${u.pending ? ` · ${u.pending} waiting to upload` : ''}`; });
   const dl = $('#opt-media-dl'); if (dl) dl.onclick = () => { dl.disabled = true; Journal.downloadAll((done, total) => { mm.textContent = `Downloading ${done} of ${total}…`; }).then(() => { dl.disabled = false; renderSettings(); }); };
+  const om = $('#orig-msg');
+  if (om) { const o = Media.originalsSummary(), mb = (n) => (n / 1048576).toFixed(1) + ' MB'; om.textContent = `${o.waiting} full-size original${o.waiting === 1 ? '' : 's'} not yet in Photos (${mb(o.waitingBytes)})${o.saved ? ` · ${o.saved} already saved (${mb(o.savedBytes)}) can be cleared` : ''}`; }
+  const osv = $('#opt-orig-save'); if (osv) osv.onclick = () => { osv.disabled = true; Media.saveOriginals().then(() => renderSettings()).catch((e) => { osv.disabled = false; if (e && e.name !== 'AbortError') alert(e.message || 'Could not hand the photos over.'); }); };
+  const ocl = $('#opt-orig-clear'); if (ocl) ocl.onclick = () => { if (confirm('Remove the full-size originals that are already in Photos from the app?')) Media.clearSavedOriginals().then(() => renderSettings()); };
   const mc = $('#opt-media-clear'); if (mc) mc.onclick = () => { if (confirm("Remove downloaded pictures from this device? Cloud copies stay, and so do this device's own pictures that are still waiting to upload.")) Media.clearDownloaded().then(() => renderSettings()); };
   if (navigator.storage && navigator.storage.estimate) navigator.storage.estimate().then((e) => { $('#storage-msg').textContent = `${Math.round((e.usage || 0) / 1024)} KB used of ${Math.round((e.quota || 0) / 1048576)} MB available`; });
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
@@ -763,6 +836,7 @@ async function checkForUpdate(manual) {
 
 /* ------------------------------------------------------------------ wiring */
 document.querySelectorAll('#nav button').forEach((b) => b.onclick = () => show(b.dataset.screen));
+Nav.start();
 $('#btn-points').onclick = () => { if (S.family) show('quests'); };
 $('#btn-settings').onclick = () => { if (S.family) show('settings'); };
 applyTheme();

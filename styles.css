@@ -101,6 +101,8 @@ main { padding: var(--pad); max-width: 820px; margin: 0 auto; }
 .pill { flex: 0 0 auto; border: 2px solid var(--border); border-radius: 999px; padding: 6px 14px; background: var(--card); color: var(--text); font-weight: 700; }
 .pill.active { background: var(--city); border-color: var(--city); color: #fff; }
 details { border: 2px solid var(--border); border-radius: var(--radius); padding: 8px var(--pad); margin: 8px 0; background: var(--card); }
+details.numbers-city { border-left-width: 8px; }            /* Numbers: one card per city in its colour */
+details.numbers-city summary .muted { font-weight: 600; }
 summary { font-weight: 800; cursor: pointer; padding: 6px 0; }
 table.t { width: 100%; border-collapse: collapse; font-size: 0.92em; }
 table.t th { text-align: left; color: var(--muted); font-weight: 700; font-size: 0.8em; text-transform: uppercase; padding: 4px 6px 4px 0; }
@@ -207,6 +209,12 @@ details .quest { margin: 6px 0; }
 .stampc.earned.toronto { border-color: var(--c-toronto); } .stampc.earned.newyork { border-color: var(--c-newyork); }
 .stampc.earned.montreal { border-color: var(--c-montreal); } .stampc.earned.tokyo { border-color: var(--c-tokyo); }
 .stampc.earned.nagoya { border-color: var(--c-nagoya); }
+.stampc.ready { border-color: var(--red); color: var(--text); cursor: pointer; }   /* landed: tap to stamp */
+.stampc.ready .se, .stampc.pending .se { filter: none; opacity: 1; }
+.stampc.ready .sh { color: var(--red); }
+.stampc.pending { border-style: dotted; color: var(--text); }
+.tile.stampt { background: var(--t1); color: var(--t1-ink); border: 3px dashed var(--red); }
+.card.originals { border: 2px dashed var(--city); }
 .stampc.earned.brisbane { border-color: var(--c-brisbane); } .stampc.earned.cairns { border-color: var(--c-cairns); } .stampc.earned.townsville { border-color: var(--c-townsville); }
 .stampc.badge.earned { border-color: var(--c-newyork); background: var(--t1); color: var(--t1-ink); }
 .lvrow { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); }
@@ -216,7 +224,8 @@ details .quest { margin: 6px 0; }
 .avrow .big-av { font-size: 1.6em; }
 .avrow .avgo { margin-left: auto; font-weight: 800; }
 .avgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; margin-top: 8px; }
-.avpick { font-size: 2em; min-height: 64px; border: 2px solid var(--border); border-radius: 18px; background: var(--card); line-height: 1; }
+/* explicit square cells: Safari does not stretch a <button> to fill its grid cell, so each one sets its own size */
+.avpick { display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 100%; aspect-ratio: 1 / 1; min-height: 64px; padding: 0; margin: 0; font-size: 2em; line-height: 1; border: 2px solid var(--border); border-radius: 18px; background: var(--card); overflow: hidden; white-space: nowrap; -webkit-appearance: none; appearance: none; }
 .avhead { margin-top: 18px; }
 .avtop { align-items: center; gap: 12px; margin-top: 8px; }
 .avnow { font-size: 2.6em; line-height: 1; min-width: 1.3em; text-align: center; }

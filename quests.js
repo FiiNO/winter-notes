@@ -23,10 +23,26 @@ window.Quests = (() => {
     ['Sky and nature', ['🌟', '⭐', '🌙', '☀️', '🌈', '🌋', '🌊', '🔥', '⚡', '🌪️', '🪐', '🌍', '☄️', '🌸', '🌵', '🍄', '🌺', '🌻', '🍀', '🌴', '🎋', '🪨']],
     ['Food', ['🍣', '🍜', '🍙', '🍡', '🍩', '🍕', '🍔', '🌮', '🍦', '🍓', '🍉', '🍒', '🥐', '🧁', '🍪', '🥞', '🧇', '🍫', '🍭', '🍿', '🥨', '🍱', '🍤', '🍧', '🥟', '🍋']],
     ['Heroes and friends', ['🧙', '🦸', '🦹', '🕵️', '🧚', '🧜', '🧝', '🧞', '🧛', '🧟', '🥷', '🧑‍🚀', '🧑‍🚒', '🧑‍✈️', '🧑‍🎤', '🧑‍🔬', '🧑‍🍳', '🤖', '👻', '👽', '🤠', '🎅', '🤶', '👑', '🎃', '👾', '🧸', '🦺']],
+    ['People', ['👶', '🧒', '👦', '👧', '🧑', '👨', '👩', '🧔', '👱', '👱‍♀️', '👨‍🦰', '👩‍🦰', '👨‍🦱', '👩‍🦱', '👨‍🦳', '👩‍🦳', '👨‍🦲', '👩‍🦲', '🧓', '👴', '👵', '🤴', '👸', '👮', '👷', '💂', '👩‍⚕️', '👨‍⚕️', '🧑‍🎓', '👩‍🏫', '👨‍🏫', '👩‍🌾', '👨‍🌾', '👩‍🍳', '👨‍🍳', '👩‍🔧', '👨‍🔧', '👩‍🔬', '👨‍🔬', '👩‍💻', '👨‍💻', '👩‍🎤', '👨‍🎤', '👩‍🎨', '👨‍🎨', '👩‍✈️', '👨‍✈️', '👩‍🚀', '👨‍🚀', '👩‍🚒', '👨‍🚒', '🤵', '👰', '👼', '🙋', '🙆', '💁', '🤷', '🙇', '🤦', '💆', '💇', '🚶', '🏃', '💃', '🕺', '🕴️', '👯', '🧖', '🧗', '🏇', '🏌️', '🏄', '🚣', '🏊', '⛹️', '🏋️', '🚴', '🚵', '🤸', '🤼', '🤽', '🤾', '🤹', '🧘', '🛀', '👫', '👬', '👭']],
+    ['Kids and grown-ups', ['👶🏻', '👶🏼', '👶🏽', '👶🏾', '👶🏿', '🧒🏻', '🧒🏼', '🧒🏽', '🧒🏾', '🧒🏿', '👦🏻', '👦🏼', '👦🏽', '👦🏾', '👦🏿', '👧🏻', '👧🏼', '👧🏽', '👧🏾', '👧🏿', '👨🏻', '👨🏼', '👨🏽', '👨🏾', '👨🏿', '👩🏻', '👩🏼', '👩🏽', '👩🏾', '👩🏿', '🧑🏻', '🧑🏼', '🧑🏽', '🧑🏾', '🧑🏿']],
     ['Sport and play', ['⚽', '🏀', '🏈', '⚾', '🎾', '🏒', '🏓', '🎳', '🎯', '🎮', '🎸', '🥁', '🎺', '🎨', '🎭', '🎪', '🎲', '🏆', '🥇', '🎁', '🧩', '🪁', '🛹', '🛼', '🏹', '🥊', '🎤', '🎧']],
-    ['Faces', ['😀', '😎', '🤓', '🥳', '🤩', '😜', '🤪', '😇', '🥸', '🤗', '😺', '🙃', '🥶', '🤭', '😴', '🤔', '😈', '🤑', '🥰', '😤']],
+    ['Faces', ['😀', '😎', '🤓', '🥳', '🤩', '😜', '🤪', '😇', '🥸', '🤗', '😺', '🙃', '🥶', '🤭', '😴', '🤔', '😈', '🤑', '🥰', '😤', '😊', '😁', '🤣', '😍', '😋', '😏', '🥺', '😡', '🤯', '😱', '🥵', '🤒', '😷', '🥱', '🤫', '🧐', '😬', '🙄', '😵', '🤤', '😻', '🙀', '🤡', '👹', '👺', '💩', '💀']],
   ];
   const AVATARS = AVATAR_GROUPS.flatMap((g) => g[1]);
+  /* 1 Nov 2026: an emoji this device cannot draw as one glyph (a ZWJ profession or a skin tone on an older font)
+     comes out as two or three symbols and breaks the grid, so the picker hides it. A canvas measures each one once
+     against a plain face: more than 1.35× that width means it fell apart. */
+  let emojiW = null;
+  function emojiOk(e) {
+    if (!emojiW) {
+      emojiW = { cache: {} };
+      try { const g = document.createElement('canvas').getContext('2d'); g.font = '32px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'; emojiW.g = g; emojiW.ref = g.measureText('🙂').width; } catch (err) { emojiW.g = null; }
+    }
+    if (!emojiW.g || !emojiW.ref) return true;
+    if (!(e in emojiW.cache)) emojiW.cache[e] = emojiW.g.measureText(e).width <= emojiW.ref * 1.35;
+    return emojiW.cache[e];
+  }
+  const avatarsOk = () => AVATARS.filter(emojiOk);
   const DEFAULT_AVATAR = { Andrew: '🕵️', Sarah: '🌟', Vince: '🦖', Drew: '🦄' };
   const DISPLAY = { Andrew: 'Dad', Sarah: 'Mum' };          // the parents; everyone else is a kid
   const LEVELS = [[0, 'Rookie', '🥾'], [100, 'Explorer', '🧭'], [250, 'Adventurer', '🎒'], [500, 'Navigator', '🧭'], [900, 'Globetrotter', '🌏'], [1500, 'Legend', '👑']];
@@ -293,7 +309,7 @@ window.Quests = (() => {
     const av = eff['avatar|' + p];
     return { name: p, avatar: av ? av.v : (DEFAULT_AVATAR[p] || '🙂'), done, foods, items: its, pending: its.filter((i) => i.pending), rejected: its.filter((i) => i.rejected) };
   }
-  function pendingAll(st) { const eff = effective(st); return people().flatMap((p) => items(st, p, eff).filter((i) => i.pending)); }
+  function pendingAll(st) { const eff = effective(st); return people().flatMap((p) => items(st, p, eff).filter((i) => i.pending)).concat(pendingStamps(st, eff)); }
 
   const doneCount = (pl, id) => (pl.done[id] || []).length;
   const doneToday = (pl, id, date) => (pl.done[id] || []).includes(date);
@@ -406,7 +422,7 @@ window.Quests = (() => {
     for (const [id, blob] of Object.entries(devices || {})) {
       if (id === st.device) continue;
       for (const [k, f] of Object.entries((blob && blob.facts) || {})) {
-        if (!f || typeof f.t !== 'number' || !/^(tick|food|ok|avatar|wipe|page|media)\|?/.test(k)) continue;
+        if (!f || typeof f.t !== 'number' || !/^(tick|food|ok|avatar|wipe|page|media|stamp)\|?/.test(k)) continue;
         const cur = merged[k];
         if (!cur || f.t > cur.t || (f.t === cur.t && String(f.d) > String(cur.d))) merged[k] = Object.assign({}, f, { d: f.d || id });
       }
@@ -473,6 +489,50 @@ window.Quests = (() => {
     for (const [date, cities] of Object.entries(arrivalsOn())) for (const c of cities) if (!(c in out) || date < out[c]) out[c] = date;
     return Object.fromEntries(Object.entries(out).sort((a, b) => a[1].localeCompare(b[1])));
   }
+  function wallToEpoch(iso, hhmm, tz) {   // a wall-clock time in a city → epoch ms (no DST change touches the trip)
+    const [y, mo, d] = iso.split('-').map(Number), [h, mi] = hhmm.split(':').map(Number);
+    const guess = Date.UTC(y, mo - 1, d, h, mi);
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' }).formatToParts(new Date(guess));
+    const g = (t) => +parts.find((x) => x.type === t).value;
+    return guess - (Date.UTC(g('year'), g('month') - 1, g('day'), g('hour') % 24, g('minute')) - guess);
+  }
+  function nowEpoch(ctx) { return S.preview ? wallToEpoch(S.preview, '12:00', ctx.tz || TZ.Home) : Date.now(); }   // a preview day is noon there
+  function arrivals() {
+    /* city → { date, time, at } of the scheduled arrival: the first move that ends there (airport code for the
+       Australian stops, the city name otherwise); a city with no move into it opens at noon on its first day */
+    const out = {};
+    for (const m of S.family.moves || []) {
+      const to = String(m.to || ''), c = AIRPORTS[airportCode(to)] || CITIES.find((x) => to.toLowerCase().includes(x.toLowerCase()));
+      if (!c || out[c]) continue;
+      const raw = String(m.arrive || ''), time = (raw.match(/\d{1,2}:\d{2}/) || ['12:00'])[0].padStart(5, '0'), date = addDays(m.date, /\+1/.test(raw) ? 1 : 0);
+      out[c] = { date, time, at: wallToEpoch(date, time, TZ[c] || TZ.Home) };
+    }
+    for (const d of S.family.days) { const c = dayCity(d); if (c === 'Home' || c === 'Air' || out[c]) continue; out[c] = { date: d.date, time: '12:00', at: wallToEpoch(d.date, '12:00', TZ[c] || TZ.Home) }; }
+    return Object.fromEntries(Object.entries(out).sort((a, b) => a[1].at - b[1].at));
+  }
+  function stampItem(st, eff, c) {     // the family's tap for a city stamp, with its approval state (like items())
+    const key = 'stamp|' + CITY_KEY[c], f = eff[key];
+    if (!f || !f.v || !f.v.on) return null;
+    const by = f.v.by || 'kid', needs = by !== 'parent', ok = eff['ok|' + key], okValid = ok && ok.t >= f.t, a = okValid ? ok.v.a : null;
+    return { kind: 'stamp', key, id: 'stamp-' + CITY_KEY[c], city: c, title: `${c} stamp (everyone)`, e: CITY_EMOJI[c], pts: 25, date: f.v.date, by, t: f.t,
+      player: f.v.player || st.active, verify: needs, needs, ok: a, okBy: okValid ? ok.v.who || '' : '', pending: needs && !a, rejected: needs && a === 'no', counted: !needs || a === 'yes' };
+  }
+  function pendingStamps(st, eff) { return Object.keys(arrivals()).map((c) => stampItem(st, eff, c)).filter((it) => it && it.pending); }
+  function stampCity(c) {              // the tap on a ready stamp (Passport) or the Home prompt
+    const st = state(), key = 'stamp|' + CITY_KEY[c], cur = stampItem(st, effective(st), c);
+    if (cur && !cur.rejected) return;
+    const who = by(), ctx = currentContext();
+    put(st, key, { on: true, by: who, date: ctx.date, player: st.active, city: c });
+    if (who === 'parent') { st.seen = st.seen || {}; for (const p of people()) st.seen[p + '|stamp-' + CITY_KEY[c]] = ctx.date; }   // the party is here, not a second "New stamp!"
+    save(st); Sync.touch();
+    if (who !== 'parent') celebrate('⏳', 'Sent to Mum and Dad', `${c} stamp · 25 points for everyone when they say yes`, st.active, 'wait');
+    else celebrate(CITY_EMOJI[c], 'Stamped!', `${c} · +25 points for everyone`, st.active, 'stamp', 25, { winter: /Whistler|Vancouver|Montréal|Toronto/.test(c) });
+    afterChange();
+  }
+  function stampsReady(ctx) {          // cities we have landed in whose stamp nobody has tapped yet
+    const st = state();
+    return badges(view(st, st.active), ctx).filter((b) => b.kind === 'stamp' && b.ready).map((b) => b.t);
+  }
   function citiesForDay(ctx) {          // every place the day touches, in order: airports landed at, the bed, the plan's destination
     const set = new Set();
     if (ctx.before) set.add('home');
@@ -488,9 +548,16 @@ window.Quests = (() => {
   function badges(pl, ctx) {
     ctx = ctx || currentContext();
     const F = S.family, today = ctx.date, out = [];
-    const first = firstDates();
-    for (const c of Object.keys(first)) {
-      out.push({ id: 'stamp-' + CITY_KEY[c], e: CITY_EMOJI[c], t: c, kind: 'stamp', pts: 25, earned: today >= first[c], opens: first[c], hint: `Opens ${fmtDate(first[c])}` });
+    /* stamps (1 Nov 2026): open at the scheduled arrival in each city, stamped by a tap (a kids'-device tap waits for a
+       parent), and stamp themselves the morning after if nobody tapped. Before this they unlocked at midnight on the
+       date, so on the morning of 30 Nov, still at home, Brisbane and Vancouver were already stamped. */
+    const arr = arrivals(), now = nowEpoch(ctx), st = state(), eff = effective(st);
+    for (const c of Object.keys(arr)) {
+      const a = arr[c], it = stampItem(st, eff, c), ready = now >= a.at, late = today > a.date;
+      const earned = !!(it && it.counted) || late, pending = !earned && !!(it && it.pending);
+      out.push({ id: 'stamp-' + CITY_KEY[c], e: CITY_EMOJI[c], t: c, kind: 'stamp', pts: 25, earned, opens: a.date, lands: a.time,
+        on: it && it.counted ? it.date : late ? addDays(a.date, 1) : null, ready: ready && !earned && !pending, pending,
+        hint: earned ? '' : pending ? '⏳ waiting for Mum or Dad' : it && it.rejected ? `✗ ${it.okBy || 'a parent'} said not yet · tap again` : ready ? 'Tap to stamp!' : `Lands ${fmtDate(a.date)} ${a.time}` });
     }
     const start = F.trip.start, end = F.trip.end, total = daysBetween(start, end) + 1;
     const dayN = daysBetween(start, today) + 1;
@@ -555,7 +622,7 @@ window.Quests = (() => {
     const st = state(), pl = view(st, st.active), pts = points(pl), lv = level(pts);
     const todays = available(ctx, pl).filter((q) => !q.done);
     return { player: st.active, name: label(st.active), avatar: pl.avatar, points: pts, level: lv, todayLeft: todays.length,
-      stamps: badges(pl, ctx).filter((b) => b.kind === 'stamp' && b.earned).length, stampsTotal: Object.keys(firstDates()).length,
+      stamps: badges(pl, ctx).filter((b) => b.kind === 'stamp' && b.earned).length, stampsTotal: Object.keys(arrivals()).length,
       pending: isParentDevice() ? pendingAll(st).length : pl.pending.length, role: role() };
   }
   function available(ctx, pl) {
@@ -654,12 +721,13 @@ window.Quests = (() => {
     const stamps = all.filter((b) => b.kind === 'stamp'), rest = all.filter((b) => b.kind !== 'stamp');
     let html = `<h1 class="h1">📘 Passport</h1>` + playerChips(st, ctx);
     html += `<div class="levelcard"><div class="lv-top"><span class="lv-av">${pl.avatar}</span><div><div class="lv-name">${esc(label(player))} · ${lv.emoji} ${esc(lv.name)}</div><div class="lv-pts">${pts} points · ${stamps.filter((b) => b.earned).length} of ${stamps.length} stamps · ${rest.filter((b) => b.earned).length} of ${rest.length} badges</div></div></div><div class="bar"><i style="width:${lv.pct}%"></i></div></div>`;
-    const stampCard = (b, k, extraCls, sub) => `<div class="stampc${extraCls}${b.earned ? ' earned' : ''}" style="--i:${k}" data-badge="${esc(b.id)}"><span class="se">${b.e}</span><span class="st">${esc(b.t)}</span><span class="sh">${sub}</span>${b.earned ? '<i class="glint"></i>' : ''}</div>`;
-    html += `<h2 class="h2">Stamps</h2><div class="stamps">` + stamps.map((b, k) => stampCard(b, k, ' ' + (CITY_KEY[b.t] || ''), b.earned ? '✓ ' + esc(fmtDate(b.opens)) : esc(b.hint))).join('') + `</div>`;
+    const stampCard = (b, k, extraCls, sub, attr) => `<div class="stampc${extraCls}${b.earned ? ' earned' : ''}" style="--i:${k}" data-badge="${esc(b.id)}"${attr || ''}><span class="se">${b.e}</span><span class="st">${esc(b.t)}</span><span class="sh">${sub}</span>${b.earned ? '<i class="glint"></i>' : ''}</div>`;
+    html += `<h2 class="h2">Stamps</h2><p class="small muted">A stamp opens when we land. Tap it to stamp the passport${isParentDevice() ? '' : ' (Mum or Dad say yes)'}; if nobody does, it stamps itself the next morning.</p><div class="stamps">` + stamps.map((b, k) => stampCard(b, k, ' ' + (CITY_KEY[b.t] || '') + (b.ready ? ' ready' : b.pending ? ' pending' : ''), b.earned ? '✓ ' + esc(fmtDate(b.on || b.opens)) : esc(b.hint), b.ready ? ` data-stamp="${esc(b.t)}" role="button" tabindex="0"` : '')).join('') + `</div>`;
     html += `<h2 class="h2">Badges</h2><div class="stamps">` + rest.map((b, k) => stampCard(b, k, ' badge', b.earned ? '✓ earned · ' + b.pts + ' pts' : esc(b.hint))).join('') + `</div>`;
     html += `<h2 class="h2">Levels</h2><div class="card">${LEVELS.map((l) => `<div class="lvrow${pts >= l[0] ? ' got' : ''}"><span>${l[2]} ${esc(l[1])}</span><span class="muted">${l[0]} pts</span></div>`).join('')}</div>`;
     const el = $('#screen-passport'); el.innerHTML = html;
     wire(el, ctx, player);
+    el.querySelectorAll('[data-stamp]').forEach((d) => d.onclick = () => stampCity(d.dataset.stamp));
     // stamps and badges earned since this device last showed them slam in one by one, with sparkles
     st.revealed = st.revealed || {};
     const fresh = all.filter((b) => b.earned && !st.revealed[player + '|' + b.id]);
@@ -688,13 +756,13 @@ window.Quests = (() => {
   function openAvatarPicker(p) {
     const st = state(), cur = view(st, p).avatar;
     const pick = (a) => `<button class="avpick${a === cur ? ' active' : ''}" data-pick="${a}" aria-label="${a}">${a}</button>`;
-    openModal(`<h2 class="h2">${esc(label(p))}: pick a face</h2><div class="row avtop"><span class="avnow">${cur}</span><button class="btn" id="av-random">🎲 Surprise me</button><span class="muted small">${AVATARS.length} to choose from</span></div>` +
-      AVATAR_GROUPS.map(([name, list]) => `<h3 class="h3 avhead">${esc(name)}</h3><div class="avgrid">${list.map(pick).join('')}</div>`).join(''));
+    openModal(`<h2 class="h2">${esc(label(p))}: pick a face</h2><div class="row avtop"><span class="avnow">${cur}</span><button class="btn" id="av-random">🎲 Surprise me</button><span class="muted small">${avatarsOk().length} to choose from</span></div>` +
+      AVATAR_GROUPS.map(([name, list]) => [name, list.filter(emojiOk)]).filter((g) => g[1].length).map(([name, list]) => `<h3 class="h3 avhead">${esc(name)}</h3><div class="avgrid">${list.map(pick).join('')}</div>`).join(''));
     const choose = (a) => { setAvatar(p, a); closeModal(); refreshTop(); renderSettings(); FX.haptic(15); };
     const inner = $('#modal-inner');
     inner.querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => choose(b.dataset.pick));
     inner.querySelector('#av-random').onclick = () => {   // a short shuffle on the big face, then that one sticks
-      const now = inner.querySelector('.avnow'), rnd = () => AVATARS[Math.floor(Math.random() * AVATARS.length)];
+      const now = inner.querySelector('.avnow'), ok = avatarsOk(), rnd = () => ok[Math.floor(Math.random() * ok.length)];
       let n = 0; const spin = setInterval(() => { now.textContent = rnd(); if (++n >= 12) { clearInterval(spin); choose(now.textContent); } }, 70);
     };
   }
@@ -716,5 +784,6 @@ window.Quests = (() => {
 
   return { QUESTS, CITY_EMOJI, CITY_KEY, CITIES, dayCity, daysBetween, state, label, setActive, complete, undo, addFood, approve, approveAll, summary, badges,
     checkNewBadges, renderQuests, renderPassport, settingsCard, wireSettings, refreshTop, celebrate, reset, startSync, mergeRemote, mine,
-    role, setRole, isParentDevice, pendingAll, view, points, setFact, getFact, factsByPrefix, onFacts, visiblePlayers, addDays, syncText };
+    role, setRole, isParentDevice, pendingAll, view, points, setFact, getFact, factsByPrefix, onFacts, visiblePlayers, addDays, syncText,
+    arrivals, stampCity, stampsReady };
 })();

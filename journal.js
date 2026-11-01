@@ -11,7 +11,7 @@ window.Journal = (() => {
   const MOOD = Object.fromEntries(MOODS.map((m) => [m[0], m]));
   const COLOURS = ['#1B1B2F', '#E63946', '#FF7A00', '#FFB703', '#2A9D8F', '#3A86FF', '#7B2CBF', '#FF4D8D'];
   const SIZES = [6, 14, 28];
-  const J = { pages: {}, media: {}, cache: {}, warmed: false, warming: null, again: false, sel: null, observer: null, saveTimer: null, viewer: null };
+  const J = { pages: {}, media: {}, cache: {}, warmed: false, warming: null, again: false, sel: null, observer: null, saveTimer: null, viewer: null, overlay: null };
 
   function init() {
     Quests.onFacts(() => { warm(); });
@@ -115,10 +115,11 @@ window.Journal = (() => {
 
   /* ---------------------------------------------------------------- photos in */
   async function addPhoto(p, d, tag, camera) {       // Media.pick runs synchronously up to the input click: keep this first
-    const files = await Media.pick({ camera });
+    const meta = { p, d, tag, id: Media.newId() };
+    const files = await Media.pick({ camera, keep: camera ? (f) => Media.keepOriginal(f, meta) : null });   // Snap: the full-size original too
     if (!files.length) return null;
     try {
-      const r = await Media.addImage(files[0], { p, d, tag });
+      const r = await Media.addImage(files[0], meta);
       J.media[r.id] = { id: r.id, k: 'photo', p, d, tag, n: r.n, w: r.w, h: r.h, t: Date.now(), local: true };
       return r.id;
     } catch (e) { alert(e.message || 'That photo could not be saved.'); return null; }
@@ -140,7 +141,7 @@ window.Journal = (() => {
     html += `<div class="pagehead"><span class="se">${Quests.CITY_EMOJI[city] || '📍'}</span><div><b>${esc(fmtDate(d))}</b>${d !== ctx.date ? ' <span class="chip">earlier day</span>' : ''}<div class="small muted">${esc(city === 'Home' ? 'At home' : city === 'Air' ? 'In the air' : city)}</div></div></div>`;
     html += `<div class="card"><div class="h3">How was today?</div><div class="moods">` + MOODS.map(([id, e, t]) => `<button class="mood${pg.mood === id ? ' on' : ''}" data-mood="${id}"><span class="me">${e}</span><span class="mt">${t}</span></button>`).join('') + `</div></div>`;
     html += `<div class="card"><div class="page-q">${esc(pg.q || prompt.q)}</div><textarea class="page-text" id="page-text" maxlength="300" rows="3" enterkeyhint="done" placeholder="Write or say one line…">${esc(pg.text || '')}</textarea><div class="tiny muted" id="page-saved">${pg.text ? 'Saved ✓' : 'Saves by itself'}</div></div>`;
-    html += `<div class="card"><div class="h3">Picture of the day</div><div class="page-media">${photo ? `<button class="phbtn" data-view="${esc(photo.id)}"><img class="ph" data-oid="${esc(photo.id)}t" data-kind="thumb" alt="Photo"></button>` : ''}${draw ? `<button class="phbtn" data-view="${esc(draw.id)}"><img class="dr" data-oid="${esc(draw.id)}" data-kind="drawing" alt="Drawing"></button>` : ''}</div><div class="row"><button class="btn" data-snap="camera">📷 Take a photo</button>${Quests.isParentDevice() ? `<button class="btn" data-snap="library">🖼️ Choose a photo</button>` : ''}<button class="btn" id="page-draw">🖍️ Draw</button></div></div>`;
+    html += `<div class="card"><div class="h3">Picture of the day</div><div class="page-media">${photo ? `<button class="phbtn" data-view="${esc(photo.id)}"><img class="ph" data-oid="${esc(photo.id)}t" data-kind="thumb" alt="Photo"></button>` : ''}${draw ? `<button class="phbtn" data-view="${esc(draw.id)}"><img class="dr" data-oid="${esc(draw.id)}" data-kind="drawing" alt="Drawing"></button>` : ''}</div><div class="row"><button class="btn" data-snap="camera">📷 Snap</button><button class="btn" data-snap="library">🖼️ Add a photo</button><button class="btn" id="page-draw">🖍️ Draw</button></div>${Media.origHint() ? `<p class="tiny muted">${esc(Media.origHint())}</p>` : ''}</div>`;
     const stickers = stickersFor(pl, d, ctx);
     if (stickers.length) html += `<div class="card"><div class="h3">Stickers from this day</div><div class="stickers">${stickers.map((s) => `<span class="sticker">${s.e} ${esc(s.t)}</span>`).join('')}</div></div>`;
     html += diaryDone ? `<div class="card" style="border-color:var(--city)"><b>✓ Page done for ${esc(fmtDate(d))}</b> · +5 points</div>`
@@ -175,6 +176,7 @@ window.Journal = (() => {
   /* ---------------------------------------------------------------- the drawing pad (its own full-screen overlay) */
   function openDraw(p, d) {
     const ov = $('#overlay');
+    if (typeof Nav !== 'undefined') Nav.pushOverlay();
     ov.innerHTML = `<div class="pad-bar">${COLOURS.map((c, i) => `<button class="dot${i === 0 ? ' on' : ''}" data-c="${c}" style="background:${c}" aria-label="Colour"></button>`).join('')}<button class="dot eraser" data-c="#ffffff" style="background:#fff" aria-label="Eraser">🧽</button>${SIZES.map((s, i) => `<button class="sz${i === 1 ? ' on' : ''}" data-s="${s}" aria-label="Brush size"><i style="width:${8 + i * 8}px;height:${8 + i * 8}px"></i></button>`).join('')}</div><div class="pad-wrap"><canvas id="pad"></canvas></div><div class="pad-foot"><button id="pad-cancel" aria-label="Cancel">✕</button><button id="pad-undo" aria-label="Undo">↶ <span class="lbl">Undo</span></button><button id="pad-clear" aria-label="Clear">🗑️</button><button class="done" id="pad-done">✓ Done</button></div>`;
     ov.classList.remove('hidden');
     const cv = ov.querySelector('#pad'), wrap = ov.querySelector('.pad-wrap'), dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -193,8 +195,10 @@ window.Journal = (() => {
     ov.querySelectorAll('[data-s]').forEach((b) => b.onclick = () => { size = +b.dataset.s; ov.querySelectorAll('[data-s]').forEach((x) => x.classList.toggle('on', x === b)); });
     ov.querySelector('#pad-undo').onclick = () => { strokes.pop(); paint(); };
     ov.querySelector('#pad-clear').onclick = () => { if (!strokes.length || confirm('Clear the drawing?')) { strokes.length = 0; paint(); } };
-    const close = () => { ov.classList.add('hidden'); ov.innerHTML = ''; };
-    ov.querySelector('#pad-cancel').onclick = () => { if (!strokes.length || confirm('Leave without saving the drawing?')) close(); };
+    const close = () => { ov.classList.add('hidden'); ov.innerHTML = ''; J.overlay = null; };
+    const cancel = () => { if (strokes.length && !confirm('Leave without saving the drawing?')) return false; close(); return true; };
+    J.overlay = { back: cancel };
+    ov.querySelector('#pad-cancel').onclick = cancel;
     ov.querySelector('#pad-done').onclick = async (e) => {
       if (!strokes.length) return close();
       e.target.disabled = true;
@@ -215,8 +219,10 @@ window.Journal = (() => {
     J.viewer = { ids, i: i || 0 };
     ov.innerHTML = `<div class="viewer"><div class="viewer-img" id="viewer-img"><img alt=""></div><div class="viewer-bar"><button id="v-prev" aria-label="Previous">‹</button><div class="vi" id="v-info"></div><button id="v-next" aria-label="Next">›</button>${Quests.isParentDevice() ? `<button class="del" id="v-del" aria-label="Delete">🗑️</button>` : ''}<button id="v-close" aria-label="Close">✕</button></div></div>`;
     ov.classList.remove('hidden');
+    if (typeof Nav !== 'undefined') Nav.pushOverlay();
     const img = ov.querySelector('img'), info = ov.querySelector('#v-info');
-    const closeViewer = () => { ov.classList.add('hidden'); ov.innerHTML = ''; J.viewer = null; };
+    const closeViewer = () => { ov.classList.add('hidden'); ov.innerHTML = ''; J.viewer = null; J.overlay = null; };
+    J.overlay = { back: () => { closeViewer(); return true; } };
     const showAt = async (k) => {
       if (!J.viewer) return;
       J.viewer.i = (k + ids.length) % ids.length;
@@ -265,6 +271,11 @@ window.Journal = (() => {
     const badgeDates = {};
     for (const b of Quests.badges(Quests.view(st, st.active), ctx)) { const on = b.opens || b.on; if (b.earned && on && (b.kind === 'stamp' || b.kind === 'milestone')) (badgeDates[on] = badgeDates[on] || []).push(b); }
     let html = `<h1 class="h1">📖 Our story</h1>`, any = false;
+    const o = Media.originalsSummary();
+    if (Media.canSaveOriginals() && o.waiting) {
+      html += `<div class="card originals"><b>📥 ${o.waiting} full-size photo${o.waiting === 1 ? '' : 's'} not yet in Photos</b> <span class="muted small">(${(o.waitingBytes / 1048576).toFixed(1)} MB)</span><div class="row"><button class="btn" id="orig-save">Save to Photos</button></div><div class="tiny muted">One tap saves up to ${Media.LIMITS.shareBatch} at a time. Then Photos has the originals and the app keeps the small copies.</div></div>`;
+      Media.prepareOriginals();
+    }
     for (const date of [...dates].sort().reverse()) {
       const day = dayOf(date), city = cityOf(date, ctx), key = Quests.CITY_KEY[city] || 'home';
       const photos = mediaOn(date, (m) => m.k === 'photo');
@@ -280,13 +291,15 @@ window.Journal = (() => {
         const dr = pg.draw && J.media[pg.draw];
         html += `<div class="story-page"><span class="av">${avatarOf(p)}</span><div class="pt"><b>${esc(Quests.label(p))}</b> ${MOOD[pg.mood] ? MOOD[pg.mood][1] : ''}${pg.q && pg.text ? `<div class="tiny muted">${esc(pg.q)}</div>` : ''}${pg.text ? `<div>${esc(pg.text)}</div>` : ''}${dr ? `<button class="phbtn" data-view="${esc(dr.id)}"><img class="dr" data-oid="${esc(dr.id)}" data-kind="drawing" alt="Drawing"></button>` : ''}</div></div>`;
       }
-      html += `<div class="row">${players.map((p) => `<button class="btn small-btn" data-write="${esc(p)}|${esc(date)}">✏️ ${esc(Quests.label(p))}</button>`).join('')}${Quests.isParentDevice() ? `<button class="btn small-btn" data-addphoto="${esc(date)}">📷 Add a photo</button>` : ''}</div></div>`;
+      html += `<div class="row">${players.map((p) => `<button class="btn small-btn" data-write="${esc(p)}|${esc(date)}">✏️ ${esc(Quests.label(p))}</button>`).join('')}<button class="btn small-btn" data-addphoto="${esc(date)}">🖼️ Add a photo</button></div></div>`;
     }
     if (!any) html += `<p class="small muted">Nothing written yet. Today's page is on the Home screen.</p>`;
     el.innerHTML = html;
     wireViews(el);
     el.querySelectorAll('[data-write]').forEach((b) => b.onclick = () => { const [p, d] = b.dataset.write.split('|'); Quests.setActive(p); openPage(p, d); });
     el.querySelectorAll('[data-addphoto]').forEach((b) => b.onclick = () => addPhoto(st.active, b.dataset.addphoto, 'day', false).then((id) => { if (id) renderStory(); }));
+    const os = el.querySelector('#orig-save');
+    if (os) os.onclick = () => { os.disabled = true; Media.saveOriginals().then((r) => { if (r.saved) Quests.celebrate('📥', `Saved ${r.saved} to Photos`, r.left ? `${r.left} more to go: tap again` : 'All your full-size photos are in Photos', st.active, 'ok'); renderStory(); }).catch((e) => { os.disabled = false; if (e && e.name !== 'AbortError') alert(e.message || 'Could not hand the photos over.'); }); };
     observe(el);
   }
   function observe(root) {               // thumbnails decrypt only near the viewport and let go again when far away
@@ -318,5 +331,6 @@ window.Journal = (() => {
     }
   }
 
-  return { init, warm, page, setField, promptFor, index, todayTileHtml, morningHtml, fill, renderPage, renderStory, openPage, openDraw, openViewer, onLeave, addPhoto, downloadAll, MOODS };
+  return { init, warm, page, setField, promptFor, index, todayTileHtml, morningHtml, fill, renderPage, renderStory, openPage, openDraw, openViewer, onLeave, addPhoto, downloadAll, MOODS,
+    overlayOpen: () => !!J.overlay, overlayBack: () => (J.overlay ? J.overlay.back() : true) };
 })();

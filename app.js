@@ -828,7 +828,7 @@ function renderSettings() {
         `${VERSION} · built ${BUILT} · ${navigator.onLine ? 'online' : 'offline'} · ${navigator.serviceWorker && navigator.serviceWorker.controller ? 'sw on' : 'no sw'} · ${Quests.role() || 'no role'}`,
         `picture key: ${Media.enabled ? 'yes' : 'NO'} · mode ${md.mode || '?'} · pictures here ${u ? u.count : '?'} · waiting to upload ${u ? u.pending : '?'}`,
         `sync: ${sy.enabled ? 'on' : 'OFF'} · last ${when(sy.last)} · ${sy.error ? 'error ' + sy.error : 'ok'}${sy.busy ? ' · busy' : ''}${sy.dirty ? ' · unsent' : ''}`,
-        `last upload: ${md.up || '-'} · last download: ${md.down || '-'} · last open: ${md.open || '-'}`,
+        `last add: ${md.add || '-'} · last upload: ${md.up || '-'} · last download: ${md.down || '-'} · last open: ${md.open || '-'}`,
         `journal: ${Journal.diag ? Journal.diag() : '-'}`,
         log.length ? 'errors:\n' + log.join('\n') : 'errors: none',
       ].join('\n');

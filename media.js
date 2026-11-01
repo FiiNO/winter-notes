@@ -9,7 +9,7 @@
 window.Media = (() => {
   const LIMITS = { full: 1280, thumb: 320, draw: 1024, qFull: 0.8, qThumb: 0.72, maxBytes: 1.5 * 1024 * 1024, lru: 80, shareBatch: 12 };
   const M = { key: null, enabled: false, urls: new Map(), order: [], inflight: new Map(), flushing: false, backoffUntil: 0,
-    pending: 0, queue: Promise.resolve(), active: 0, waiters: [], onChange: null, last: { up: '', down: '', open: '' } };
+    pending: 0, queue: Promise.resolve(), active: 0, waiters: [], onChange: null, last: { up: '', down: '', open: '', add: '' } };
   const enc = (s) => new TextEncoder().encode(String(s));
 
   /* base64 in chunks: a photo-sized buffer would overflow a spread into String.fromCharCode */
@@ -66,11 +66,31 @@ window.Media = (() => {
     return new Promise((res, rej) => {
       const url = URL.createObjectURL(file), img = new Image();
       let done = false;
-      const ok = () => { if (done) return; done = true; URL.revokeObjectURL(url); res(img); };
-      const bad = () => { if (done) return; done = true; URL.revokeObjectURL(url); rej(new Error('That photo could not be read. Try the camera button, or pick a JPEG.')); };
+      img._url = url;                                 // revoked by dropImage() after the shrink, not here: revoking at onload left phones drawing white (1 Nov)
+      const ok = () => { if (done) return; done = true; res(img); };
+      const bad = () => { if (done) return; done = true; dropImage(img); rej(new Error('That photo could not be read. Try the camera button, or pick a JPEG.')); };
       img.onload = ok; img.onerror = bad; img.src = url;
       if (img.decode) img.decode().then(ok, () => { /* onload or onerror decides */ });
     });
+  }
+  function dropImage(src) {
+    if (!src) return;
+    if (src._url) { URL.revokeObjectURL(src._url); src._url = null; }
+    if (typeof src.close === 'function') src.close();                 // an ImageBitmap
+    else if ('src' in src) src.src = '';
+  }
+  function looksBlank(c) {                           // every sampled pixel white: the draw produced nothing (the phones, 1 Nov)
+    try {
+      const g = c.getContext('2d'), w = c.width, h = c.height, n = 12;
+      for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+        const px = g.getImageData(Math.floor((x + 0.5) * w / n), Math.floor((y + 0.5) * h / n), 1, 1).data;
+        if (px[0] < 250 || px[1] < 250 || px[2] < 250) return false;
+      }
+      return true;
+    } catch (e) { return false; }
+  }
+  async function bitmapOf(file) {                   // the bytes decoded directly, orientation applied where the browser can
+    try { return await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch (e) { return createImageBitmap(file); }
   }
   let canvas = null;                                 // one reused canvas, zeroed after each use (iOS counts canvas memory tightly)
   function fit(w, h, max) { const s = Math.min(1, max / Math.max(w, h, 1)); return [Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s))]; }
@@ -81,10 +101,11 @@ window.Media = (() => {
     canvas.width = w; canvas.height = h;
     const g = canvas.getContext('2d');
     if (type === 'image/jpeg') { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); }
-    g.drawImage(src, 0, 0, w, h);
+    try { g.drawImage(src, 0, 0, w, h); } catch (e) { /* a dropped bitmap: the blank check below catches it */ }
+    const blank = type === 'image/jpeg' && looksBlank(canvas);
     const blob = await toBlob(canvas, type, q);
     canvas.width = canvas.height = 0;
-    return { blob, w, h };
+    return { blob, w, h, blank };
   }
   function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
   function enqueue(fn) { const p = M.queue.then(fn, fn); M.queue = p.catch(() => {}); return p; }
@@ -106,10 +127,17 @@ window.Media = (() => {
     return enqueue(async () => {
       need();
       if (!file || !(/^image\//.test(file.type || '') || /\.(jpe?g|png|heic|heif|webp|gif)$/i.test(file.name || ''))) throw new Error('That is not a photo.');
-      const img = await loadImage(file);
-      const full = await shrink(img, LIMITS.full, 'image/jpeg', LIMITS.qFull);
-      const th = await shrink(img, LIMITS.thumb, 'image/jpeg', LIMITS.qThumb);
-      img.src = '';
+      let src = await loadImage(file), via = 'img';
+      let full = await shrink(src, LIMITS.full, 'image/jpeg', LIMITS.qFull);
+      if (full.blank && window.createImageBitmap) {                       // the <img> drew nothing: decode the bytes directly instead
+        dropImage(src);
+        try { src = await bitmapOf(file); via = 'bitmap'; full = await shrink(src, LIMITS.full, 'image/jpeg', LIMITS.qFull); }
+        catch (e) { via = 'bitmap failed'; }
+      }
+      const th = full.blank ? full : await shrink(src, LIMITS.thumb, 'image/jpeg', LIMITS.qThumb);
+      dropImage(src);
+      M.last.add = `${via} ${full.blank ? 'BLANK' : 'ok'} ${full.w}x${full.h} ${Math.round(file.size / 1024)}KB`;
+      if (full.blank) throw new Error('That photo came out blank, so it was not kept. Try again, or add it from the gallery.');
       const id = meta.id || newId(), at = Date.now();
       await storeObject(id + 't', th.blob, { k: 'thumb', p: meta.p, d: meta.d, tag: meta.tag, w: th.w, h: th.h, at });
       await storeObject(id, full.blob, { k: 'photo', p: meta.p, d: meta.d, tag: meta.tag, w: full.w, h: full.h, at });
@@ -284,5 +312,5 @@ window.Media = (() => {
     countPending, usage, remove, wipe, clearDownloaded, onChange: (fn) => { M.onChange = fn; }, LIMITS,
     newId, keepOriginal, originals, originalsSummary, canSaveOriginals, origHint, prepareOriginals, saveOriginals, clearSavedOriginals,
     get origMode() { return M.origMode; }, setOrigMode: (m) => { M.origMode = m; M.prepared = null; },
-    diag: () => ({ up: M.last.up, down: M.last.down, open: M.last.open, mode: M.origMode, enabled: M.enabled, pending: M.pending }) };
+    diag: () => ({ up: M.last.up, down: M.last.down, open: M.last.open, add: M.last.add, mode: M.origMode, enabled: M.enabled, pending: M.pending }) };
 })();

@@ -43,7 +43,8 @@ window.Quests = (() => {
     return emojiW.cache[e];
   }
   const avatarsOk = () => AVATARS.filter(emojiOk);
-  const DEFAULT_AVATAR = { Andrew: '🕵️', Sarah: '🌟', Vince: '🦖', Drew: '🦄' };
+  const DEFAULT_AVATAR = { Andrew: '🕵️', Sarah: '🌟', Vince: '🦖', Drew: '🦄', Grandma: '👵', Grandpa: '👴' };
+  const GRAND = ['Grandma', 'Grandpa'];                       // the authors on Grandma and Grandpa's phone (2 Nov 2026): replies and reactions, never points
   const DISPLAY = { Andrew: 'Dad', Sarah: 'Mum' };          // the parents; everyone else is a kid
   const LEVELS = [[0, 'Rookie', '🥾'], [100, 'Explorer', '🧭'], [250, 'Adventurer', '🎒'], [500, 'Navigator', '🧭'], [900, 'Globetrotter', '🌏'], [1500, 'Legend', '👑']];
   const FOOD_PTS = 10;
@@ -216,7 +217,7 @@ window.Quests = (() => {
   const owner = () => localStorage.getItem('deviceOwner') || '';          // the parent a parent phone belongs to
   const isParentDevice = () => role() === 'parent';
   const isGrandDevice = () => role() === 'grand';
-  const visiblePlayers = () => (isParentDevice() ? people() : kids());
+  const visiblePlayers = () => (isParentDevice() ? people() : isGrandDevice() ? GRAND : kids());
   function setRole(r, who) {
     localStorage.setItem('deviceRole', r); localStorage.setItem('deviceOwner', who || '');
     if (typeof applyRoleChrome === 'function') applyRoleChrome();
@@ -805,7 +806,7 @@ window.Quests = (() => {
   function settingsCard() {
     const st = state(), eff = effective(st);
     const devices = Object.values(st.devices || {}).filter((d) => d && d.name).map((d) => d.name);
-    if (isGrandDevice()) return roleCard() + `<div class="card"><div class="h3">Sync</div><div class="syncline" id="sync-line">${esc(syncText())}</div>${devices.length ? `<div class="tiny muted">Other devices seen: ${esc(devices.join(', '))}</div>` : ''}<div class="row"><button class="btn" id="opt-sync-now">Sync now</button></div></div>`;
+    if (isGrandDevice()) return roleCard() + `<div class="card"><div class="h3">Your faces</div><p class="small muted">Tap a face to change it. The family sees it next to your replies.</p>${GRAND.map((p) => { const pl = view(st, p, eff); return `<button class="avrow" data-avatar="${esc(p)}" aria-label="Change ${esc(label(p))}'s avatar"><span class="av big-av">${pl.avatar}</span><b>${esc(label(p))}</b><span class="muted small avgo">Change ›</span></button>`; }).join('')}</div>` + `<div class="card"><div class="h3">Sync</div><div class="syncline" id="sync-line">${esc(syncText())}</div>${devices.length ? `<div class="tiny muted">Other devices seen: ${esc(devices.join(', '))}</div>` : ''}<div class="row"><button class="btn" id="opt-sync-now">Sync now</button></div></div>`;
     return roleCard() +
       `<div class="card"><div class="h3">Quest players</div><p class="small muted">Tap a face to change it.</p>` +
       visiblePlayers().map((p) => { const pl = view(st, p, eff); return `<button class="avrow" data-avatar="${esc(p)}" aria-label="Change ${esc(label(p))}'s avatar"><span class="av big-av">${pl.avatar}</span><b>${esc(label(p))}</b><span class="muted small">${points(pl)} pts</span><span class="muted small avgo">Change ›</span></button>`; }).join('') +

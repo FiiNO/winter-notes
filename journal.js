@@ -207,7 +207,7 @@ window.Journal = (() => {
     try {
       if (!Media.enabled) return '';
       const n = J.warmed ? unseenCount(Quests.state()) : 0, today = postsOn(ctx.date).length;
-      return `<button class="tile ht wide t5" data-go="story"><span class="ico">📖</span><span class="tt">Stories${n ? ` · ${n} new` : ''}</span><span class="ts">${today ? `${today} stor${today === 1 ? 'y' : 'ies'} today` : 'Nothing yet today'}${Quests.isGrandDevice() ? '' : ' · tell yours'}</span><span class="ts small">${Quests.isGrandDevice() ? 'See what they posted' : 'Photos, drawings, emoji, replies'}</span></button>`;
+      return `<button class="tile ht wide t5" data-go="story"><span class="ico">📖</span><span class="tt">Stories${n ? ` · ${n} new` : ''}</span><span class="ts">${today ? `${today} stor${today === 1 ? 'y' : 'ies'} today` : 'Nothing yet today'}${Quests.isGrandDevice() ? '' : ' · tell yours'}</span><span class="ts small">${Quests.isGrandDevice() ? 'See what they posted · tap ❤️ or reply' : 'Photos, drawings, emoji, replies'}</span></button>`;
     } catch (e) { if (window.logErr) logErr('stories tile: ' + ((e && e.message) || e)); return `<div class="tile wide t5"><span class="ico">📖</span><span class="tt">Stories</span><span class="ts">hit a problem: ${esc((e && e.message) || e)}</span></div>`; }
   }
   function morningHtml(date) {
@@ -462,8 +462,8 @@ window.Journal = (() => {
       const by = {}; for (const r of reacts) { const e = r.text.trim(); (by[e] = by[e] || []).push(r); }
       h += `<div class="reacts">${Object.entries(by).map(([e, rs]) => `<span class="react">${esc(e)} ${rs.map((r) => av(r.p)).join('')}</span>`).join('')}</div>`;
     }
-    if (replies.length) h += `<div class="cmts">${replies.map((c) => `<div class="cmt"><span class="av">${av(c.p)}</span><div class="ct"><b>${esc(Quests.label(c.p))}</b> ${esc(c.text || '')}${c.media && J.media[c.media.id] ? `<button class="phbtn" data-view="${esc(c.media.id)}">${pic(c.media)}</button>` : ''}</div>${!ro && canDelete(c, st) ? `<button class="xdel" data-del-cmt="${esc(po.id)}|${esc(c.id)}" aria-label="Delete reply">🗑️</button>` : ''}</div>`).join('')}</div>`;
-    h += ro ? '</div>' : `<div class="post-foot">${QUICK.map((e) => { const mine = reacts.some((r) => r.p === st.active && r.text.trim() === e); return `<button class="quick${mine ? ' on' : ''}" data-quick="${esc(po.id)}|${e}" aria-label="${e}">${e}</button>`; }).join('')}<button class="btn small-btn" data-reply="${esc(po.id)}">💬 Reply</button><button class="btn small-btn" data-card="${esc(po.id)}">📮 Postcard</button>${canDelete(po, st) ? `<button class="btn small-btn del" data-del-post="${esc(po.id)}" aria-label="Delete story">🗑️</button>` : ''}</div></div>`;
+    if (replies.length) h += `<div class="cmts">${replies.map((c) => `<div class="cmt"><span class="av">${av(c.p)}</span><div class="ct"><b>${esc(Quests.label(c.p))}</b> ${esc(c.text || '')}${c.media && J.media[c.media.id] ? `<button class="phbtn" data-view="${esc(c.media.id)}">${pic(c.media)}</button>` : ''}</div>${canDelete(c, st) ? `<button class="xdel" data-del-cmt="${esc(po.id)}|${esc(c.id)}" aria-label="Delete reply">🗑️</button>` : ''}</div>`).join('')}</div>`;
+    h += `<div class="post-foot">${QUICK.map((e) => { const mine = reacts.some((r) => r.p === st.active && r.text.trim() === e); return `<button class="quick${mine ? ' on' : ''}" data-quick="${esc(po.id)}|${e}" aria-label="${e}">${e}</button>`; }).join('')}<button class="btn small-btn" data-reply="${esc(po.id)}">💬 Reply</button>${ro ? '' : `<button class="btn small-btn" data-card="${esc(po.id)}">📮 Postcard</button>`}${canDelete(po, st) ? `<button class="btn small-btn del" data-del-post="${esc(po.id)}" aria-label="Delete story">🗑️</button>` : ''}</div></div>`;
     return h;
   }
   function renderStory() { return guarded($('#screen-story'), '📖 Stories', renderStoryInner); }
@@ -479,6 +479,7 @@ window.Journal = (() => {
     const badgeDates = {};
     for (const b of Quests.badges(Quests.view(st, st.active), ctx)) { const on = b.opens || b.on; if (b.earned && on && (b.kind === 'stamp' || b.kind === 'milestone')) (badgeDates[on] = badgeDates[on] || []).push(b); }
     let html = `<h1 class="h1">📖 Stories</h1>`, any = false;
+    if (ro) html += `<div class="row">${Quests.visiblePlayers().map((p) => `<button class="pill${st.active === p ? ' active' : ''}" data-me="${esc(p)}">${av(p)} I'm ${esc(Quests.label(p))}</button>`).join('')}</div>`;   // whose ❤️ and replies these are
     if (!ro) html += `<button class="btn primary block new-story" data-new="${esc(ctx.date)}">✏️ New story</button>`;
     if (J.error) html += `<div class="card red"><b>Could not open the stories.</b><div class="small">${esc(J.error)}</div><div class="small">Tell Andy what it says, then try Settings → Sync now.</div></div>`;
     const o = Media.originalsSummary();
@@ -492,7 +493,7 @@ window.Journal = (() => {
       const moves = (F.moves || []).filter((m) => m.date === date), stamps = badgeDates[date] || [];
       const empty = !photos.length && !posts.length;
       if (!empty) any = true;
-      html += `<div class="card story-day${empty ? ' story-empty' : ''}" style="--city:var(--c-${key})"><div class="story-head"><span class="se">${Quests.CITY_EMOJI[city] || '📍'}</span><div><b>${esc(fmtDate(date))}</b>${date === ctx.date ? '<span class="chip red">today</span>' : ''}<div class="small muted">${esc(day ? day.where : (city === 'Home' ? 'At home' : city))}</div></div></div>`;
+      html += `<div class="card story-day${empty ? ' story-empty' : ''}" data-date="${esc(date)}" style="--city:var(--c-${key})"><div class="story-head"><span class="se">${Quests.CITY_EMOJI[city] || '📍'}</span><div><b>${esc(fmtDate(date))}</b>${date === ctx.date ? '<span class="chip red">today</span>' : ''}<div class="small muted">${esc(day ? day.where : (city === 'Home' ? 'At home' : city))}</div></div></div>`;
       if (moves.length) html += moves.map((m) => `<div class="small">${/train/i.test(m.mode || '') ? '🚆' : /coach|bus/i.test(m.mode || '') ? '🚌' : '✈️'} ${esc(m.frm)} → ${esc(m.to)} · ${esc(m.depart)}</div>`).join('');
       if (stamps.length) html += `<div class="stickers">${stamps.map((b) => `<span class="sticker">${b.e} ${esc(b.t)}</span>`).join('')}</div>`;
       if (photos.length) html += `<div class="story-grid">${photos.map((m) => `<button data-view="${esc(m.id)}" data-group="${esc(date)}"><img class="ph" data-oid="${esc(m.id)}t" data-kind="thumb" alt=""></button>`).join('')}</div>`;
@@ -504,6 +505,7 @@ window.Journal = (() => {
     el.innerHTML = html;
     window.scrollTo(0, y);
     wireViews(el);
+    el.querySelectorAll('[data-me]').forEach((b) => b.onclick = () => { Quests.setActive(b.dataset.me); renderStory(); });
     el.querySelectorAll('[data-new]').forEach((b) => b.onclick = () => openComposer({ mode: 'post', d: b.dataset.new }));
     el.querySelectorAll('[data-reply]').forEach((b) => b.onclick = () => openComposer({ mode: 'reply', postId: b.dataset.reply, d: (J.posts[b.dataset.reply] || {}).d }));
     el.querySelectorAll('[data-card]').forEach((b) => b.onclick = () => { if (window.Postcard) Postcard.openPreview(b.dataset.card); });
@@ -539,6 +541,17 @@ window.Journal = (() => {
     if (window.Postcard) Postcard.releaseUrls();
     Media.release();
   }
+  /* for the globe (2 Nov 2026): jump to a day's card, and a city's numbers for the badge popup */
+  function scrollToDate(d) {
+    const go = () => { const c = document.querySelector(`#screen-story .story-day[data-date="${d}"]`); if (c) c.scrollIntoView({ block: 'start', behavior: 'smooth' }); };
+    if (J.warmed) setTimeout(go, 80); else warm().then(() => setTimeout(go, 400));
+  }
+  function cityStats(city) {
+    const ctx = currentContext(), want = city === 'Townsville' ? ['Townsville', 'Home'] : [city], at = (d) => want.includes(cityOf(d, ctx));
+    const posts = Object.values(J.posts).filter((p) => p.d && at(p.d)).sort((a, b) => (a.d < b.d ? -1 : 1));
+    const pics = index().filter((m) => m.d && at(m.d)), photo = pics.find((m) => m.k === 'photo') || null;
+    return { stories: posts.length, pictures: pics.length, firstDate: posts.length ? posts[0].d : (pics.length ? pics[0].d : null), photoId: photo ? photo.id : null };
+  }
   async function downloadAll(onProgress) {
     const ms = index(), total = ms.length * 2; let done = 0;
     for (const m of ms) {
@@ -549,5 +562,5 @@ window.Journal = (() => {
   }
 
   return { init, warm, page, promptFor, index, storiesTileHtml, morningHtml, fill, renderStory, openComposer, openDraw, openViewer, onLeave, addPhoto, addPhotos, downloadAll, refreshBadge, post, cityOf,
-    overlayOpen: () => !!J.overlay, overlayBack: () => (J.overlay ? J.overlay.back() : true), diag };
+    overlayOpen: () => !!J.overlay, overlayBack: () => (J.overlay ? J.overlay.back() : true), diag, scrollToDate, cityStats };
 })();

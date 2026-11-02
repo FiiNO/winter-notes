@@ -492,8 +492,34 @@ html[data-role="grand"] #nav [data-screen="quests"], html[data-role="grand"] #na
 html:not([data-role="grand"]) #nav [data-screen="where"] { display: none; }
 /* the "Where are we" globe */
 #globe-wrap { position: relative; margin: 0 calc(-1 * var(--pad)); }
-#globe { width: 100%; height: min(62vh, 560px); background: #0B1B33; }
+#globe { width: 100%; height: min(64vh, 600px); background: radial-gradient(ellipse at 50% 40%, #16305A 0%, #0B1B33 55%, #050B18 100%); }
+#globe::before { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0; background-image:
+  radial-gradient(1.5px 1.5px at 8% 12%, #fff 60%, transparent 100%), radial-gradient(1px 1px at 22% 70%, #fff 60%, transparent 100%), radial-gradient(2px 2px at 35% 25%, #dbe7ff 60%, transparent 100%),
+  radial-gradient(1px 1px at 48% 88%, #fff 60%, transparent 100%), radial-gradient(1.5px 1.5px at 60% 8%, #fff 60%, transparent 100%), radial-gradient(1px 1px at 72% 40%, #ffe9c4 60%, transparent 100%),
+  radial-gradient(2px 2px at 84% 18%, #fff 60%, transparent 100%), radial-gradient(1px 1px at 92% 64%, #fff 60%, transparent 100%), radial-gradient(1.5px 1.5px at 15% 45%, #fff 60%, transparent 100%),
+  radial-gradient(1px 1px at 30% 95%, #fff 60%, transparent 100%), radial-gradient(1px 1px at 55% 55%, #fff 60%, transparent 100%), radial-gradient(1.5px 1.5px at 66% 82%, #dbe7ff 60%, transparent 100%),
+  radial-gradient(1px 1px at 78% 92%, #fff 60%, transparent 100%), radial-gradient(2px 2px at 95% 35%, #fff 60%, transparent 100%), radial-gradient(1px 1px at 5% 80%, #fff 60%, transparent 100%),
+  radial-gradient(1px 1px at 40% 5%, #fff 60%, transparent 100%), radial-gradient(1.5px 1.5px at 88% 85%, #ffe9c4 60%, transparent 100%), radial-gradient(1px 1px at 12% 30%, #fff 60%, transparent 100%),
+  radial-gradient(1px 1px at 70% 15%, #fff 60%, transparent 100%), radial-gradient(1px 1px at 26% 58%, #fff 60%, transparent 100%); }
+#globe .maplibregl-canvas-container { position: relative; z-index: 1; }
 #globe .maplibregl-ctrl-attrib, #globe .maplibregl-ctrl-logo { display: none; }
 .where-card .big { font-size: 1.25em; font-weight: 900; }
-.where-pop { font-size: 0.9em; color: #1B1B2F; }
+.where-row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+/* the city badges (HTML markers) and the plane */
+.gb { display: flex; flex-direction: column; align-items: center; cursor: pointer; --gc: #2A9D8F; }
+.gb .ge { width: 30px; height: 30px; border-radius: 50%; background: #fff; border: 3px solid var(--gc); display: grid; place-items: center; font-size: 16px; line-height: 1; box-shadow: 0 2px 6px rgba(0,0,0,0.35); }
+.gb .gn { font-size: 10px; font-weight: 800; line-height: 1; color: #1B1B2F; background: rgba(255,255,255,0.88); padding: 2px 5px; border-radius: 6px; margin-top: 2px; white-space: nowrap; }
+.gb:not(.seen) { opacity: 0.6; }
+.gb.now .ge { width: 40px; height: 40px; font-size: 21px; animation: gb-pulse 1.7s ease-out infinite; }
+.gb.land .ge { animation: gb-land 0.45s ease-out; }
+@keyframes gb-pulse { 0% { box-shadow: 0 0 0 0 var(--gc), 0 2px 6px rgba(0,0,0,0.35); } 100% { box-shadow: 0 0 0 18px rgba(0,0,0,0), 0 2px 6px rgba(0,0,0,0.35); } }
+@keyframes gb-land { 0% { transform: scale(1); } 40% { transform: scale(1.5); } 100% { transform: scale(1); } }
+html[data-fx="off"] .gb.now .ge, html[data-fx="off"] .gb.land .ge { animation: none; }
+.gp { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,0.92); display: grid; place-items: center; font-size: 20px; line-height: 1; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+.gp.bob { animation: gp-bob 1.6s ease-in-out infinite; }
+@keyframes gp-bob { 0%, 100% { margin-top: 0; } 50% { margin-top: -6px; } }
+.where-pop { font-size: 0.9em; color: #1B1B2F; min-width: 150px; }
+.where-pop img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; margin: 6px 0; display: block; background: #eee; }
+.where-pop .btn { margin-top: 4px; }
+.maplibregl-popup-content { border-radius: 12px; padding: 10px 12px; }
 

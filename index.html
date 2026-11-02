@@ -15,12 +15,12 @@
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
 <link rel="stylesheet" href="styles.css">
 </head>
-<body data-version="v30" data-built="02 Nov 2026">
+<body data-version="v31" data-built="03 Nov 2026">
 
 <header class="top" id="top">
   <div class="brand"><span class="logo" aria-hidden="true">🌏</span><span class="stamp">World Adventure<span class="edition" id="top-edition"> · Family</span></span></div>
   <div class="top-actions">
-    <button class="icon-btn pts" id="btn-points" title="Quests" aria-label="Quests and points"><span id="top-points">⭐</span></button>
+    <button class="icon-btn pts" id="btn-points" title="Quests" aria-label="Quests and points"><span id="top-face"></span><span id="top-points">⭐</span></button>
     <button class="icon-btn sos" id="btn-sos" title="SOS" aria-label="SOS: lost kid or emergency">SOS</button>
     <button class="icon-btn" id="btn-settings" title="Settings" aria-label="Settings">⚙</button>
   </div>
@@ -90,6 +90,7 @@
 </div>
 
 <div id="party" class="party hidden" aria-live="polite"></div>
+<div id="levelup" class="levelup hidden" aria-live="polite"></div>
 <div id="overlay" class="overlay hidden"></div>
 <input id="pick-camera" type="file" accept="image/*" capture="environment" class="vhidden" tabindex="-1" aria-hidden="true">
 <input id="pick-library" type="file" accept="image/*" multiple class="vhidden" tabindex="-1" aria-hidden="true">

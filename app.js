@@ -27,6 +27,7 @@ const settings = {
   get readerMode() { return localStorage.getItem('readerMode') === '1'; }, set readerMode(v) { localStorage.setItem('readerMode', v ? '1' : '0'); },
   get autoFamily() { return localStorage.getItem('autoFamily') === '1'; }, set autoFamily(v) { localStorage.setItem('autoFamily', v ? '1' : '0'); },
   get bigText() { return localStorage.getItem('bigText') === '1'; }, set bigText(v) { localStorage.setItem('bigText', v ? '1' : '0'); applyBigText(); },
+  get sound() { return FX.soundOn(); }, set sound(v) { FX.setSound(!!v); if (v) FX.sound('yes'); },   // 3 Nov 2026: the few synthesised sound effects (fx.js)
 };
 
 /* ------------------------------------------------------------------ tiny DOM helpers */
@@ -296,7 +297,7 @@ async function enterApp() {
   Journal.refreshBadge();
   show('home');
   if (!Quests.role()) { openModal(Quests.roleCard()); Quests.wireRole($('#modal-inner')); }   // 2 Nov 2026: a fresh device says whose it is first
-  else if (!Quests.isGrandDevice()) Quests.checkNewBadges(currentContext());
+  else if (!Quests.isGrandDevice()) { Quests.checkNewBadges(currentContext()); setTimeout(() => Quests.checkLevelUp(), 2500); }   // badges earned by the date can tip a level too (3 Nov 2026); the show waits for the map and stories to settle
   Quests.startSync();                                // no-op unless the family blob carries a sync address
   checkForUpdate();
 }
@@ -394,7 +395,7 @@ function renderHome() {
   }
   const day = dayOf(ctx.date), ev = eventsOn(ctx.date);
   if (day) html += `<button class="tile ht wide t3" data-day="${day.date}"><span class="ico">${ev.length ? '🎟️' : '📅'}</span><span class="tt">Today${ev.length ? ' · ' + esc(ev[0].time) + ' ' + esc(ev[0].event) : ''}</span><span class="ts">${esc(day.plan)}</span>${day.heads_up ? `<span class="ts small">⚠️ ${esc(day.heads_up)}</span>` : ''}</button>`;
-  html += `<button class="tile ht t7" data-go="quests"><span class="ico">🏆</span><span class="tt">Quests</span><span class="ts">${q.avatar} ${esc(q.name)} · ${q.points} pts · ${q.level.emoji} ${esc(q.level.name)}</span><span class="ts small">${q.pending && q.role === 'parent' ? `⏳ ${q.pending} to approve` : `${q.todayLeft} to do today`}</span></button>`;
+  html += `<button class="tile ht t7" data-go="quests"><span class="ico">🏆</span><span class="tt">Quests</span><span class="ts">${Quests.face(q.player)} ${esc(q.name)} · ${q.points} pts · ${q.level.emoji} ${esc(q.level.name)}</span><span class="ts small">${q.pending && q.role === 'parent' ? `⏳ ${q.pending} to approve` : `${q.todayLeft} to do today`}</span></button>`;
   html += `<button class="tile ht t8" data-go="passport"><span class="ico">📘</span><span class="tt">Passport</span><span class="ts">${q.stamps} of ${q.stampsTotal} stamps</span><span class="ts small">Badges and levels</span></button>`;
   html += `<button class="tile ht t4" data-taxi="${esc(ctx.stay ? (ctx.stay.ja_id || 'stay-' + ctx.stay.n) : '')}"><span class="ico">🚕</span><span class="tt">Taxi card</span><span class="ts">${ctx.stay ? "Show the driver tonight's bed" : 'All cards and phrases'}</span></button>`;
   const mob = ((F.trip || {}).family || {}).mobiles || {};
@@ -815,7 +816,7 @@ function renderSettings() {
   $('#screen-settings').innerHTML = `<h1 class="h1">⚙️ Settings</h1>
     <div class="card"><div class="h3">Theme</div><div class="row">${['auto', 'light', 'dark'].map((t) => `<button class="pill${settings.theme === t ? ' active' : ''}" data-theme="${t}">${t}</button>`).join('')}</div></div>
     <div class="card"><div class="h3">Text size</div>${switchRow('bigText', 'Big text (for the kids and tired eyes)')}</div>
-    <div class="card"><div class="h3">Confetti and animations</div><p class="small muted">Auto follows the phone's reduce-motion setting.</p><div class="row">${['auto', 'on', 'off'].map((t) => `<button class="pill${FX.pref() === t ? ' active' : ''}" data-fx="${t}">${t}</button>`).join('')}<button class="btn small-btn" id="opt-fx-demo">Show me</button></div></div>
+    <div class="card"><div class="h3">Confetti, animations and sounds</div><p class="small muted">Auto follows the phone's reduce-motion setting.</p><div class="row">${['auto', 'on', 'off'].map((t) => `<button class="pill${FX.pref() === t ? ' active' : ''}" data-fx="${t}">${t}</button>`).join('')}<button class="btn small-btn" id="opt-fx-demo">Show me a level-up</button></div>${switchRow('sound', 'Sound effects: ticks, badges and level-ups')}<p class="tiny muted">Sounds start after the first tap on the phone; the ring/silent switch still wins.</p></div>
     ${Quests.settingsCard()}
     <div class="card"><div class="h3">Photos and journal</div><div class="small" id="media-msg">…</div>${Media.canSaveOriginals() ? `<div class="small" id="orig-msg"></div>` : ''}<div class="row"><button class="btn" id="opt-media-dl">Download all pictures (Wi-Fi)</button>${Quests.isParentDevice() || Quests.isGrandDevice() ? `<button class="btn" id="opt-media-clear">Clear downloaded pictures here</button>` : ''}${Media.canSaveOriginals() ? `<button class="btn" id="opt-orig-save">Save originals to Photos</button><button class="btn" id="opt-orig-clear">Clear saved originals</button>` : ''}</div>${Media.origHint() ? `<p class="tiny muted">${esc(Media.origHint())}</p>` : ''}${Quests.isParentDevice() ? `<div class="row"><button class="btn danger" id="opt-stories-wipe">🗑️ Delete all stories and photos (everyone)</button></div>` : ''}<div class="tiny mono" id="diag" style="margin-top:8px;white-space:pre-wrap"></div><div class="row"><button class="btn" id="opt-errlog-clear">Clear error log</button></div><p class="tiny muted">Pictures and pages are encrypted on this device and in the cloud; only an unlocked device can open them, so the PIN and the phone's own lock are the gate.</p></div>
     ${Quests.isGrandDevice() ? '' : `<div class="card"><div class="h3">Preview a trip day</div><p class="small muted">Shows the app as it will look on that day: for testing and the dry run. Tap a day; tap Now to come back.</p>${previewPicker()}</div>`}
@@ -872,6 +873,7 @@ function renderSettings() {
         `last add: ${md.add || '-'} · last upload: ${md.up || '-'} · last download: ${md.down || '-'} · last open: ${md.open || '-'}`,
         `journal: ${Journal.diag ? Journal.diag() : '-'}`,
         `share: ${window.Postcard && Postcard.diag ? Postcard.diag() : '-'}`,
+        `sound: ${(() => { const s = FX.sfxState(); return `${s.on ? 'on' : 'off'} · audio ${s.ctx} · ${s.played} notes played`; })()}`,
         log.length ? 'errors:\n' + log.join('\n') : 'errors: none',
       ].join('\n');
     });

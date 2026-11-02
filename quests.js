@@ -46,7 +46,8 @@ window.Quests = (() => {
   const DEFAULT_AVATAR = { Andrew: '🕵️', Sarah: '🌟', Vince: '🦖', Drew: '🦄', Grandma: '👵', Grandpa: '👴' };
   const GRAND = ['Grandma', 'Grandpa'];                       // the authors on Grandma and Grandpa's phone (2 Nov 2026): replies and reactions, never points
   const DISPLAY = { Andrew: 'Dad', Sarah: 'Mum' };          // the parents; everyone else is a kid
-  const LEVELS = [[0, 'Rookie', '🥾'], [100, 'Explorer', '🧭'], [250, 'Adventurer', '🎒'], [500, 'Navigator', '🧭'], [900, 'Globetrotter', '🌏'], [1500, 'Legend', '👑']];
+  // [points, name, glyph, colour]: the glyph is also the mini badge in the corner of every face (3 Nov 2026), so each level has its own
+  const LEVELS = [[0, 'Rookie', '🥾', '#8D99AE'], [100, 'Explorer', '🗺️', '#2A9D8F'], [250, 'Adventurer', '🎒', '#FF7A00'], [500, 'Navigator', '🧭', '#3A86FF'], [900, 'Globetrotter', '🌏', '#06D6A0'], [1500, 'Legend', '👑', '#FFB703']];
   const FOOD_PTS = 10;
 
   /* kind: food · explore · helper · words · travel · daily. where: a city, 'any' (whole trip), 'home' (before we go).
@@ -228,7 +229,7 @@ window.Quests = (() => {
 
   /* ---------------------------------------------------------------- state: facts, newest per key wins */
   function load() { try { return JSON.parse(localStorage.getItem(KEY) || '') || null; } catch (e) { return null; } }
-  function save(st) { localStorage.setItem(KEY, JSON.stringify(st)); }
+  function save(st) { localStorage.setItem(KEY, JSON.stringify(st)); faceMemo = {}; }
   function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
   function state() {
     let st = load();
@@ -343,10 +344,22 @@ window.Quests = (() => {
     return pts;
   }
   function level(pts) {
-    let cur = LEVELS[0], next = null;
-    for (const l of LEVELS) { if (pts >= l[0]) cur = l; else { next = l; break; } }
-    return { name: cur[1], emoji: cur[2], from: cur[0], next: next ? next[0] : null, nextName: next ? next[1] : null,
+    let cur = LEVELS[0], next = null, idx = 0;
+    for (let i = 0; i < LEVELS.length; i++) { const l = LEVELS[i]; if (pts >= l[0]) { cur = l; idx = i; } else { next = l; break; } }
+    return { name: cur[1], emoji: cur[2], colour: cur[3], idx, from: cur[0], next: next ? next[0] : null, nextName: next ? next[1] : null,
       pct: next ? Math.round(((pts - cur[0]) / (next[0] - cur[0])) * 100) : 100 };
+  }
+  const levelOf = (p) => level(points(view(state(), p)));
+  /* a face with its level in the corner (3 Nov 2026): every family member's avatar, wherever it is drawn, carries a tiny
+     badge of their level (🥾 🗺️ 🎒 🧭 🌏 👑); Grandma, Grandpa and anyone else get the plain face. Memoised per player
+     until the next state write (save) or refreshTop, because points() walks every fact. */
+  let faceMemo = {};
+  function face(p, cls) {
+    const k = p + '|' + (cls || '');
+    if (faceMemo[k]) return faceMemo[k];
+    const st = state(), pl = view(st, p), lv = people().includes(p) ? level(points(pl)) : null;
+    const badge = lv ? `<i class="lvb${lv.idx === LEVELS.length - 1 ? ' gold' : ''}" style="--lv:${lv.colour}" title="${esc(lv.name)}">${lv.emoji}</i>` : '';
+    return (faceMemo[k] = `<span class="face${cls ? ' ' + cls : ''}"><span class="fe">${pl.avatar}</span>${badge}</span>`);
   }
 
   /* ---------------------------------------------------------------- changes (every one is a fact) */
@@ -390,12 +403,21 @@ window.Quests = (() => {
     if (card) { FX.pulse(card, fx.cls, 1000); FX.floatText(card.querySelector('.qbtn') || card, fx.float, fx.fcls); }
     fx = null;
   }
-  function checkLevelUp(st) {           // the active player crossed a level line (own tick or a sync merge)
-    const p = st.active, lv = level(points(view(st, p)));
-    st.lastLevel = st.lastLevel || {};
-    const prev = st.lastLevel[p];
-    if (prev !== lv.from) { st.lastLevel[p] = lv.from; save(st); }
-    if (prev != null && lv.from > prev) celebrate(lv.emoji, 'Level up!', `${lv.name}`, p, 'level');
+  function checkLevelUp(st) {           // a visible player crossed a level line (own tick, a parent's ✓, a sync merge, a date-earned badge): the show
+    if (isGrandDevice()) return;        // Grandma and Grandpa collect stamp points too, but never level up
+    st = st || state();
+    st.lastLevel = st.lastLevel || {}; st.lastPts = st.lastPts || {};
+    const eff = effective(st);
+    let changed = false;
+    for (const p of visiblePlayers()) {   // every player this device shows, not just the active one: the kids share a device
+      const pl = view(st, p, eff), pts = points(pl), lv = level(pts), prev = st.lastLevel[p], prevPts = st.lastPts[p];
+      if (prev !== lv.from || prevPts !== pts) { st.lastLevel[p] = lv.from; st.lastPts[p] = pts; changed = true; }
+      if (prev == null || lv.from <= prev) continue;    // first sighting is silent; dropping a level (an undo) too
+      const from = prevPts == null ? prev : prevPts;
+      FX.levelUp({ who: label(p), avatar: pl.avatar, from: level(prev), to: lv, ptsFrom: from, ptsTo: pts, pctTo: lv.pct, ladder: LEVELS,
+        next: lv.next ? { name: lv.nextName, pts: lv.next } : null });
+    }
+    if (changed) save(st);
   }
   function removeFood(player, key) {
     const st = state(), f = st.facts[key]; if (!f) return;
@@ -692,7 +714,7 @@ window.Quests = (() => {
   }
   function playerChips(st, ctx) {
     const eff = effective(st);
-    return `<div class="players">` + visiblePlayers().map((p) => { const pl = view(st, p, eff), pts = points(pl); return `<button class="player${p === st.active ? ' active' : ''}" data-player="${esc(p)}"><span class="av">${pl.avatar}</span><span class="nm">${esc(label(p))}</span><span class="pt">${pts} pts</span></button>`; }).join('') + `</div>`;
+    return `<div class="players">` + visiblePlayers().map((p) => { const pl = view(st, p, eff), pts = points(pl); return `<button class="player${p === st.active ? ' active' : ''}" data-player="${esc(p)}">${face(p, 'av')}<span class="nm">${esc(label(p))}</span><span class="pt">${pts} pts</span></button>`; }).join('') + `</div>`;
   }
   function itemState(pl, q, date) {    // the live tick for a quest card, if any
     return pl.items.find((it) => it.kind === 'tick' && it.id === q.id && (!q.daily || it.date === date)) || null;
@@ -714,7 +736,7 @@ window.Quests = (() => {
     if (!isParentDevice() || !pend.length) return '';
     for (const it of pend) if (it.kind === 'card' && window.Postcard) Postcard.prepare(it.id, it.pic || null);   // drawn now with their pick, so the ✓ can share inside its own tap
     const eff = effective(st);
-    return `<div class="card approvals"><div class="h3 approvals-head"><span>⏳ Waiting for a parent (${pend.length})</span>${pend.length > 1 ? `<button class="qbtn yes all" data-ok-all aria-label="Approve all">✓ All ${pend.length}</button>` : ''}</div>` + pend.map((it) => `<div class="approve-row"><span class="qe">${it.e}</span><div class="qt"><div class="qn">${view(st, it.player, eff).avatar} ${esc(label(it.player))}: ${esc(it.title)}</div><div class="qp">${it.pts} pts · ${esc(fmtDate(it.date))}</div></div><button class="qbtn yes" data-ok="${esc(it.key)}" aria-label="Approve">✓</button><button class="qbtn no" data-no="${esc(it.key)}" aria-label="Not this time">✗</button></div>`).join('') + `</div>`;
+    return `<div class="card approvals"><div class="h3 approvals-head"><span>⏳ Waiting for a parent (${pend.length})</span>${pend.length > 1 ? `<button class="qbtn yes all" data-ok-all aria-label="Approve all">✓ All ${pend.length}</button>` : ''}</div>` + pend.map((it) => `<div class="approve-row"><span class="qe">${it.e}</span><div class="qt"><div class="qn">${face(it.player)} ${esc(label(it.player))}: ${esc(it.title)}</div><div class="qp">${it.pts} pts · ${esc(fmtDate(it.date))}</div></div><button class="qbtn yes" data-ok="${esc(it.key)}" aria-label="Approve">✓</button><button class="qbtn no" data-no="${esc(it.key)}" aria-label="Not this time">✗</button></div>`).join('') + `</div>`;
   }
   function renderQuests() {
     const ctx = currentContext(), st = state(), player = st.active, eff = effective(st), pl = view(st, player, eff);
@@ -729,7 +751,7 @@ window.Quests = (() => {
     if (!role()) html += roleCard();
     html += approvalsCard(st);
     html += playerChips(st, ctx);
-    html += `<div class="levelcard"><div class="lv-top"><span class="lv-av">${pl.avatar}</span><div><div class="lv-name">${esc(label(player))} · ${lv.emoji} ${esc(lv.name)}</div><div class="lv-pts">${pts} points${lv.next ? ` · ${lv.next - pts} to ${esc(lv.nextName)}` : ' · top level!'}${pl.pending.length ? ` · ⏳ ${pl.pending.length} waiting` : ''}</div></div></div><div class="bar"><i style="width:${lv.pct}%"></i></div></div>`;
+    html += `<div class="levelcard"><div class="lv-top">${face(player, 'lv-av')}<div><div class="lv-name">${esc(label(player))} · ${lv.emoji} ${esc(lv.name)}</div><div class="lv-pts">${pts} points${lv.next ? ` · ${lv.next - pts} to ${esc(lv.nextName)}` : ' · top level!'}${pl.pending.length ? ` · ⏳ ${pl.pending.length} waiting` : ''}</div></div></div><div class="bar"><i style="width:${lv.pct}%"></i></div></div>`;
     if (!isParentDevice()) html += `<p class="small muted kidnote">📨 Every tick on this device goes to Mum and Dad for a ✓ before the points count.</p>`;
     html += `<div class="row"><button class="btn block" data-go-passport>📘 Passport and badges</button></div>`;
     html += `<div class="foodcard" data-key="food"><span class="qe">🍽️</span><div class="qt"><div class="qn">Tried a new food?</div><div class="qp">${FOOD_PTS} pts each · ${pl.foods.length} so far</div></div><button class="qbtn go" id="food-add">+1</button></div>`;
@@ -750,7 +772,7 @@ window.Quests = (() => {
     el.querySelectorAll('[data-do]').forEach((b) => b.onclick = () => complete(player, b.dataset.do, ctx.date));
     el.querySelectorAll('[data-undo]').forEach((b) => b.onclick = () => undo(player, b.dataset.undo, ctx.date));
     el.querySelectorAll('[data-food-undo]').forEach((b) => b.onclick = () => removeFood(player, b.dataset.foodUndo));
-    const decide = (b, yes) => { const row = b.closest('.approve-row'), key = yes ? b.dataset.ok : b.dataset.no; FX.haptic(20); if (yes && key.startsWith('card|')) { if (window.Postcard) Postcard.sendApproved(key); return; } if (row && !FX.reduce()) { row.classList.add(yes ? 'yes-out' : 'no-out'); setTimeout(() => approve(key, yes), 360); } else approve(key, yes); };
+    const decide = (b, yes) => { const row = b.closest('.approve-row'), key = yes ? b.dataset.ok : b.dataset.no; FX.haptic(20); if (yes) FX.sound('pop'); if (yes && key.startsWith('card|')) { if (window.Postcard) Postcard.sendApproved(key); return; } if (row && !FX.reduce()) { row.classList.add(yes ? 'yes-out' : 'no-out'); setTimeout(() => approve(key, yes), 360); } else approve(key, yes); };
     el.querySelectorAll('[data-ok]').forEach((b) => b.onclick = () => decide(b, true));
     el.querySelectorAll('[data-no]').forEach((b) => b.onclick = () => decide(b, false));
     const all = el.querySelector('[data-ok-all]');
@@ -785,7 +807,7 @@ window.Quests = (() => {
     const all = badges(pl, ctx), pts = points(pl), lv = level(pts);
     const stamps = all.filter((b) => b.kind === 'stamp'), rest = all.filter((b) => b.kind !== 'stamp');
     let html = `<h1 class="h1">📘 Passport</h1>` + playerChips(st, ctx);
-    html += `<div class="levelcard"><div class="lv-top"><span class="lv-av">${pl.avatar}</span><div><div class="lv-name">${esc(label(player))} · ${lv.emoji} ${esc(lv.name)}</div><div class="lv-pts">${pts} points · ${stamps.filter((b) => b.earned).length} of ${stamps.length} stamps · ${rest.filter((b) => b.earned).length} of ${rest.length} badges</div></div></div><div class="bar"><i style="width:${lv.pct}%"></i></div></div>`;
+    html += `<div class="levelcard"><div class="lv-top">${face(player, 'lv-av')}<div><div class="lv-name">${esc(label(player))} · ${lv.emoji} ${esc(lv.name)}</div><div class="lv-pts">${pts} points · ${stamps.filter((b) => b.earned).length} of ${stamps.length} stamps · ${rest.filter((b) => b.earned).length} of ${rest.length} badges</div></div></div><div class="bar"><i style="width:${lv.pct}%"></i></div></div>`;
     const stampCard = (b, k, extraCls, sub, attr) => `<div class="stampc${extraCls}${b.earned ? ' earned' : ''}" style="--i:${k}" data-badge="${esc(b.id)}"${attr || ''}><span class="se">${b.e}</span><span class="st">${esc(b.t)}</span><span class="sh">${sub}</span>${b.earned ? '<i class="glint"></i>' : ''}</div>`;
     html += `<h2 class="h2">Stamps</h2><p class="small muted">A stamp opens when we land. Tap it to stamp the passport${isParentDevice() ? '' : ' (Mum or Dad say yes)'}; if nobody does, it stamps itself the next morning.</p><div class="stamps">` + stamps.map((b, k) => stampCard(b, k, ' ' + (CITY_KEY[b.t] || '') + (b.ready ? ' ready' : b.pending ? ' pending' : ''), b.earned ? '✓ ' + esc(fmtDate(b.on || b.opens)) : esc(b.hint), b.ready ? ` data-stamp="${esc(b.t)}" role="button" tabindex="0"` : '')).join('') + `</div>`;
     html += `<h2 class="h2">Badges</h2><div class="stamps">` + rest.map((b, k) => stampCard(b, k, ' badge', b.earned ? '✓ earned · ' + b.pts + ' pts' : esc(b.hint))).join('') + `</div>`;
@@ -809,7 +831,7 @@ window.Quests = (() => {
     if (isGrandDevice()) return roleCard() + `<div class="card"><div class="h3">Your faces</div><p class="small muted">Tap a face to change it. The family sees it next to your replies.</p>${GRAND.map((p) => { const pl = view(st, p, eff); return `<button class="avrow" data-avatar="${esc(p)}" aria-label="Change ${esc(label(p))}'s avatar"><span class="av big-av">${pl.avatar}</span><b>${esc(label(p))}</b><span class="muted small avgo">Change ›</span></button>`; }).join('')}</div>` + `<div class="card"><div class="h3">Sync</div><div class="syncline" id="sync-line">${esc(syncText())}</div>${devices.length ? `<div class="tiny muted">Other devices seen: ${esc(devices.join(', '))}</div>` : ''}<div class="row"><button class="btn" id="opt-sync-now">Sync now</button></div></div>`;
     return roleCard() +
       `<div class="card"><div class="h3">Quest players</div><p class="small muted">Tap a face to change it.</p>` +
-      visiblePlayers().map((p) => { const pl = view(st, p, eff); return `<button class="avrow" data-avatar="${esc(p)}" aria-label="Change ${esc(label(p))}'s avatar"><span class="av big-av">${pl.avatar}</span><b>${esc(label(p))}</b><span class="muted small">${points(pl)} pts</span><span class="muted small avgo">Change ›</span></button>`; }).join('') +
+      visiblePlayers().map((p) => { const pl = view(st, p, eff); return `<button class="avrow" data-avatar="${esc(p)}" aria-label="Change ${esc(label(p))}'s avatar">${face(p, 'av big-av')}<b>${esc(label(p))}</b><span class="muted small">${points(pl)} pts</span><span class="muted small avgo">Change ›</span></button>`; }).join('') +
       `<div class="syncline" id="sync-line">${esc(syncText())}</div>${devices.length ? `<div class="tiny muted">Other devices seen: ${esc(devices.join(', '))}</div>` : ''}` +
       `<div class="row"><button class="btn" id="opt-sync-now">Sync now</button>${isParentDevice() ? `<button class="btn" id="opt-quests-reset">Reset all quest progress</button>` : ''}</div></div>`;
   }
@@ -834,10 +856,12 @@ window.Quests = (() => {
   }
   let lastTop = null;                   // [player, points] the header pill last showed, for the count-up
   function refreshTop() {
-    const el = $('#top-points'); if (!el || !S.family) return;
+    faceMemo = {};
+    const el = $('#top-points'), fe = $('#top-face'); if (!el || !S.family) return;
     const st = state(), pl = view(st, st.active), n = points(pl);
-    if (lastTop && lastTop[0] === st.active && lastTop[1] !== n) { FX.countUp(el, lastTop[1], n, 700, (v) => `${pl.avatar} ${v}`); FX.pulse($('#btn-points'), 'bump', 700); }
-    else el.textContent = `${pl.avatar} ${n}`;
+    if (fe) fe.innerHTML = face(st.active);                       // the face and its level badge; the number counts up on its own
+    if (lastTop && lastTop[0] === st.active && lastTop[1] !== n) { FX.countUp(el, lastTop[1], n, 700); FX.pulse($('#btn-points'), 'bump', 700); }
+    else el.textContent = String(n);
     lastTop = [st.active, n];
     const badge = $('#nav-quests-badge');
     if (badge) { const n = isParentDevice() ? pendingAll(st).length : 0; badge.textContent = n ? String(n) : ''; badge.classList.toggle('hidden', !n); }
@@ -849,7 +873,7 @@ window.Quests = (() => {
   }
 
   return { QUESTS, CITY_EMOJI, CITY_KEY, CITIES, dayCity, daysBetween, state, label, setActive, complete, undo, addFood, approve, approveAll, summary, badges,
-    checkNewBadges, renderQuests, renderPassport, settingsCard, wireSettings, refreshTop, celebrate, reset, startSync, mergeRemote, mine,
-    role, setRole, isParentDevice, isGrandDevice, roleCard, wireRole, pendingAll, view, points, setFact, getFact, factsByPrefix, onFacts, visiblePlayers, addDays, syncText,
+    checkNewBadges, checkLevelUp, renderQuests, renderPassport, settingsCard, wireSettings, refreshTop, celebrate, reset, startSync, mergeRemote, mine,
+    role, setRole, isParentDevice, isGrandDevice, roleCard, wireRole, pendingAll, view, points, LEVELS, level, levelOf, face, setFact, getFact, factsByPrefix, onFacts, visiblePlayers, addDays, syncText,
     arrivals, stampCity, stampsReady, wipeStories, cardStatus, cardStatuses, requestCard, approveCard };
 })();

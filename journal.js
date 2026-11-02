@@ -355,10 +355,10 @@ window.Journal = (() => {
     const ov = $('#overlay'), st = Quests.state(), ctx = currentContext(), dr = J.draft, reply = dr.mode === 'reply';
     if (typeof Nav !== 'undefined') Nav.pushOverlay();
     const post = reply ? J.posts[dr.postId] : null, city = cityOf(dr.d, ctx), prompt = reply ? null : promptFor(city, dr.d);
-    const players = Quests.visiblePlayers(), max = reply ? 1 : MAX_MEDIA, avc = {}, av = (p) => avc[p] || (avc[p] = Quests.view(st, p).avatar);
+    const players = Quests.visiblePlayers(), max = reply ? 1 : MAX_MEDIA, av = (p) => Quests.face(p, 'av');   // the face with its level badge (memoised in quests.js)
     const title = reply ? `💬 Reply to ${esc(Quests.label(post ? post.p : ''))}` : (dr.d === ctx.date ? '✏️ New story' : `✏️ Story for ${esc(fmtDate(dr.d))}`);
     let html = `<div class="composer"><div class="pad-bar cbar"><button id="c-cancel" aria-label="Close">✕</button><div class="ctitle">${title}</div><button class="done" id="c-post" disabled>${reply ? 'Reply' : 'Post'}</button></div><div class="cbody">`;
-    if (players.length > 1) html += `<div class="players">` + players.map((q) => `<button class="player${q === dr.p ? ' active' : ''}" data-pl="${esc(q)}"><span class="av">${av(q)}</span><span class="nm">${esc(Quests.label(q))}</span></button>`).join('') + `</div>`;
+    if (players.length > 1) html += `<div class="players">` + players.map((q) => `<button class="player${q === dr.p ? ' active' : ''}" data-pl="${esc(q)}">${av(q)}<span class="nm">${esc(Quests.label(q))}</span></button>`).join('') + `</div>`;
     if (reply) html += `<div class="quote"><b>${esc(Quests.label(post ? post.p : ''))}</b>: ${esc(post ? firstLine(post) : '')}</div>`;
     else {
       html += `<div class="moods">` + MOODS.map(([id, e, t]) => `<button class="mood${dr.mood === id ? ' on' : ''}" data-mood="${id}"><span class="me">${e}</span><span class="mt">${t}</span></button>`).join('') + `</div>`;
@@ -454,7 +454,7 @@ window.Journal = (() => {
   function postHtml(po, st, ctx, av, cards, ro) {
     const cm = J.cmts[po.id] || [], reacts = cm.filter((c) => !c.media && isEmojiOnly(c.text)), replies = cm.filter((c) => !reacts.includes(c));
     const media = (po.media || []).filter((m) => J.media[m.id]);
-    let h = `<div class="post" data-post="${esc(po.id)}"><div class="post-head"><span class="av">${av(po.p)}</span><b>${esc(Quests.label(po.p))}</b>${MOOD[po.mood] ? `<span class="pmood">${MOOD[po.mood][1]}</span>` : ''}${cards && cards[po.id] ? (cards[po.id].sent ? '<span class="chip pc">📮 sent</span>' : cards[po.id].pending ? '<span class="chip pc">📮 waiting</span>' : '') : ''}<span class="post-time">${po.legacy ? '' : esc(timeOf(po, ctx))}</span></div>`;
+    let h = `<div class="post" data-post="${esc(po.id)}"><div class="post-head">${Quests.face(po.p, 'av')}<b>${esc(Quests.label(po.p))}</b>${MOOD[po.mood] ? `<span class="pmood">${MOOD[po.mood][1]}</span>` : ''}${cards && cards[po.id] ? (cards[po.id].sent ? '<span class="chip pc">📮 sent</span>' : cards[po.id].pending ? '<span class="chip pc">📮 waiting</span>' : '') : ''}<span class="post-time">${po.legacy ? '' : esc(timeOf(po, ctx))}</span></div>`;
     if (po.q) h += `<div class="post-q">${esc(po.q)}</div>`;
     if (po.text) h += `<div class="post-text">${esc(po.text)}</div>`;
     if (media.length) h += `<div class="post-grid${media.length === 1 ? ' one' : ''}">${media.map((m) => `<button data-view="${esc(m.id)}" data-group="post:${esc(po.id)}">${pic(m)}</button>`).join('')}</div>`;
@@ -462,7 +462,7 @@ window.Journal = (() => {
       const by = {}; for (const r of reacts) { const e = r.text.trim(); (by[e] = by[e] || []).push(r); }
       h += `<div class="reacts">${Object.entries(by).map(([e, rs]) => `<span class="react">${esc(e)} ${rs.map((r) => av(r.p)).join('')}</span>`).join('')}</div>`;
     }
-    if (replies.length) h += `<div class="cmts">${replies.map((c) => `<div class="cmt"><span class="av">${av(c.p)}</span><div class="ct"><b>${esc(Quests.label(c.p))}</b> ${esc(c.text || '')}${c.media && J.media[c.media.id] ? `<button class="phbtn" data-view="${esc(c.media.id)}">${pic(c.media)}</button>` : ''}</div>${canDelete(c, st) ? `<button class="xdel" data-del-cmt="${esc(po.id)}|${esc(c.id)}" aria-label="Delete reply">🗑️</button>` : ''}</div>`).join('')}</div>`;
+    if (replies.length) h += `<div class="cmts">${replies.map((c) => `<div class="cmt">${Quests.face(c.p, 'av')}<div class="ct"><b>${esc(Quests.label(c.p))}</b> ${esc(c.text || '')}${c.media && J.media[c.media.id] ? `<button class="phbtn" data-view="${esc(c.media.id)}">${pic(c.media)}</button>` : ''}</div>${canDelete(c, st) ? `<button class="xdel" data-del-cmt="${esc(po.id)}|${esc(c.id)}" aria-label="Delete reply">🗑️</button>` : ''}</div>`).join('')}</div>`;
     h += `<div class="post-foot">${QUICK.map((e) => { const mine = reacts.some((r) => r.p === st.active && r.text.trim() === e); return `<button class="quick${mine ? ' on' : ''}" data-quick="${esc(po.id)}|${e}" aria-label="${e}">${e}</button>`; }).join('')}<button class="btn small-btn" data-reply="${esc(po.id)}">💬 Reply</button>${ro ? '' : `<button class="btn small-btn" data-card="${esc(po.id)}">📮 Postcard</button>`}${canDelete(po, st) ? `<button class="btn small-btn del" data-del-post="${esc(po.id)}" aria-label="Delete story">🗑️</button>` : ''}</div></div>`;
     return h;
   }

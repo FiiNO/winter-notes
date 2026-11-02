@@ -487,4 +487,13 @@ img.missing { opacity: 0.3; }
 .pc-pick[data-locked] button { opacity: 0.55; }
 .pc-pick[data-locked] button.on { opacity: 1; }
 .chip.pc { margin-left: 6px; }
+/* 2 Nov 2026: Grandma and Grandpa's phone (role grand) hides what it cannot use; the Where tab shows only there */
+html[data-role="grand"] #nav [data-screen="quests"], html[data-role="grand"] #nav [data-screen="map"], html[data-role="grand"] #nav [data-screen="book"], html[data-role="grand"] #btn-points, html[data-role="grand"] #btn-sos { display: none; }
+html:not([data-role="grand"]) #nav [data-screen="where"] { display: none; }
+/* the "Where are we" globe */
+#globe-wrap { position: relative; margin: 0 calc(-1 * var(--pad)); }
+#globe { width: 100%; height: min(62vh, 560px); background: #0B1B33; }
+#globe .maplibregl-ctrl-attrib, #globe .maplibregl-ctrl-logo { display: none; }
+.where-card .big { font-size: 1.25em; font-weight: 900; }
+.where-pop { font-size: 0.9em; color: #1B1B2F; }
 

@@ -212,16 +212,18 @@ window.Quests = (() => {
   const isParent = (p) => !!DISPLAY[p];
   const parents = () => people().filter(isParent);
   const kids = () => people().filter((p) => !isParent(p));
-  const role = () => localStorage.getItem('deviceRole') || '';            // 'parent' | 'kids' | '' (not chosen yet)
+  const role = () => localStorage.getItem('deviceRole') || '';            // 'parent' | 'kids' | 'grand' (Grandma and Grandpa's phone, reads only; 2 Nov 2026) | '' (not chosen yet)
   const owner = () => localStorage.getItem('deviceOwner') || '';          // the parent a parent phone belongs to
   const isParentDevice = () => role() === 'parent';
+  const isGrandDevice = () => role() === 'grand';
   const visiblePlayers = () => (isParentDevice() ? people() : kids());
   function setRole(r, who) {
     localStorage.setItem('deviceRole', r); localStorage.setItem('deviceOwner', who || '');
+    if (typeof applyRoleChrome === 'function') applyRoleChrome();
     const st = state(); if (!visiblePlayers().includes(st.active)) { st.active = visiblePlayers()[0]; save(st); }
     Sync.touch();
   }
-  function deviceName() { return isParentDevice() ? `${label(owner() || 'Dad')}'s phone` : "Kids' device"; }
+  function deviceName() { return isParentDevice() ? `${label(owner() || 'Dad')}'s phone` : isGrandDevice() ? "Grandma and Grandpa's phone" : "Kids' device"; }
 
   /* ---------------------------------------------------------------- state: facts, newest per key wins */
   function load() { try { return JSON.parse(localStorage.getItem(KEY) || '') || null; } catch (e) { return null; } }
@@ -704,7 +706,7 @@ window.Quests = (() => {
   function roleCard() {
     const cur = role();
     const pill = (r, who, text) => `<button class="pill${cur === r && (r !== 'parent' || owner() === who) ? ' active' : ''}" data-role="${r}" data-who="${who}">${text}</button>`;
-    return `<div class="card rolecard"><div class="h3">Whose device is this?</div><p class="small muted">A parent phone can tick for everyone and approves what the kids tick on their device. The kids' device shows only the kids, and every tick there waits for a parent's ✓. Becoming a parent phone asks for the device PIN.</p><div class="row">${parents().map((p) => pill('parent', p, `📱 ${esc(label(p))}'s phone`)).join('')}${pill('kids', '', "🧒 Kids' device")}</div></div>`;
+    return `<div class="card rolecard"><div class="h3">Whose device is this?</div><p class="small muted">A parent phone can tick for everyone and approves what the kids tick on their device. The kids' device shows only the kids, and every tick there waits for a parent's ✓. Becoming a parent phone asks for the device PIN. Grandma and Grandpa's phone only reads the stories and shows where we are.</p><div class="row">${parents().map((p) => pill('parent', p, `📱 ${esc(label(p))}'s phone`)).join('')}${pill('kids', '', "🧒 Kids' device")}${pill('grand', '', "👵👴 Grandma and Grandpa's phone")}</div></div>`;
   }
   function approvalsCard(st) {
     const pend = pendingAll(st);
@@ -764,6 +766,7 @@ window.Quests = (() => {
     const fa = el.querySelector('#food-add'); if (fa) fa.onclick = () => { const what = prompt('What did you try?'); if (what !== null) addFood(player, what.trim(), ctx.date); };
     const gp = el.querySelector('[data-go-passport]'); if (gp) gp.onclick = () => show('passport');
   }
+  function wireRole(root) { root.querySelectorAll('[data-role]').forEach((b) => b.onclick = () => chooseRole(b.dataset.role, b.dataset.who)); }
   async function chooseRole(r, who) {
     if (r === 'parent') {
       const pin = prompt(`Device PIN to make this ${label(who)}'s phone:`);
@@ -771,6 +774,9 @@ window.Quests = (() => {
       if (!(await verifyPin(pin))) { alert('That is not the PIN.'); return; }
     }
     setRole(r, who);
+    if (typeof closeModal === 'function' && document.querySelector('#modal:not(.hidden) .rolecard')) closeModal();   // the first-unlock question
+    if (typeof rerender === 'function') rerender();                                                                 // Home, Book and the chrome differ by role
+    if (window.Journal) Journal.refreshBadge();
     afterChange();
   }
   function renderPassport() {
@@ -799,6 +805,7 @@ window.Quests = (() => {
   function settingsCard() {
     const st = state(), eff = effective(st);
     const devices = Object.values(st.devices || {}).filter((d) => d && d.name).map((d) => d.name);
+    if (isGrandDevice()) return roleCard() + `<div class="card"><div class="h3">Sync</div><div class="syncline" id="sync-line">${esc(syncText())}</div>${devices.length ? `<div class="tiny muted">Other devices seen: ${esc(devices.join(', '))}</div>` : ''}<div class="row"><button class="btn" id="opt-sync-now">Sync now</button></div></div>`;
     return roleCard() +
       `<div class="card"><div class="h3">Quest players</div><p class="small muted">Tap a face to change it.</p>` +
       visiblePlayers().map((p) => { const pl = view(st, p, eff); return `<button class="avrow" data-avatar="${esc(p)}" aria-label="Change ${esc(label(p))}'s avatar"><span class="av big-av">${pl.avatar}</span><b>${esc(label(p))}</b><span class="muted small">${points(pl)} pts</span><span class="muted small avgo">Change ›</span></button>`; }).join('') +
@@ -842,6 +849,6 @@ window.Quests = (() => {
 
   return { QUESTS, CITY_EMOJI, CITY_KEY, CITIES, dayCity, daysBetween, state, label, setActive, complete, undo, addFood, approve, approveAll, summary, badges,
     checkNewBadges, renderQuests, renderPassport, settingsCard, wireSettings, refreshTop, celebrate, reset, startSync, mergeRemote, mine,
-    role, setRole, isParentDevice, pendingAll, view, points, setFact, getFact, factsByPrefix, onFacts, visiblePlayers, addDays, syncText,
+    role, setRole, isParentDevice, isGrandDevice, roleCard, wireRole, pendingAll, view, points, setFact, getFact, factsByPrefix, onFacts, visiblePlayers, addDays, syncText,
     arrivals, stampCity, stampsReady, wipeStories, cardStatus, cardStatuses, requestCard, approveCard };
 })();

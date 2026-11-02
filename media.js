@@ -169,6 +169,16 @@ window.Media = (() => {
   M.orig = { waiting: 0, waitingBytes: 0, saved: 0, savedBytes: 0 };
   M.prepared = null;
   function origName(meta, id) { return `WorldAdventure_${meta.d || 'photo'}_${String(meta.p || 'family').toLowerCase()}_${id}.jpg`; }
+  /* a picture out of the app and into the phone (2 Nov 2026, the viewer's ⬇️): Android and desktop download the decrypted copy straight
+     to Downloads; iOS hands it to the share sheet, where Photos is one tap. It is the app-size picture, not the camera original. */
+  async function saveCopy(id, kind, meta) {
+    const u = await url(id, kind); if (!u) throw new Error('That picture is not on this device yet (needs internet).');
+    const blob = await (await fetch(u)).blob();
+    const name = kind === 'drawing' ? origName(meta || {}, id).replace(/\.jpg$/, '.png') : origName(meta || {}, id);
+    const file = new File([blob], name, { type: kind === 'drawing' ? 'image/png' : 'image/jpeg', lastModified: Date.now() });
+    if (M.origMode === 'share' && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'World Adventure' }); return 'shared'; }
+    saveDownload(file, name); return 'downloaded';
+  }
   function saveDownload(file, name) {               // Android Chrome: straight to Downloads, no dialog
     const url = URL.createObjectURL(file), a = document.createElement('a');
     a.href = url; a.download = name; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove();
@@ -310,7 +320,7 @@ window.Media = (() => {
 
   return { init, get enabled() { return M.enabled; }, seal, open, pick, addImage, addCanvas, url, has, ensure, release, flush, pendingList, pendingCount,
     countPending, usage, remove, wipe, clearDownloaded, onChange: (fn) => { M.onChange = fn; }, LIMITS,
-    newId, keepOriginal, originals, originalsSummary, canSaveOriginals, origHint, prepareOriginals, saveOriginals, clearSavedOriginals,
+    newId, keepOriginal, originals, originalsSummary, canSaveOriginals, origHint, prepareOriginals, saveOriginals, clearSavedOriginals, saveCopy, saveDownload,
     get origMode() { return M.origMode; }, setOrigMode: (m) => { M.origMode = m; M.prepared = null; },
     diag: () => ({ up: M.last.up, down: M.last.down, open: M.last.open, add: M.last.add, mode: M.origMode, enabled: M.enabled, pending: M.pending }) };
 })();

@@ -87,7 +87,7 @@ window.Journal = (() => {
         for (const po of Object.values(posts)) for (const m of po.media || []) stub(m, po.p, po.d);
         for (const list of Object.values(cmts)) for (const c of list) stub(c.media, c.p, posts[c.postId] ? posts[c.postId].d : '');
         J.pages = pages; J.media = media; J.posts = posts; J.cmts = cmts; J.warmed = true; J.error = null;
-        prefetchMorning(); refreshBadge();
+        prefetchMorning(); prefetchLatest(); refreshBadge();
         if (S.screen === 'home') renderHome();
         if (S.screen === 'story') { if (composerOpen()) J.dirty = true; else renderStory(); }
       } catch (e) {
@@ -115,6 +115,15 @@ window.Journal = (() => {
     const nth = S.family.days.filter((d) => d.date < date && Quests.dayCity(d) === city).length;
     const pick = nth < own.length ? own[nth] : any[(nth - own.length + Math.abs(Quests.daysBetween(S.family.trip.start, date))) % Math.max(1, any.length)];
     return { id: String(pick.id || key + nth), q: String(pick.q || pick) };
+  }
+  /* Grandma and Grandpa's phone (2 Nov 2026): the newest story day's pictures arrive on their own after a sync, so the latest
+     stories open at once; older ones load on tap, or all of them with Settings → Download all pictures. */
+  function prefetchLatest() {
+    if (!Quests.isGrandDevice() || !navigator.onLine) return;
+    const days = Object.values(J.posts).map((p) => p.d).filter(Boolean).sort(), last = days[days.length - 1];
+    if (!last) return;
+    const ms = index().filter((m) => m.d === last);
+    (async () => { for (const m of ms) { try { if (m.k === 'photo') await Media.ensure(m.id + 't', 'thumb'); await Media.ensure(m.id, m.k === 'drawing' ? 'drawing' : 'photo'); } catch (e) { /* next sync */ } } })();
   }
   function prefetchMorning() {           // parent phones: today's morning photos at full size, so the lost-kid card works offline
     if (!Quests.isParentDevice()) return;
@@ -198,7 +207,7 @@ window.Journal = (() => {
     try {
       if (!Media.enabled) return '';
       const n = J.warmed ? unseenCount(Quests.state()) : 0, today = postsOn(ctx.date).length;
-      return `<button class="tile ht wide t5" data-go="story"><span class="ico">📖</span><span class="tt">Stories${n ? ` · ${n} new` : ''}</span><span class="ts">${today ? `${today} stor${today === 1 ? 'y' : 'ies'} today` : 'Nothing yet today'} · tell yours</span><span class="ts small">Photos, drawings, emoji, replies</span></button>`;
+      return `<button class="tile ht wide t5" data-go="story"><span class="ico">📖</span><span class="tt">Stories${n ? ` · ${n} new` : ''}</span><span class="ts">${today ? `${today} stor${today === 1 ? 'y' : 'ies'} today` : 'Nothing yet today'}${Quests.isGrandDevice() ? '' : ' · tell yours'}</span><span class="ts small">${Quests.isGrandDevice() ? 'See what they posted' : 'Photos, drawings, emoji, replies'}</span></button>`;
     } catch (e) { if (window.logErr) logErr('stories tile: ' + ((e && e.message) || e)); return `<div class="tile wide t5"><span class="ico">📖</span><span class="tt">Stories</span><span class="ts">hit a problem: ${esc((e && e.message) || e)}</span></div>`; }
   }
   function morningHtml(date) {
@@ -281,7 +290,7 @@ window.Journal = (() => {
   function openViewer(ids, i) {
     const ov = $('#overlay');
     J.viewer = { ids, i: i || 0 };
-    ov.innerHTML = `<div class="viewer"><div class="viewer-img" id="viewer-img"><img alt=""></div><div class="viewer-bar"><button id="v-prev" aria-label="Previous">‹</button><div class="vi" id="v-info"></div><button id="v-next" aria-label="Next">›</button>${Quests.isParentDevice() ? `<button class="del" id="v-del" aria-label="Delete">🗑️</button>` : ''}<button id="v-close" aria-label="Close">✕</button></div></div>`;
+    ov.innerHTML = `<div class="viewer"><div class="viewer-img" id="viewer-img"><img alt=""></div><div class="viewer-bar"><button id="v-prev" aria-label="Previous">‹</button><div class="vi" id="v-info"></div><button id="v-next" aria-label="Next">›</button><button id="v-save" aria-label="Save this picture to the phone" title="Save">⬇️</button>${Quests.isParentDevice() ? `<button class="del" id="v-del" aria-label="Delete">🗑️</button>` : ''}<button id="v-close" aria-label="Close">✕</button></div></div>`;
     ov.classList.remove('hidden');
     if (typeof Nav !== 'undefined') Nav.pushOverlay();
     const img = ov.querySelector('img'), info = ov.querySelector('#v-info');
@@ -301,6 +310,13 @@ window.Journal = (() => {
     ov.querySelector('#v-prev').onclick = () => showAt(J.viewer.i - 1);
     ov.querySelector('#v-next').onclick = () => showAt(J.viewer.i + 1);
     ov.querySelector('#v-close').onclick = closeViewer;
+    const sv = ov.querySelector('#v-save');                                  // 2 Nov 2026: the app-size copy out to Downloads (Android) or the share sheet (iOS)
+    if (sv) sv.onclick = async () => {
+      const m = J.media[ids[J.viewer.i]]; if (!m) return;
+      sv.disabled = true;
+      try { await Media.saveCopy(m.id, m.k === 'drawing' ? 'drawing' : 'photo', m); sv.textContent = '✓'; setTimeout(() => { sv.textContent = '⬇️'; sv.disabled = false; }, 1500); }
+      catch (e) { sv.disabled = false; if (e && e.name !== 'AbortError') alert((e && e.message) || 'Could not save the picture.'); }
+    };
     const del = ov.querySelector('#v-del');
     if (del) del.onclick = async () => {
       const m = J.media[ids[J.viewer.i]];
@@ -435,7 +451,7 @@ window.Journal = (() => {
     try { return new Intl.DateTimeFormat('en-GB', { timeZone: tzOf(cityOf(po.d, ctx)), hour: '2-digit', minute: '2-digit' }).format(new Date(po.t || 0)); } catch (e) { return ''; }
   }
   function pic(m) { return `<img class="${m.k === 'drawing' ? 'dr' : 'ph'}" data-oid="${esc(m.k === 'drawing' ? m.id : m.id + 't')}" data-kind="${m.k === 'drawing' ? 'drawing' : 'thumb'}" alt="">`; }
-  function postHtml(po, st, ctx, av, cards) {
+  function postHtml(po, st, ctx, av, cards, ro) {
     const cm = J.cmts[po.id] || [], reacts = cm.filter((c) => !c.media && isEmojiOnly(c.text)), replies = cm.filter((c) => !reacts.includes(c));
     const media = (po.media || []).filter((m) => J.media[m.id]);
     let h = `<div class="post" data-post="${esc(po.id)}"><div class="post-head"><span class="av">${av(po.p)}</span><b>${esc(Quests.label(po.p))}</b>${MOOD[po.mood] ? `<span class="pmood">${MOOD[po.mood][1]}</span>` : ''}${cards && cards[po.id] ? (cards[po.id].sent ? '<span class="chip pc">📮 sent</span>' : cards[po.id].pending ? '<span class="chip pc">📮 waiting</span>' : '') : ''}<span class="post-time">${po.legacy ? '' : esc(timeOf(po, ctx))}</span></div>`;
@@ -446,8 +462,8 @@ window.Journal = (() => {
       const by = {}; for (const r of reacts) { const e = r.text.trim(); (by[e] = by[e] || []).push(r); }
       h += `<div class="reacts">${Object.entries(by).map(([e, rs]) => `<span class="react">${esc(e)} ${rs.map((r) => av(r.p)).join('')}</span>`).join('')}</div>`;
     }
-    if (replies.length) h += `<div class="cmts">${replies.map((c) => `<div class="cmt"><span class="av">${av(c.p)}</span><div class="ct"><b>${esc(Quests.label(c.p))}</b> ${esc(c.text || '')}${c.media && J.media[c.media.id] ? `<button class="phbtn" data-view="${esc(c.media.id)}">${pic(c.media)}</button>` : ''}</div>${canDelete(c, st) ? `<button class="xdel" data-del-cmt="${esc(po.id)}|${esc(c.id)}" aria-label="Delete reply">🗑️</button>` : ''}</div>`).join('')}</div>`;
-    h += `<div class="post-foot">${QUICK.map((e) => { const mine = reacts.some((r) => r.p === st.active && r.text.trim() === e); return `<button class="quick${mine ? ' on' : ''}" data-quick="${esc(po.id)}|${e}" aria-label="${e}">${e}</button>`; }).join('')}<button class="btn small-btn" data-reply="${esc(po.id)}">💬 Reply</button><button class="btn small-btn" data-card="${esc(po.id)}">📮 Postcard</button>${canDelete(po, st) ? `<button class="btn small-btn del" data-del-post="${esc(po.id)}" aria-label="Delete story">🗑️</button>` : ''}</div></div>`;
+    if (replies.length) h += `<div class="cmts">${replies.map((c) => `<div class="cmt"><span class="av">${av(c.p)}</span><div class="ct"><b>${esc(Quests.label(c.p))}</b> ${esc(c.text || '')}${c.media && J.media[c.media.id] ? `<button class="phbtn" data-view="${esc(c.media.id)}">${pic(c.media)}</button>` : ''}</div>${!ro && canDelete(c, st) ? `<button class="xdel" data-del-cmt="${esc(po.id)}|${esc(c.id)}" aria-label="Delete reply">🗑️</button>` : ''}</div>`).join('')}</div>`;
+    h += ro ? '</div>' : `<div class="post-foot">${QUICK.map((e) => { const mine = reacts.some((r) => r.p === st.active && r.text.trim() === e); return `<button class="quick${mine ? ' on' : ''}" data-quick="${esc(po.id)}|${e}" aria-label="${e}">${e}</button>`; }).join('')}<button class="btn small-btn" data-reply="${esc(po.id)}">💬 Reply</button><button class="btn small-btn" data-card="${esc(po.id)}">📮 Postcard</button>${canDelete(po, st) ? `<button class="btn small-btn del" data-del-post="${esc(po.id)}" aria-label="Delete story">🗑️</button>` : ''}</div></div>`;
     return h;
   }
   function renderStory() { return guarded($('#screen-story'), '📖 Stories', renderStoryInner); }
@@ -455,7 +471,7 @@ window.Journal = (() => {
     const el = $('#screen-story'), ctx = currentContext(), F = S.family, st = Quests.state();
     if (!Media.enabled) { el.innerHTML = `<h1 class="h1">📖 Stories</h1><div class="card">Stories and photos need a full rebuild of the app: this build has no media key.</div>`; return; }
     if (!J.warmed) { el.innerHTML = `<h1 class="h1">📖 Stories</h1><p class="muted">Opening the stories…</p>`; warm(); return; }
-    const avc = {}, av = (p) => avc[p] || (avc[p] = Quests.view(st, p).avatar);
+    const avc = {}, av = (p) => avc[p] || (avc[p] = Quests.view(st, p).avatar), ro = Quests.isGrandDevice();   // ro: Grandma and Grandpa's phone reads only (2 Nov 2026)
     const used = usedMediaIds(), dates = new Set(), cards = Quests.cardStatuses ? Quests.cardStatuses(st) : {};
     for (let d = F.trip.start; d <= ctx.date && d <= F.trip.end; d = Quests.addDays(d, 1)) dates.add(d);
     for (const po of Object.values(J.posts)) if (po.d) dates.add(po.d);
@@ -463,10 +479,10 @@ window.Journal = (() => {
     const badgeDates = {};
     for (const b of Quests.badges(Quests.view(st, st.active), ctx)) { const on = b.opens || b.on; if (b.earned && on && (b.kind === 'stamp' || b.kind === 'milestone')) (badgeDates[on] = badgeDates[on] || []).push(b); }
     let html = `<h1 class="h1">📖 Stories</h1>`, any = false;
-    html += `<button class="btn primary block new-story" data-new="${esc(ctx.date)}">✏️ New story</button>`;
+    if (!ro) html += `<button class="btn primary block new-story" data-new="${esc(ctx.date)}">✏️ New story</button>`;
     if (J.error) html += `<div class="card red"><b>Could not open the stories.</b><div class="small">${esc(J.error)}</div><div class="small">Tell Andy what it says, then try Settings → Sync now.</div></div>`;
     const o = Media.originalsSummary();
-    if (Media.canSaveOriginals() && o.waiting) {
+    if (!ro && Media.canSaveOriginals() && o.waiting) {
       html += `<div class="card originals"><b>📥 ${o.waiting} full-size photo${o.waiting === 1 ? '' : 's'} not yet in Photos</b> <span class="muted small">(${(o.waitingBytes / 1048576).toFixed(1)} MB)</span><div class="row"><button class="btn" id="orig-save">Save to Photos</button></div><div class="tiny muted">One tap saves up to ${Media.LIMITS.shareBatch} at a time. Then Photos has the originals and the app keeps the small copies.</div></div>`;
       Media.prepareOriginals();
     }
@@ -480,10 +496,10 @@ window.Journal = (() => {
       if (moves.length) html += moves.map((m) => `<div class="small">${/train/i.test(m.mode || '') ? '🚆' : /coach|bus/i.test(m.mode || '') ? '🚌' : '✈️'} ${esc(m.frm)} → ${esc(m.to)} · ${esc(m.depart)}</div>`).join('');
       if (stamps.length) html += `<div class="stickers">${stamps.map((b) => `<span class="sticker">${b.e} ${esc(b.t)}</span>`).join('')}</div>`;
       if (photos.length) html += `<div class="story-grid">${photos.map((m) => `<button data-view="${esc(m.id)}" data-group="${esc(date)}"><img class="ph" data-oid="${esc(m.id)}t" data-kind="thumb" alt=""></button>`).join('')}</div>`;
-      for (const po of posts) html += postHtml(po, st, ctx, av, cards);
-      html += `<div class="row"><button class="btn small-btn" data-new="${esc(date)}">＋ Add a story to this day</button></div></div>`;
+      for (const po of posts) html += postHtml(po, st, ctx, av, cards, ro);
+      html += `${ro ? '' : `<div class="row"><button class="btn small-btn" data-new="${esc(date)}">＋ Add a story to this day</button></div>`}</div>`;
     }
-    if (!any) html += `<p class="small muted">No stories yet. Tap ✏️ New story.</p>`;
+    if (!any) html += `<p class="small muted">${ro ? 'No stories yet. They appear here once the family posts and this phone syncs.' : 'No stories yet. Tap ✏️ New story.'}</p>`;
     const y = window.scrollY;
     el.innerHTML = html;
     window.scrollTo(0, y);

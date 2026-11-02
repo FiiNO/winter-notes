@@ -109,10 +109,11 @@ const Nav = {
 function show(screen, fromHistory) {
   if (!fromHistory && S.screen !== screen) Nav.push('screen', screen);
   if (S.screen !== screen && window.Journal) Journal.onLeave(S.screen);
+  if (S.screen === 'where' && screen !== 'where' && window.Globe) Globe.leave();   // frees the globe's WebGL map
   document.querySelectorAll('.screen').forEach((el) => el.classList.add('hidden'));
   const el = $('#screen-' + screen);
   if (el) { el.classList.remove('hidden'); if (S.screen !== screen) { el.classList.add('enter'); clearTimeout(el._enter); el._enter = setTimeout(() => el.classList.remove('enter'), 1100); } }
-  const BOOK = ['days', 'moves', 'stays', 'taxi', 'protocols', 'vault', 'settings', 'gates'], QUEST = ['quests', 'passport'];
+  const BOOK = ['days', 'moves', 'stays', 'taxi', 'protocols', 'vault', 'settings', 'gates', 'where'], QUEST = ['quests', 'passport'];
   document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.screen === screen || (b.dataset.screen === 'book' && BOOK.includes(screen)) || (b.dataset.screen === 'quests' && QUEST.includes(screen))));
   S.screen = screen;
   window.scrollTo(0, 0);
@@ -126,6 +127,7 @@ function show(screen, fromHistory) {
   if (screen === 'settings') renderSettings();
   if (screen === 'story') Journal.renderStory();
   if (screen === 'map') mountMap();
+  if (screen === 'where' && window.Globe) Globe.enter(currentContext(), S.family);
   if (window.DossierMap) window.DossierMap.setVisible(screen === 'map');
 }
 function focusOnMap(placeId) { show('map'); const go = () => window.DossierMap && window.DossierMap.focusPlace(placeId); S.mapMounted ? setTimeout(go, 400) : setTimeout(go, 1500); }
@@ -278,17 +280,23 @@ ui.fpin.onsubmit = async (e) => {
   unlockError(r === 'nopin' ? 'No PIN set.' : `Wrong PIN. ${r.split(':')[1]} tries left before the passphrase is needed again.`);
 };
 
+function applyRoleChrome() {                         // 2 Nov 2026: the chrome follows the device role (Grandma and Grandpa's phone hides what it cannot use)
+  document.documentElement.dataset.role = Quests.role() || 'none';
+  const ed = $('#top-edition'); if (ed) ed.textContent = Quests.isGrandDevice() ? ' · Grandparents' : ' · Family';
+}
 async function enterApp() {
   const sy = (S.family.trip || {}).sync || {};
   await Media.init(sy.media); delete sy.media;       // the raw media key leaves the plaintext family object at once
   Journal.init();
   $('#screen-unlock').classList.add('hidden');
   $('#nav').classList.remove('hidden');
+  applyRoleChrome();
   renderAll();
   Quests.refreshTop();
   Journal.refreshBadge();
   show('home');
-  Quests.checkNewBadges(currentContext());
+  if (!Quests.role()) { openModal(Quests.roleCard()); Quests.wireRole($('#modal-inner')); }   // 2 Nov 2026: a fresh device says whose it is first
+  else if (!Quests.isGrandDevice()) Quests.checkNewBadges(currentContext());
   Quests.startSync();                                // no-op unless the family blob carries a sync address
   checkForUpdate();
 }
@@ -330,7 +338,34 @@ function openDay(date) {
     <div class="card"><div class="h3">The plan</div><div>${nl(d.plan)}</div>${d.travel ? `<div class="small muted">${nl(d.travel)}</div>` : ''}${d.heads_up ? `<div class="small red">${nl(d.heads_up)}</div>` : ''}</div>` +
     ev.map((e) => `<div class="card"><div class="h3">🎟️ ${esc(e.time)} · ${esc(e.event)}</div><div>${esc(e.venue)}</div><div class="small muted">${esc(e.who)}${e.seats ? ' · ' + esc(e.seats) : ''}</div></div>`).join(''));
 }
+/* Grandma and Grandpa's phone (2 Nov 2026): a quiet Home. Where the family is, the time there, tonight's bed, the next move,
+   the stories. No quests, no SOS, no day strip: everything on this phone arrives through the sync and is read only. */
+function renderGrandHome() {
+  const F = S.family, ctx = currentContext(), nm = nextMove(ctx);
+  const city = ctx.inAir ? 'Air' : ctx.city;
+  setCityColour(city);
+  const total = Quests.daysBetween(F.trip.start, F.trip.end) + 1, dayN = Quests.daysBetween(F.trip.start, ctx.date) + 1;
+  let html = '';
+  if (ctx.before) {
+    const sleeps = sleepsUntil(ctx, F.trip.start);
+    html += `<div class="hero"><div class="hero-emoji">🛫</div><div class="hero-text"><div class="hero-kicker">Getting ready · ${esc(fmtDate(ctx.date))}</div><div class="hero-date">${sleeps} sleep${sleeps === 1 ? '' : 's'} to go</div><div class="hero-sub">They fly on ${esc(fmtDate(F.trip.start))}</div></div></div>`;
+  } else if (dayN > total) {
+    html += `<div class="hero"><div class="hero-emoji">🏡</div><div class="hero-text"><div class="hero-kicker">Home again</div><div class="hero-date">${esc(fmtDate(ctx.date))}</div><div class="hero-sub">${total} days of adventure live on in the stories</div></div></div>`;
+  } else {
+    html += `<div class="hero"><div class="hero-emoji">${Quests.CITY_EMOJI[city] || '📍'}</div><div class="hero-text"><div class="hero-kicker">Day ${dayN} of ${total} · ${esc(ctx.inAir ? 'In the air' : ctx.city)}${S.preview ? ' · preview' : ''}</div><div class="hero-date">${esc(fmtDate(ctx.date))}</div><div class="hero-sub">${esc(localTime(ctx.tz))} there · ${esc(localTime(TZ.Home))} at home</div></div></div>`;
+  }
+  html += `<div class="tiles">`;
+  html += `<button class="tile ht wide t1" data-go="where"><span class="ico">🌏</span><span class="tt">Where are they?</span><span class="ts">${esc(ctx.before ? 'The whole route on the globe' : ctx.inAir ? 'In the air right now' : 'Spin the globe to ' + ctx.city)}</span></button>`;
+  html += Journal.storiesTileHtml(ctx);
+  if (!ctx.before && ctx.stay) html += `<div class="tile wide t3"><span class="ico">🛏️</span><span class="tt">Tonight</span><span class="ts">${esc(ctx.stay.property || '')}${ctx.stay.city ? ', ' + esc(ctx.stay.city) : ''}</span></div>`;
+  if (nm) html += `<div class="tile wide t2"><span class="ico">${/train/i.test(nm.mode || '') ? '🚆' : /coach|bus/i.test(nm.mode || '') ? '🚌' : '✈️'}</span><span class="tt">Next move</span><span class="ts">${esc(nm.frm || '')} → ${esc(nm.to || '')} · ${esc(fmtDate(nm.date))}${nm.depart ? ' · ' + esc(nm.depart) : ''}</span></div>`;
+  html += `</div>`;
+  html += `<p class="tiny muted">Everything here arrives from the family's phones when this one syncs. Built ${esc(BUILT)} · ${esc(VERSION)}</p>`;
+  const el = $('#screen-home'); el.innerHTML = html;
+  wireGo(el);
+}
 function renderHome() {
+  if (Quests.isGrandDevice()) return renderGrandHome();
   const F = S.family, ctx = currentContext(), nm = nextMove(ctx);
   const city = ctx.inAir ? 'Air' : ctx.city;
   setCityColour(city);
@@ -367,6 +402,7 @@ function renderHome() {
   html += `<button class="tile ht t5" data-call="1"><span class="ico">📞</span><span class="tt">Call</span><span class="ts">${calls.map((c) => esc(c[0])).join(' · ') || 'Numbers'}</span></button>`;
   html += `<button class="tile ht wide t6" data-kid="1"><span class="ico">🙋</span><span class="tt">I'm lost</span><span class="ts">Your own card: big words, Mum and Dad's numbers, what to say</span></button>`;
   html += Journal.storiesTileHtml(ctx);
+  html += `<button class="tile ht wide t2" data-go="where"><span class="ico">🌏</span><span class="tt">Where are we</span><span class="ts">The globe, the route and today's dot</span></button>`;
   html += `</div>`;
   const morning = Media.enabled ? Journal.index().filter((m) => m.k === 'photo' && m.tag === 'morning' && m.d === ctx.date).length : 0;
   if (!ctx.before && (!Quests.role() || Quests.isParentDevice())) {
@@ -396,7 +432,7 @@ function openCalls(calls) {
 }
 function renderBook() {
   const items = [['days', '📅', 'Days', 'The plan, day by day'], ['moves', '✈️', 'Moves', 'Flights, trains, buses, taxis'], ['stays', '🛏️', 'Stays', 'Every bed, check-in times'],
-    ['taxi', '🚕', 'Taxi cards', 'Japanese and French, phrases'], ['map', '🗺️', 'Map', 'Offline maps, places, GPS'], ['protocols', '📋', 'Protocols', 'Lost kid, PACE, phone stolen'],
+    ['taxi', '🚕', 'Taxi cards', 'Japanese and French, phrases'], ['map', '🗺️', 'Map', 'Offline maps, places, GPS'], ['where', '🌏', 'Where are we', 'The globe and the route'], ['protocols', '📋', 'Protocols', 'Lost kid, PACE, phone stolen'],
     ['gates', '✅', 'Before we go', "Mum and Dad's to-do list"], ['quests', '🏆', 'Quests', 'Points, levels, new foods'], ['passport', '📘', 'Passport', 'Stamps and badges'],
     ['vault', '🔒', 'Vault', 'PINs and document numbers'], ['settings', '⚙️', 'Settings', 'Theme, text size, players']];
   $('#screen-book').innerHTML = `<h1 class="h1">📖 Book</h1><div class="book">` + items.filter((i) => !(i[0] === 'vault' && settings.readerMode)).map((i, k) => `<button class="bk c${k % 8}" data-go="${i[0]}"><span class="ico">${i[1]}</span><span class="tt">${esc(i[2])}</span><span class="ts">${esc(i[3])}</span></button>`).join('') + `</div>`;
@@ -781,8 +817,8 @@ function renderSettings() {
     <div class="card"><div class="h3">Text size</div>${switchRow('bigText', 'Big text (for the kids and tired eyes)')}</div>
     <div class="card"><div class="h3">Confetti and animations</div><p class="small muted">Auto follows the phone's reduce-motion setting.</p><div class="row">${['auto', 'on', 'off'].map((t) => `<button class="pill${FX.pref() === t ? ' active' : ''}" data-fx="${t}">${t}</button>`).join('')}<button class="btn small-btn" id="opt-fx-demo">Show me</button></div></div>
     ${Quests.settingsCard()}
-    <div class="card"><div class="h3">Photos and journal</div><div class="small" id="media-msg">…</div>${Media.canSaveOriginals() ? `<div class="small" id="orig-msg"></div>` : ''}<div class="row"><button class="btn" id="opt-media-dl">Download all pictures (Wi-Fi)</button>${Quests.isParentDevice() ? `<button class="btn" id="opt-media-clear">Clear downloaded pictures here</button>` : ''}${Media.canSaveOriginals() ? `<button class="btn" id="opt-orig-save">Save originals to Photos</button><button class="btn" id="opt-orig-clear">Clear saved originals</button>` : ''}</div>${Media.origHint() ? `<p class="tiny muted">${esc(Media.origHint())}</p>` : ''}${Quests.isParentDevice() ? `<div class="row"><button class="btn danger" id="opt-stories-wipe">🗑️ Delete all stories and photos (everyone)</button></div>` : ''}<div class="tiny mono" id="diag" style="margin-top:8px;white-space:pre-wrap"></div><div class="row"><button class="btn" id="opt-errlog-clear">Clear error log</button></div><p class="tiny muted">Pictures and pages are encrypted on this device and in the cloud; only an unlocked device can open them, so the PIN and the phone's own lock are the gate.</p></div>
-    <div class="card"><div class="h3">Preview a trip day</div><p class="small muted">Shows the app as it will look on that day: for testing and the dry run. Tap a day; tap Now to come back.</p>${previewPicker()}</div>
+    <div class="card"><div class="h3">Photos and journal</div><div class="small" id="media-msg">…</div>${Media.canSaveOriginals() ? `<div class="small" id="orig-msg"></div>` : ''}<div class="row"><button class="btn" id="opt-media-dl">Download all pictures (Wi-Fi)</button>${Quests.isParentDevice() || Quests.isGrandDevice() ? `<button class="btn" id="opt-media-clear">Clear downloaded pictures here</button>` : ''}${Media.canSaveOriginals() ? `<button class="btn" id="opt-orig-save">Save originals to Photos</button><button class="btn" id="opt-orig-clear">Clear saved originals</button>` : ''}</div>${Media.origHint() ? `<p class="tiny muted">${esc(Media.origHint())}</p>` : ''}${Quests.isParentDevice() ? `<div class="row"><button class="btn danger" id="opt-stories-wipe">🗑️ Delete all stories and photos (everyone)</button></div>` : ''}<div class="tiny mono" id="diag" style="margin-top:8px;white-space:pre-wrap"></div><div class="row"><button class="btn" id="opt-errlog-clear">Clear error log</button></div><p class="tiny muted">Pictures and pages are encrypted on this device and in the cloud; only an unlocked device can open them, so the PIN and the phone's own lock are the gate.</p></div>
+    ${Quests.isGrandDevice() ? '' : `<div class="card"><div class="h3">Preview a trip day</div><p class="small muted">Shows the app as it will look on that day: for testing and the dry run. Tap a day; tap Now to come back.</p>${previewPicker()}</div>`}
     <div class="card"><div class="h3">This device</div>
       ${switchRow('readerMode', 'Reader mode: hide the Vault (for the iPad)')}
       ${switchRow('autoFamily', 'Open the family view without a PIN on this device')}
@@ -802,9 +838,10 @@ function renderSettings() {
   const setPreview = (v) => { S.preview = v || null; if (v) localStorage.setItem('previewDate', v); else localStorage.removeItem('previewDate'); rerender(); Quests.refreshTop(); const y = window.scrollY; renderSettings(); window.scrollTo(0, y); Quests.checkNewBadges(currentContext()); };
   const dates = S.family.days.map((d) => d.date), pi = dates.indexOf(S.preview || '');
   document.querySelectorAll('[data-pv]').forEach((b) => b.onclick = () => setPreview(b.dataset.pv));
-  $('#pv-prev').onclick = () => setPreview(pi < 0 ? dates[dates.length - 1] : pi === 0 ? '' : dates[pi - 1]);
-  $('#pv-next').onclick = () => setPreview(pi < 0 ? dates[0] : pi >= dates.length - 1 ? '' : dates[pi + 1]);
-  $('#opt-preview-clear').onclick = () => setPreview('');
+  const pvp = $('#pv-prev'), pvn = $('#pv-next'), pvc = $('#opt-preview-clear');          // absent on Grandma and Grandpa's phone
+  if (pvp) pvp.onclick = () => setPreview(pi < 0 ? dates[dates.length - 1] : pi === 0 ? '' : dates[pi - 1]);
+  if (pvn) pvn.onclick = () => setPreview(pi < 0 ? dates[0] : pi >= dates.length - 1 ? '' : dates[pi + 1]);
+  if (pvc) pvc.onclick = () => setPreview('');
   const cur = $('#pv-strip .day.today'); if (cur) cur.scrollIntoView({ inline: 'center', block: 'nearest' });
   Quests.wireSettings($('#screen-settings'));
   const mm = $('#media-msg');

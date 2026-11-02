@@ -92,10 +92,36 @@ window.Postcard = (() => {
     P.files.set(id, p); p.catch(() => P.files.delete(id));
     return p;
   }
-  function canShareFile(file) { try { return !!(file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })); } catch (e) { return false; } }
+  /* which browser the app runs in, and whether its share sheet takes a picture (2 Nov 2026: Andy's phone showed
+     Download instead of Share, so the preview and the Settings readout now say which browser and why) */
+  const UA = navigator.userAgent || '';
+  function browser() {
+    const names = [[/SamsungBrowser\/[\d.]+/, 'Samsung Internet '], [/FxiOS\/[\d.]+/, 'Firefox iOS '], [/Firefox\/[\d.]+/, 'Firefox '], [/EdgA\/[\d.]+/, 'Edge '], [/Edg\/[\d.]+/, 'Edge '],
+      [/OPR\/[\d.]+/, 'Opera '], [/CriOS\/[\d.]+/, 'Chrome iOS '], [/DuckDuckGo\/[\d.]+/, 'DuckDuckGo '], [/Chrome\/[\d.]+/, 'Chrome '], [/Version\/[\d.]+/, 'Safari ']];
+    let name = 'unknown browser';
+    for (const [re, label] of names) { const m = UA.match(re); if (m) { name = label + m[0].split('/')[1].split('.')[0]; break; } }
+    let installed = false; try { installed = !!navigator.standalone || matchMedia('(display-mode: standalone)').matches; } catch (e) { /* none */ }
+    const ios = /iPad|iPhone|iPod/.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    return `${name}${/; wv\)/.test(UA) ? ' app view' : ''}${installed ? ', installed' : ', tab'}${/Android/i.test(UA) ? ', Android' : ios ? ', iOS' : ''}`;
+  }
+  function shareInfo(file) {                                                         // has: a share sheet at all; files: does it take this picture (null = cannot tell)
+    const has = typeof navigator.share === 'function', can = typeof navigator.canShare === 'function';
+    let files = null;
+    if (file && has && can) { try { files = !!navigator.canShare({ files: [file] }); } catch (e) { files = false; } }
+    return { has, can, files, browser: browser() };
+  }
+  function canShareFile(file) { const i = shareInfo(file); return i.files === true || (i.has && i.files === null); }   // no canShare at all: try, the sheet decides
+  function diag() {
+    let probe = null; try { probe = new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], 'probe.jpg', { type: 'image/jpeg' }); } catch (e) { /* no File */ }
+    const i = shareInfo(probe);
+    return `sheet ${i.has ? 'yes' : 'NO'} · canShare ${i.can ? 'yes' : 'no'} · picture ${i.files === null ? '?' : i.files ? 'yes' : 'NO'} · ${i.browser}`;
+  }
+  function noShare(info) { const e = new Error(`${info.browser} cannot hand the picture to Mail from the app. Save the picture, then attach it to the email.`); e.name = 'NoShare'; return e; }
   async function share(file, po) {
-    if (!canShareFile(file)) { const e = new Error('This device cannot hand a picture to Mail from the app. Download it and attach it yourself.'); e.name = 'NoShare'; throw e; }
-    await navigator.share({ files: [file], title: `Postcard from ${Quests.label(po.p)}`, text: `${firstLine(po)} · World Adventure` });
+    const info = shareInfo(file);
+    if (!canShareFile(file)) throw noShare(info);
+    try { await navigator.share({ files: [file], title: `Postcard from ${Quests.label(po.p)}`, text: `${firstLine(po)} · World Adventure` }); }
+    catch (e) { if (e && e.name === 'TypeError') throw noShare(info); throw e; }     // TypeError: this sheet takes no pictures; AbortError: cancelled
   }
   function releaseUrls() { for (const u of P.urls) URL.revokeObjectURL(u); P.urls.length = 0; }
 
@@ -108,17 +134,26 @@ window.Postcard = (() => {
     try { file = await prepare(id); } catch (e) { const el = $('#pc-preview'); if (el) el.innerHTML = `<div class="card red">${esc((e && e.message) || 'Could not draw the postcard.')}</div>`; return; }
     const el = $('#pc-preview'); if (!el || !file) return;                            // the modal closed meanwhile
     const url = URL.createObjectURL(file); P.urls.push(url);
-    const st = Quests.cardStatus(id), parent = Quests.isParentDevice(), can = canShareFile(file);
-    let html = `<img src="${url}" alt="Postcard"><div class="small muted pc-words">${esc(po.text || '')}</div><div class="row">`;
-    if (parent) html += can ? `<button class="btn primary" id="pc-share">📤 Share</button>` : `<a class="btn primary" href="${url}" download="${esc(file.name)}">⬇️ Download the picture</a>`;
-    else html += st.sent ? `<span class="chip">✓ Sent</span>` : st.pending ? `<span class="chip">⏳ Mum and Dad have it</span>` : `<button class="btn primary" id="pc-ask">📮 Ask Mum and Dad to send it</button>`;
-    html += `<button class="btn" id="pc-copy">📋 Copy the words</button></div>`;
-    html += `<p class="tiny muted">${parent ? (can ? 'Share opens Mail or WhatsApp with the postcard attached: pick the grandparents and send.' : 'Attach the downloaded picture to an email to the grandparents.') : 'Mum or Dad send it from their phone when they say yes.'}${st.sent ? ' Sent before; sending again is fine.' : ''}${st.rejected && !parent ? ' Last time they said not this time; you can ask again.' : ''}</p>`;
-    el.innerHTML = html;
-    const sh = $('#pc-share');
-    if (sh) sh.onclick = async () => { sh.disabled = true; try { await share(file, po); Quests.approveCard(id); closeModal(); } catch (e) { sh.disabled = false; if (e && e.name !== 'AbortError') alert((e && e.message) || 'Could not share.'); } };
-    const ask = $('#pc-ask'); if (ask) ask.onclick = () => { Quests.requestCard(id); closeModal(); };
-    const cp = $('#pc-copy'); if (cp) cp.onclick = () => { if (navigator.clipboard) navigator.clipboard.writeText(words(po)).then(() => { cp.textContent = '✓ Copied'; }, () => {}); };
+    const st = Quests.cardStatus(id), parent = Quests.isParentDevice(), info = shareInfo(file);
+    el.innerHTML = `<img src="${url}" alt="Postcard"><div class="small muted pc-words">${esc(po.text || '')}</div><div id="pc-actions"></div>`;
+    const mailto = `mailto:?subject=${encodeURIComponent('Postcard from ' + Quests.label(po.p))}&body=${encodeURIComponent(words(po))}`;
+    const extra = `${st.sent ? ' Sent before; sending again is fine.' : ''}${st.rejected && !parent ? ' Last time they said not this time; you can ask again.' : ''}`;
+    const actions = (why) => {                                                       // why: the NoShare error after a Share that the sheet refused, else null
+      const box = $('#pc-actions'); if (!box) return;
+      const can = !why && canShareFile(file);
+      let html = '<div class="row">';
+      if (parent) html += can ? `<button class="btn primary" id="pc-share">📤 Share</button>` : `<a class="btn primary" href="${url}" download="${esc(file.name)}">⬇️ Save the picture</a><a class="btn" href="${mailto}">✉️ Email the words</a>`;
+      else html += st.sent ? `<span class="chip">✓ Sent</span>` : st.pending ? `<span class="chip">⏳ Mum and Dad have it</span>` : `<button class="btn primary" id="pc-ask">📮 Ask Mum and Dad to send it</button>`;
+      html += `<button class="btn" id="pc-copy">📋 Copy the words</button></div>`;
+      const fallback = `${why ? why.message : noShare(info).message} Chrome on Android and Safari on iPhone usually share it in one tap.`;
+      html += `<p class="tiny muted">${parent ? (can ? 'Share opens Mail or WhatsApp with the postcard attached: pick the grandparents and send.' : esc(fallback)) : 'Mum or Dad send it from their phone when they say yes.'}${extra}</p>`;
+      box.innerHTML = html;
+      const sh = $('#pc-share');
+      if (sh) sh.onclick = async () => { sh.disabled = true; try { await share(file, po); Quests.approveCard(id); closeModal(); } catch (e) { sh.disabled = false; if (e && e.name === 'NoShare') actions(e); else if (e && e.name !== 'AbortError') alert((e && e.message) || 'Could not share.'); } };
+      const ask = $('#pc-ask'); if (ask) ask.onclick = () => { Quests.requestCard(id); closeModal(); };
+      const cp = $('#pc-copy'); if (cp) cp.onclick = () => { if (navigator.clipboard) navigator.clipboard.writeText(words(po)).then(() => { cp.textContent = '✓ Copied'; }, () => {}); };
+    };
+    actions(null);
   }
   /* the parent's ✓ on a waiting postcard: share from this phone, then mark it sent and tick the quest for the author */
   async function sendApproved(key) {
@@ -131,5 +166,5 @@ window.Postcard = (() => {
     catch (e) { if (e && e.name !== 'AbortError') alert((e && e.message) || 'Could not share.'); return false; }
   }
 
-  return { render, prepare, share, openPreview, sendApproved, firstLine, canShareFile, releaseUrls };
+  return { render, prepare, share, openPreview, sendApproved, firstLine, canShareFile, shareInfo, diag, releaseUrls };
 })();

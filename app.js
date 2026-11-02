@@ -834,6 +834,7 @@ function renderSettings() {
         `sync: ${sy.enabled ? 'on' : 'OFF'} · last ${when(sy.last)} · ${sy.error ? 'error ' + sy.error : 'ok'}${sy.busy ? ' · busy' : ''}${sy.dirty ? ' · unsent' : ''}`,
         `last add: ${md.add || '-'} · last upload: ${md.up || '-'} · last download: ${md.down || '-'} · last open: ${md.open || '-'}`,
         `journal: ${Journal.diag ? Journal.diag() : '-'}`,
+        `share: ${window.Postcard && Postcard.diag ? Postcard.diag() : '-'}`,
         log.length ? 'errors:\n' + log.join('\n') : 'errors: none',
       ].join('\n');
     });

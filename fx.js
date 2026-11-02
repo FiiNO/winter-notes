@@ -264,12 +264,12 @@ window.FX = (() => {
     if (!luOn) return;
     luTimers.forEach(clearTimeout); luTimers = [];
     const el = luEl, av = el && el.querySelector('.lu-av .face'), pill = document.getElementById('btn-points');
-    if (av && pill && !reduce() && pill.offsetParent) {     // the face flies up to the header pill, which bumps and pops its badge
+    if (av && pill && !reduce() && pill.offsetParent) {     // the face flies up to the header pill, which bumps (the badge stays in the show: everyday faces carry none, 3 Nov 2026)
       const [x0, y0] = centreOf(av), [x1, y1] = centreOf(pill), fly = document.createElement('div');
-      fly.className = 'lu-fly'; fly.innerHTML = av.outerHTML; fly.querySelectorAll('.lvb.old').forEach((n) => n.remove());
+      fly.className = 'lu-fly'; fly.innerHTML = av.outerHTML; fly.querySelectorAll('.lvb').forEach((n) => n.remove());
       fly.style.left = x0 + 'px'; fly.style.top = y0 + 'px'; document.body.appendChild(fly); void fly.offsetWidth;
       fly.style.left = x1 + 'px'; fly.style.top = y1 + 'px'; fly.style.fontSize = '1em';
-      setTimeout(() => { fly.remove(); pulse(pill, 'bump', 700); const b = document.querySelector('#top-face .lvb'); if (b) { b.classList.add('new'); setTimeout(() => b.classList.remove('new'), 2000); } }, 470);
+      setTimeout(() => { fly.remove(); pulse(pill, 'bump', 700); }, 470);
     }
     el.classList.add('out');
     setTimeout(() => { el.classList.add('hidden'); el.classList.remove('out', 'show', 'legend', 'still'); el.innerHTML = ''; luOn = false; luEl = null; next(); }, 300);

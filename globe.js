@@ -2,11 +2,18 @@
    globe drawn from a small whole-world archive (world.tiles, the Protomaps planet at zoom 0-3, precached with the app
    and read into memory, so no tile pack and no network): coastlines, lakes, land cover, borders and country names, a
    night side computed from the clock, stars around the sphere. The route is great-circle legs from the moves; cities
-   are emoji badges (HTML markers), today's city breathes; the journey replays with a plane flying every flown leg
-   while the globe turns, landing with a pop, then the globe settles on today's city and idles round slowly until
-   touched. Tap a badge for the city's dates, its stories and a picture, and jump to those stories. Shown to the family
-   from Home ("🌏 Where are we") and the Book, and as the Where tab on Grandma and Grandpa's phone. Same MapLibre module
-   as map.js; the map, markers and timers are created on enter and torn down on leave. */
+   are emoji badges (HTML markers), today's city breathes; the journey replays with the leg's vehicle (plane, bus or
+   train) flying every finished leg while the globe turns, landing with a pop, then the globe settles on where the
+   family is and idles round slowly until touched. Tap a badge for the city's dates, its stories and a picture, and
+   jump to those stories. Shown to the family from Home ("🌏 Where are we") and the Book, and as the Where tab on
+   Grandma and Grandpa's phone. Same MapLibre module as map.js; the map, markers and timers are created on enter and
+   torn down on leave.
+   3 Nov 2026 (Andy: "semi real time… if we are in the air it stops with the plane somewhere along the journey… the
+   Whistler leg should be a bus… Montreal a train and Nagoya a train… could we do hourly?"): the family's place comes
+   from the clock and the moves' depart/arrive times in each end's time zone. On a leg, the vehicle sits that far along
+   the arc with the line coloured up to it; between legs the family is at the last arrival city; the caption says
+   "In the air ✈️ · Calgary → Tokyo · 62% of the way · lands 16:30 Tokyo time". The screen re-places itself every
+   15 minutes while open, and every open starts fresh. */
 import * as maplibregl from './vendor/maplibre-gl.mjs';
 
 const CITY_LL = { Townsville: [146.82, -19.26], Brisbane: [153.03, -27.47], Cairns: [145.77, -16.92], Vancouver: [-123.12, 49.28], Whistler: [-122.95, 50.12],
@@ -15,7 +22,33 @@ const AIRPORT = { TSV: 'Townsville', BNE: 'Brisbane', CNS: 'Cairns', YVR: 'Vanco
 const EMOJI_EXTRA = { Calgary: '🛬' };
 const HOME = 'Townsville';
 const R = Math.PI / 180, D = 180 / Math.PI;
-const G = { map: null, archive: null, markers: {}, plane: null, popup: null, raf: 0, timers: [], playing: false, idle: false, touched: false, route: null, ctx: null, family: null, doneSegs: [] };
+const G = { map: null, archive: null, markers: {}, plane: null, popup: null, raf: 0, timers: [], playing: false, idle: false, touched: false, route: null, ctx: null, family: null, doneSegs: [], clock: null };
+const REFRESH_MS = 15 * 60 * 1000;                                     // the vehicle, lines and caption re-place themselves this often while the globe is open
+const glyphOf = (mode) => (/train|rail|shinkansen/i.test(mode || '') ? '🚆' : /coach|bus/i.test(mode || '') ? '🚌' : '✈️');
+const wordOf = (mode) => (/train|rail|shinkansen/i.test(mode || '') ? 'On the train' : /coach|bus/i.test(mode || '') ? 'On the bus' : 'In the air');
+const landWord = (mode) => (glyphOf(mode) === '✈️' ? 'lands' : 'arrives');
+const isPlane = (mode) => glyphOf(mode) === '✈️';
+
+/* ---------------------------------------------------------------- the clock: local wall times in each end's zone → instants */
+function tzShift(tz, ms) {                                             // minutes the zone is ahead of UTC at that instant
+  const p = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' }).formatToParts(new Date(ms));
+  const g = (t) => +p.find((x) => x.type === t).value;
+  return (Date.UTC(g('year'), g('month') - 1, g('day'), g('hour') % 24, g('minute'), g('second')) - ms) / 60000;
+}
+function instant(date, hhmm, tz, dayOffset) {                          // "2026-12-30" + "14:45" (or "~14:45", "16:30 +1") in tz → ms; null when unparseable
+  const m = String(hhmm || '').match(/(\d{1,2}):(\d{2})/); if (!m || !date) return null;
+  const off = dayOffset != null ? dayOffset : +((String(hhmm).match(/\+(\d)/) || [0, 0])[1]);
+  const [y, mo, d] = date.split('-').map(Number), wall = Date.UTC(y, mo - 1, d + off, +m[1], +m[2]);
+  let guess = wall;
+  for (let i = 0; i < 2; i++) guess = wall - tzShift(tz, guess) * 60000;   // two passes settle a DST edge
+  return guess;
+}
+function timeIn(ms, tz) { try { return new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' }).format(new Date(ms)); } catch (e) { return ''; } }
+function nowMs(ctx) {                                                  // the real clock, a test clock, or noon of the previewed day
+  if (G.clock) return G.clock;
+  if (typeof S !== 'undefined' && S.preview) return instant(S.preview, '12:00', ctx.tz) || Date.now();
+  return Date.now();
+}
 
 /* ---------------------------------------------------------------- the world archive, read once and served from memory */
 function archive() {
@@ -45,9 +78,17 @@ function legs(family) {
   const out = [];
   for (const mv of (family.moves || [])) {
     const a = placeOf(mv.frm), b = placeOf(mv.to);
-    if (a && b && a[0] !== b[0]) out.push({ from: a, to: b, date: mv.date, mode: mv.mode || '', depart: mv.depart || '', km: Math.round(6371 * angle(a[1], b[1])) });
+    if (!(a && b && a[0] !== b[0])) continue;
+    const dep = instant(mv.date, mv.depart, tzOf(a[0]));
+    let arr = instant(mv.date, mv.arrive, tzOf(b[0]));
+    if (dep != null && arr != null && arr <= dep) arr += 86400000;        // an arrival past midnight written without "+1"
+    out.push({ from: a, to: b, date: mv.date, mode: mv.mode || '', depart: mv.depart || '', arrive: mv.arrive || '', dep, arr, km: Math.round(6371 * angle(a[1], b[1])) });
   }
   return out;
+}
+function partialFeatures(lg, f) {                                      // the coloured line from the leg's start to the vehicle
+  const pts = arc(lg.from[1], lg.to[1], 64), k = Math.max(1, Math.round(f * (pts.length - 1)));
+  return split(pts.slice(0, k + 1)).map((seg) => ({ type: 'Feature', properties: { col: colOf(lg.to[0]), done: true }, geometry: { type: 'LineString', coordinates: seg } }));
 }
 function arc(a, b, n) {                                                // great-circle points between two [lon, lat]
   const l1 = a[0] * R, p1 = a[1] * R, l2 = b[0] * R, p2 = b[1] * R, d = angle(a, b), pts = [];
@@ -95,23 +136,29 @@ function isNight(lonlat, date) { const [slon, slat] = sunPos(date || new Date())
 
 /* ---------------------------------------------------------------- the route for a day */
 function routeData(ctx, family) {
-  const today = ctx.date, L = legs(family), arr = Quests.arrivals(), seen = new Map();
-  for (const lg of L) lg.done = lg.date < today || (lg.date === today && !ctx.inAir && lg.depart.replace('~', '') <= localTime(ctx.tz));
-  const flown = L.filter((lg) => lg.done);
+  const today = ctx.date, L = legs(family), arr = Quests.arrivals(), seen = new Map(), now = nowMs(ctx);
+  for (const lg of L) {
+    if (lg.dep != null && lg.arr != null) { lg.f = (now - lg.dep) / (lg.arr - lg.dep); lg.done = lg.f >= 1; lg.on = lg.f >= 0 && lg.f < 1; }
+    else { lg.f = null; lg.on = false; lg.done = lg.date < today || (lg.date === today && !ctx.inAir && lg.depart.replace('~', '') <= localTime(ctx.tz)); }   // a move without times: by the date
+  }
+  const flown = L.filter((lg) => lg.done), riding = L.find((lg) => lg.on) || null, lastDone = flown[flown.length - 1] || null;
   const add = (city, when) => { if (CITY_LL[city] && !seen.has(city)) seen.set(city, when); };
   add(HOME, 'Home');
   for (const lg of L) { add(lg.from[0], ''); add(lg.to[0], fmtDate(lg.date)); }
   for (const [c, a] of Object.entries(arr)) add(c, fmtDate(a.date));
-  const here = ctx.before ? HOME : ctx.inAir ? null : (ctx.city === 'Home' ? HOME : (CITY_LL[ctx.city] ? ctx.city : null));
+  // where the family is right now: on a leg, else at the last arrival city (before the first leg, and after the last, home)
+  const here = riding ? null : ctx.before ? HOME : lastDone ? lastDone.to[0] : HOME;
   const visited = (city) => city === HOME || (arr[city] && arr[city].date <= today) || L.some((lg) => lg.to[0] === city && lg.done);
   const cities = [...seen].map(([city, when]) => ({ city, when: when || (arr[city] ? fmtDate(arr[city].date) : ''), col: colOf(city), visited: !ctx.before && visited(city) || city === HOME, now: city === here }));
   let target = here ? CITY_LL[here] : null, planeAt = null, planeLeg = null;
-  if (ctx.inAir) {
-    planeLeg = L.find((x) => x.date === today) || L.find((x) => x.date > today) || L[L.length - 1];
-    if (planeLeg) { planeAt = arc(planeLeg.from[1], planeLeg.to[1], 2)[1]; target = planeAt; }
-  }
-  return { L, flown, todo: L.filter((lg) => !lg.done), cities, here, target: target || CITY_LL[HOME], planeAt, planeLeg,
-    flownKm: flown.reduce((s, lg) => s + lg.km, 0), totalKm: L.reduce((s, lg) => s + lg.km, 0) };
+  if (riding) { planeLeg = riding; planeAt = arc(riding.from[1], riding.to[1], 64)[Math.round(riding.f * 64)]; target = planeAt; }
+  const next = L.find((lg) => (lg.f != null ? lg.f < 0 : !lg.done)) || null;
+  return { L, flown, todo: L.filter((lg) => !lg.done), cities, here, target: target || CITY_LL[HOME], planeAt, planeLeg, riding, next, now,
+    glyph: glyphOf(riding ? riding.mode : ''), flownKm: Math.round(flown.reduce((s, lg) => s + lg.km, 0) + (riding ? riding.km * riding.f : 0)), totalKm: L.reduce((s, lg) => s + lg.km, 0) };
+}
+function whereNow(ctx, family) {                                       // for Home: { here, riding: { from, to, mode, f, glyph, word } | null }
+  const r = routeData(ctx, family);
+  return { here: r.here, riding: r.riding ? { from: r.riding.from[0], to: r.riding.to[0], mode: r.riding.mode, f: r.riding.f, glyph: glyphOf(r.riding.mode), word: wordOf(r.riding.mode) } : null };
 }
 
 /* ---------------------------------------------------------------- the style */
@@ -123,7 +170,7 @@ function styleOf(r) {
     sources: {
       world: { type: 'vector', tiles: ['world://{z}/{x}/{y}'], minzoom: 0, maxzoom: 3 },
       todo: { type: 'geojson', data: lines(legFeatures(r.todo, { done: false })) },
-      done: { type: 'geojson', data: lines(legFeatures(r.flown, { done: true })) },
+      done: { type: 'geojson', data: lines(legFeatures(r.flown, { done: true }).concat(r.riding ? partialFeatures(r.riding, r.riding.f) : [])) },
       night: { type: 'geojson', data: lines([night(new Date(), 0)]) },
       night2: { type: 'geojson', data: lines([night(new Date(), 7)]) },
     },
@@ -145,17 +192,21 @@ function styleOf(r) {
 
 /* ---------------------------------------------------------------- caption, badges, popup */
 function captionHtml(ctx, family, r) {
-  const grand = Quests.isGrandDevice(), total = Quests.daysBetween(family.trip.start, family.trip.end) + 1, dayN = Quests.daysBetween(family.trip.start, ctx.date) + 1, nm = nextMove(ctx);
-  const km = (n) => n.toLocaleString('en-AU');
+  const grand = Quests.isGrandDevice(), total = Quests.daysBetween(family.trip.start, family.trip.end) + 1, dayN = Quests.daysBetween(family.trip.start, ctx.date) + 1, nl = r.next;
+  const km = (n) => n.toLocaleString('en-AU'), when = (ms) => (ms ? new Date(ms) : new Date());
   let big, sub;
   if (ctx.before) { big = `${Math.max(0, Quests.daysBetween(ctx.date, family.trip.start))} sleeps to go`; sub = `${r.L.length} legs and ${km(r.totalKm)} km, from ${HOME} and back`; }
-  else if (dayN > total) { big = 'Home again 🏡'; sub = `${r.L.length} legs and ${km(r.totalKm)} km flown · ${total} days of adventure`; }
-  else {
-    const dark = r.target && isNight(r.target) ? ' · 🌙 night' : '';
-    big = `Day ${dayN} of ${total} · ${ctx.inAir ? 'In the air ✈️' : `${ctx.city} ${emojiOf(ctx.city)}`}`;
-    sub = `${localTime(ctx.tz)} ${grand ? 'there' : 'here'}${dark} · ${localTime(TZ.Home)} at home · ${km(r.flownKm)} of ${km(r.totalKm)} km · ${r.flown.length} of ${r.L.length} legs`;
+  else if (dayN > total && !r.riding) { big = 'Home again 🏡'; sub = `${r.L.length} legs and ${km(r.totalKm)} km travelled · ${total} days of adventure`; }
+  else if (r.riding) {                                                 // on a leg: the vehicle, the ends, how far along, when it gets in
+    const lg = r.riding;
+    big = `Day ${dayN} of ${total} · ${wordOf(lg.mode)} ${glyphOf(lg.mode)}`;
+    sub = `${lg.from[0]} → ${lg.to[0]} · ${Math.round(lg.f * 100)}% of the way · ${landWord(lg.mode)} ${timeIn(lg.arr, tzOf(lg.to[0]))} ${lg.to[0]} time · ${timeIn(r.now, TZ.Home)} at home`;
+  } else {
+    const city = r.here || ctx.city, tz = tzOf(city === HOME ? 'Home' : city), dark = r.target && isNight(r.target, when(r.now)) ? ' · 🌙 night' : '';
+    big = `Day ${dayN} of ${total} · ${city} ${emojiOf(city)}`;
+    sub = `${timeIn(r.now, tz)} ${grand ? 'there' : 'here'}${dark} · ${timeIn(r.now, TZ.Home)} at home · ${km(r.flownKm)} of ${km(r.totalKm)} km · ${r.flown.length} of ${r.L.length} legs`;
   }
-  const next = nm ? `<div class="small">Next: ${/train/i.test(nm.mode || '') ? '🚆' : /coach|bus/i.test(nm.mode || '') ? '🚌' : '✈️'} ${esc(nm.frm || '')} → ${esc(nm.to || '')} · ${esc(fmtDate(nm.date))}${nm.depart ? ' · ' + esc(nm.depart) : ''}</div>` : '';
+  const next = nl ? `<div class="small">Next: ${glyphOf(nl.mode)} ${esc(nl.from[0])} → ${esc(nl.to[0])} · ${esc(fmtDate(nl.date))}${nl.depart ? ' · ' + esc(nl.depart) : ''}</div>` : '';
   return `<h1 class="h1">🌏 ${grand ? 'Where are they?' : 'Where are we?'}</h1><div class="card where-card"><div class="big">${esc(big)}</div><div class="small muted">${esc(sub)}</div>${next}</div>`;
 }
 function addBadges(map, r) {
@@ -184,7 +235,35 @@ function openPopup(city) {
 
 /* ---------------------------------------------------------------- the journey */
 function setDone(map, segs) { const src = map.getSource('done'); if (src) src.setData(lines(segs)); }
-function planeEl() { const el = document.createElement('div'); el.className = 'gp'; el.textContent = '✈️'; return el; }
+function planeEl(glyph) { const el = document.createElement('div'); el.className = 'gp'; el.textContent = glyph || '✈️'; return el; }
+function vehicle(map) {                                                // the one vehicle marker: made on load, remade if it went missing (a stray element is swept first)
+  if (G.plane || !map) return G.plane;
+  try {
+    map.getCanvasContainer().querySelectorAll('.gp').forEach((n) => n.remove());
+    const r = G.route;
+    G.plane = new maplibregl.Marker({ element: planeEl(r && r.glyph), anchor: 'center', rotationAlignment: 'map', rotation: 0 }).setLngLat((r && r.planeAt) || CITY_LL[HOME]).addTo(map);
+  } catch (e) { G.plane = null; if (window.logErr) logErr('globe vehicle: ' + ((e && e.message) || e)); }
+  return G.plane;
+}
+function rotationFor(lg, at) { return isPlane(lg.mode) ? bearing(at, lg.to[1]) - 45 : 0; }   // the ✈️ glyph points north-east; a bus or train stays upright
+function placeVehicle(r) {                                             // the done lines (with the part-leg) and the vehicle where the clock says
+  const map = G.map; if (!map) return;
+  const done = legFeatures(r.flown, { done: true }).concat(r.riding ? partialFeatures(r.riding, r.riding.f) : []);
+  setDone(map, done); G.doneSegs = done;
+  const pl = vehicle(map); if (!pl) return;
+  const el = pl.getElement();
+  if (r.planeAt) { el.style.display = ''; el.textContent = r.glyph; el.classList.add('bob'); pl.setLngLat(r.planeAt).setRotation(rotationFor(r.planeLeg, r.planeAt)); }
+  else el.style.display = 'none';
+}
+function refresh() {                                                   // the clock moved on (every 15 min while open): re-place everything without rebuilding the map
+  const map = G.map; if (!map || G.playing || !G.family) return;
+  const ctx = typeof currentContext === 'function' ? currentContext() : G.ctx; G.ctx = ctx;
+  const r = routeData(ctx, G.family); G.route = r;
+  const cap = document.getElementById('where-cap'); if (cap) cap.innerHTML = captionHtml(ctx, G.family, r);
+  for (const c of r.cities) { const m = G.markers[c.city]; if (m) { m.getElement().classList.toggle('now', c.now); m.getElement().classList.toggle('seen', c.visited); } }
+  const todo = map.getSource('todo'); if (todo) todo.setData(lines(legFeatures(r.todo, { done: false })));
+  placeVehicle(r);
+}
 function stopPlaying() {
   G.playing = false; if (G.raf) { cancelAnimationFrame(G.raf); G.raf = 0; }
   for (const t of G.timers) clearTimeout(t); G.timers.length = 0;
@@ -192,8 +271,7 @@ function stopPlaying() {
 }
 function settle(map, r, reduce) {
   if (G.map !== map) return;
-  const done = legFeatures(r.flown, { done: true }); setDone(map, done); G.doneSegs = done;
-  if (G.plane) { if (r.planeAt) { G.plane.setLngLat(r.planeAt).setRotation(bearing(r.planeLeg.from[1], r.planeLeg.to[1]) - 45); G.plane.getElement().classList.add('bob'); } else G.plane.getElement().style.display = 'none'; }
+  placeVehicle(r);
   const zoom = r.here || r.planeAt ? 2.5 : 1.5;
   if (reduce) map.jumpTo({ center: r.target, zoom }); else map.easeTo({ center: r.target, zoom, duration: 1400, essential: true });
   G.timers.push(setTimeout(() => startIdle(map), reduce ? 0 : 1800));
@@ -210,8 +288,10 @@ function playJourney(map, r) {
   if (reduce) { settle(map, r, true); return; }
   G.playing = true;
   const b = document.getElementById('globe-play'); if (b) b.textContent = '⏸ Stop';
-  if (G.plane) { G.plane.getElement().style.display = ''; G.plane.getElement().classList.remove('bob'); }
+  const pl = vehicle(map); if (!pl) { settle(map, r, true); return; }
+  pl.getElement().style.display = ''; pl.getElement().classList.remove('bob');
   const flown = r.flown.slice();
+  if (r.riding) flown.push(Object.assign({}, r.riding, { upTo: r.riding.f }));   // the leg under way plays up to where the vehicle is now
   if (!flown.length) {                                                 // not yet departed: a quick tour of the whole route, then home
     setDone(map, []);
     let i = 0;
@@ -220,20 +300,22 @@ function playJourney(map, r) {
     return;
   }
   const doneSegs = []; let i = 0;
-  G.plane.setLngLat(flown[0].from[1]);
+  pl.setLngLat(flown[0].from[1]);
   const flyLeg = () => {
     if (!G.playing || G.map !== map) return;
     if (i >= flown.length) { G.playing = false; settle(map, r, false); stopPlaying(); return; }
-    const lg = flown[i++], pts = arc(lg.from[1], lg.to[1], 64), dur = 420 + 95 * lg.km / 1000, t0 = performance.now(), col = colOf(lg.to[0]);
-    map.easeTo({ center: lg.to[1], zoom: 2.0, duration: dur, easing: (t) => t, essential: true });
+    const lg = flown[i++], pts = arc(lg.from[1], lg.to[1], 64), cap = lg.upTo == null ? 1 : lg.upTo, kEnd = Math.round(cap * (pts.length - 1));
+    const dur = (420 + 95 * lg.km / 1000) * cap, t0 = performance.now(), col = colOf(lg.to[0]), plane = isPlane(lg.mode);
+    pl.getElement().textContent = glyphOf(lg.mode);
+    map.easeTo({ center: pts[kEnd], zoom: 2.0, duration: dur, easing: (t) => t, essential: true });
     const step = (now) => {
       if (!G.playing || G.map !== map) return;
-      const f = Math.min(1, (now - t0) / dur), e = f < 0.5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2, k = Math.round(e * (pts.length - 1));
-      G.plane.setLngLat(pts[k]).setRotation(bearing(pts[Math.max(0, k - 1)], pts[Math.min(pts.length - 1, k + 1)]) - 45);
+      const f = Math.min(1, (now - t0) / dur), e = f < 0.5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2, k = Math.round(e * kEnd);
+      pl.setLngLat(pts[k]).setRotation(plane ? bearing(pts[Math.max(0, k - 1)], pts[Math.min(pts.length - 1, k + 1)]) - 45 : 0);
       const partial = split(pts.slice(0, k + 1)).map((seg) => ({ type: 'Feature', properties: { col, done: true }, geometry: { type: 'LineString', coordinates: seg } }));
       setDone(map, doneSegs.concat(partial));
       if (f < 1) G.raf = requestAnimationFrame(step);
-      else { for (const seg of split(pts)) doneSegs.push({ type: 'Feature', properties: { col, done: true }, geometry: { type: 'LineString', coordinates: seg } }); landPop(lg.to[0]); G.timers.push(setTimeout(flyLeg, 160)); }
+      else { for (const seg of split(pts.slice(0, kEnd + 1))) doneSegs.push({ type: 'Feature', properties: { col, done: true }, geometry: { type: 'LineString', coordinates: seg } }); if (lg.upTo == null) landPop(lg.to[0]); G.timers.push(setTimeout(flyLeg, 160)); }
     };
     G.raf = requestAnimationFrame(step);
   };
@@ -250,9 +332,10 @@ function build(ctx, family) {
   map.on('load', () => {
     if (G.map !== map) return;
     addBadges(map, r);
-    G.plane = new maplibregl.Marker({ element: planeEl(), anchor: 'center', rotationAlignment: 'map', rotation: 0 }).setLngLat(r.planeAt || CITY_LL[HOME]).addTo(map);
-    if (!r.planeAt) G.plane.getElement().style.display = 'none';
+    vehicle(map);
+    if (G.plane && !r.planeAt) G.plane.getElement().style.display = 'none';
     G.timers.push(setInterval(() => { if (G.map !== map) return; const a = map.getSource('night'), b = map.getSource('night2'); if (a) a.setData(lines([night(new Date(), 0)])); if (b) b.setData(lines([night(new Date(), 7)])); }, 60000));
+    G.timers.push(setInterval(refresh, REFRESH_MS));
     playJourney(map, r);
   });
   map.on('error', (e) => { if (window.logErr && e && e.error) logErr('globe: ' + (e.error.message || e.error)); });
@@ -264,7 +347,7 @@ function enter(ctx, family) {
   G.ctx = ctx; G.family = family;
   let r = null;
   try { r = routeData(ctx, family); } catch (e) { el.innerHTML = `<h1 class="h1">🌏 Where are we?</h1><div class="card red">${esc((e && e.message) || e)}</div>`; return; }
-  el.innerHTML = captionHtml(ctx, family, r) + `<div id="globe-wrap"><div id="globe"></div></div><div class="where-row"><button class="btn small-btn" id="globe-play">▶ Replay the journey</button><span class="tiny muted">Drag to spin · tap a city · map data © OpenStreetMap contributors, Protomaps</span></div>`;
+  el.innerHTML = `<div id="where-cap">${captionHtml(ctx, family, r)}</div><div id="globe-wrap"><div id="globe"></div></div><div class="where-row"><button class="btn small-btn" id="globe-play">▶ Replay the journey</button><span class="tiny muted">Drag to spin · tap a city · map data © OpenStreetMap contributors, Protomaps</span></div>`;
   try { build(ctx, family); }
   catch (e) { const g = document.getElementById('globe'); if (g) g.outerHTML = `<div class="card">The globe needs a newer phone browser: ${esc((e && e.message) || e)}</div>`; if (window.logErr) logErr('globe: ' + ((e && e.message) || e)); }
   const b = document.getElementById('globe-play');
@@ -279,4 +362,6 @@ function leave() {
   if (G.map) { const m = G.map; G.map = null; try { m.remove(); } catch (e) { /* already gone */ } }
 }
 
-window.Globe = { enter, leave, routeData, legs, arc, split, night, sunPos, isNight, get map() { return G.map; }, get playing() { return G.playing; }, get idle() { return G.idle; } };
+window.Globe = { enter, leave, refresh, routeData, whereNow, legs, arc, split, night, sunPos, isNight, instant, glyphOf, wordOf,
+  setClock: (ms) => { G.clock = ms || null; },                         // tests: pin the clock (ms since the epoch); null for the real one
+  get map() { return G.map; }, get playing() { return G.playing; }, get idle() { return G.idle; } };

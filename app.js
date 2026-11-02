@@ -11,8 +11,8 @@ const BUILT = document.body.dataset.built;
 const PIN_ITER = 150000, PIN_MAX_TRIES = 5, VAULT_LOCK_MS = 5 * 60 * 1000;
 const TZ = { 'Vancouver': 'America/Vancouver', 'Whistler': 'America/Vancouver', 'Toronto': 'America/Toronto',
   'Montréal': 'America/Toronto', 'Montreal': 'America/Toronto', 'New York': 'America/New_York', 'Tokyo': 'Asia/Tokyo',
-  'Nagoya': 'Asia/Tokyo', 'Home': 'Australia/Brisbane', 'Brisbane': 'Australia/Brisbane', 'Cairns': 'Australia/Brisbane', 'Townsville': 'Australia/Brisbane' };
-const COUNTRY = { 'Vancouver': 'CA', 'Whistler': 'CA', 'Toronto': 'CA', 'Montréal': 'CA', 'Montreal': 'CA', 'New York': 'US', 'Tokyo': 'JP', 'Nagoya': 'JP', 'Brisbane': 'AU', 'Cairns': 'AU', 'Townsville': 'AU' };
+  'Nagoya': 'Asia/Tokyo', 'Calgary': 'America/Edmonton', 'Home': 'Australia/Brisbane', 'Brisbane': 'Australia/Brisbane', 'Cairns': 'Australia/Brisbane', 'Townsville': 'Australia/Brisbane' };   // Calgary: the 30 Dec stopover (globe clock, 3 Nov 2026)
+const COUNTRY = { 'Vancouver': 'CA', 'Whistler': 'CA', 'Toronto': 'CA', 'Montréal': 'CA', 'Montreal': 'CA', 'New York': 'US', 'Tokyo': 'JP', 'Nagoya': 'JP', 'Calgary': 'CA', 'Brisbane': 'AU', 'Cairns': 'AU', 'Townsville': 'AU' };
 const EMERGENCY_NUMBER = { CA: '911', US: '911', JP: '119', AU: '000' };
 /* error log (1 Nov 2026): the last few script errors, kept across reloads, shown in Settings → Photos and journal.
    Andy saw "just a blank page" on the iPad and the Android phone; from here the pane cannot see those devices. */
@@ -21,7 +21,8 @@ window.addEventListener('error', (e) => logErr((e.message || 'error') + ' @ ' + 
 window.addEventListener('unhandledrejection', (e) => logErr('promise: ' + ((e.reason && (e.reason.message || e.reason.stack)) || e.reason)));
 const POLICE_NUMBER = { CA: '911', US: '911', JP: '110', AU: '000' };
 
-const S = { family: null, vault: null, screen: 'home', vaultTimer: null, pendingPassphraseFor: null, preview: localStorage.getItem('previewDate') || null };
+const S = { family: null, vault: null, screen: 'home', vaultTimer: null, pendingPassphraseFor: null, preview: localStorage.getItem('previewDate') || null,
+  setupOpen: false };                                 // Grandma and Grandpa's phone (3 Nov 2026): Settings → Set-up (role, PIN-less opening, forget) is open after the device PIN, until Settings is left
 const settings = {
   get theme() { return localStorage.getItem('theme') || 'auto'; }, set theme(v) { localStorage.setItem('theme', v); applyTheme(); },
   get readerMode() { return localStorage.getItem('readerMode') === '1'; }, set readerMode(v) { localStorage.setItem('readerMode', v ? '1' : '0'); },
@@ -117,6 +118,7 @@ function show(screen, fromHistory) {
   const BOOK = ['days', 'moves', 'stays', 'taxi', 'protocols', 'vault', 'settings', 'gates', 'where'], QUEST = ['quests', 'passport'];
   document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.screen === screen || (b.dataset.screen === 'book' && BOOK.includes(screen)) || (b.dataset.screen === 'quests' && QUEST.includes(screen))));
   S.screen = screen;
+  if (screen !== 'settings') S.setupOpen = false;    // the grandparents' PIN-gated set-up closes with Settings
   window.scrollTo(0, 0);
   if (screen === 'sos') renderSOS();
   if (screen === 'home') renderHome();
@@ -341,6 +343,14 @@ function openDay(date) {
 }
 /* Grandma and Grandpa's phone (2 Nov 2026): a quiet Home. Where the family is, the time there, tonight's bed, the next move,
    the stories. No quests, no SOS, no day strip: everything on this phone arrives through the sync and is read only. */
+function whereLine(ctx, fallback) {                    // the Where tile's subtitle from the globe's clock (3 Nov 2026): on a leg, or the last arrival city
+  try {
+    const w = window.Globe && Globe.whereNow ? Globe.whereNow(ctx, S.family) : null;
+    if (w && w.riding) { const g = w.riding; return `${g.word} ${g.glyph} · ${g.from} → ${g.to} · ${Math.round(g.f * 100)}% of the way`; }
+    if (w && w.here && !ctx.before) return `Spin the globe to ${w.here}`;
+  } catch (e) { /* the globe is optional */ }
+  return fallback;
+}
 function renderGrandHome() {
   const F = S.family, ctx = currentContext(), nm = nextMove(ctx);
   const city = ctx.inAir ? 'Air' : ctx.city;
@@ -356,7 +366,7 @@ function renderGrandHome() {
     html += `<div class="hero"><div class="hero-emoji">${Quests.CITY_EMOJI[city] || '📍'}</div><div class="hero-text"><div class="hero-kicker">Day ${dayN} of ${total} · ${esc(ctx.inAir ? 'In the air' : ctx.city)}${S.preview ? ' · preview' : ''}</div><div class="hero-date">${esc(fmtDate(ctx.date))}</div><div class="hero-sub">${esc(localTime(ctx.tz))} there · ${esc(localTime(TZ.Home))} at home</div></div></div>`;
   }
   html += `<div class="tiles">`;
-  html += `<button class="tile ht wide t1" data-go="where"><span class="ico">🌏</span><span class="tt">Where are they?</span><span class="ts">${esc(ctx.before ? 'The whole route on the globe' : ctx.inAir ? 'In the air right now' : 'Spin the globe to ' + ctx.city)}</span></button>`;
+  html += `<button class="tile ht wide t1" data-go="where"><span class="ico">🌏</span><span class="tt">Where are they?</span><span class="ts">${esc(ctx.before ? 'The whole route on the globe' : whereLine(ctx, ctx.inAir ? 'In the air right now' : 'Spin the globe to ' + ctx.city))}</span></button>`;
   html += Journal.storiesTileHtml(ctx);
   if (!ctx.before && ctx.stay) html += `<div class="tile wide t3"><span class="ico">🛏️</span><span class="tt">Tonight</span><span class="ts">${esc(ctx.stay.property || '')}${ctx.stay.city ? ', ' + esc(ctx.stay.city) : ''}</span></div>`;
   if (nm) html += `<div class="tile wide t2"><span class="ico">${/train/i.test(nm.mode || '') ? '🚆' : /coach|bus/i.test(nm.mode || '') ? '🚌' : '✈️'}</span><span class="tt">Next move</span><span class="ts">${esc(nm.frm || '')} → ${esc(nm.to || '')} · ${esc(fmtDate(nm.date))}${nm.depart ? ' · ' + esc(nm.depart) : ''}</span></div>`;
@@ -403,7 +413,7 @@ function renderHome() {
   html += `<button class="tile ht t5" data-call="1"><span class="ico">📞</span><span class="tt">Call</span><span class="ts">${calls.map((c) => esc(c[0])).join(' · ') || 'Numbers'}</span></button>`;
   html += `<button class="tile ht wide t6" data-kid="1"><span class="ico">🙋</span><span class="tt">I'm lost</span><span class="ts">Your own card: big words, Mum and Dad's numbers, what to say</span></button>`;
   html += Journal.storiesTileHtml(ctx);
-  html += `<button class="tile ht wide t2" data-go="where"><span class="ico">🌏</span><span class="tt">Where are we</span><span class="ts">The globe, the route and today's dot</span></button>`;
+  html += `<button class="tile ht wide t2" data-go="where"><span class="ico">🌏</span><span class="tt">Where are we</span><span class="ts">${esc(ctx.before ? "The globe, the route and today's dot" : whereLine(ctx, "The globe, the route and today's dot"))}</span></button>`;
   html += `</div>`;
   const morning = Media.enabled ? Journal.index().filter((m) => m.k === 'photo' && m.tag === 'morning' && m.d === ctx.date).length : 0;
   if (!ctx.before && (!Quests.role() || Quests.isParentDevice())) {
@@ -813,28 +823,39 @@ function previewPicker() {
     <div class="row"><button class="btn" id="pv-prev">◀ Day before</button><button class="btn" id="pv-next">Day after ▶</button><button class="btn" id="opt-preview-clear"${cur ? '' : ' disabled'}>Back to today</button></div>`;
 }
 function renderSettings() {
+  /* Grandma and Grandpa's phone (3 Nov 2026) keeps Settings foolproof: no confetti/sound card (nothing there plays), no reader
+     mode, and whose phone this is, PIN-less opening and Forget this device sit behind the device PIN (Set-up). */
+  const grand = Quests.isGrandDevice(), setup = grand && S.setupOpen;
   $('#screen-settings').innerHTML = `<h1 class="h1">⚙️ Settings</h1>
     <div class="card"><div class="h3">Theme</div><div class="row">${['auto', 'light', 'dark'].map((t) => `<button class="pill${settings.theme === t ? ' active' : ''}" data-theme="${t}">${t}</button>`).join('')}</div></div>
-    <div class="card"><div class="h3">Text size</div>${switchRow('bigText', 'Big text (for the kids and tired eyes)')}</div>
-    <div class="card"><div class="h3">Confetti, animations and sounds</div><p class="small muted">Auto follows the phone's reduce-motion setting.</p><div class="row">${['auto', 'on', 'off'].map((t) => `<button class="pill${FX.pref() === t ? ' active' : ''}" data-fx="${t}">${t}</button>`).join('')}<button class="btn small-btn" id="opt-fx-demo">Show me a level-up</button></div>${switchRow('sound', 'Sound effects: ticks, badges and level-ups')}<p class="tiny muted">Sounds start after the first tap on the phone; the ring/silent switch still wins.</p></div>
+    <div class="card"><div class="h3">Text size</div>${switchRow('bigText', grand ? 'Big text' : 'Big text (for the kids and tired eyes)')}</div>
+    ${grand ? '' : `<div class="card"><div class="h3">Confetti, animations and sounds</div><p class="small muted">Auto follows the phone's reduce-motion setting.</p><div class="row">${['auto', 'on', 'off'].map((t) => `<button class="pill${FX.pref() === t ? ' active' : ''}" data-fx="${t}">${t}</button>`).join('')}<button class="btn small-btn" id="opt-fx-demo">Show me a level-up</button></div>${switchRow('sound', 'Sound effects: ticks, badges and level-ups')}<p class="tiny muted">Sounds start after the first tap on the phone; the ring/silent switch still wins.</p></div>`}
     ${Quests.settingsCard()}
     <div class="card"><div class="h3">Photos and journal</div><div class="small" id="media-msg">…</div>${Media.canSaveOriginals() ? `<div class="small" id="orig-msg"></div>` : ''}<div class="row"><button class="btn" id="opt-media-dl">Download all pictures (Wi-Fi)</button>${Quests.isParentDevice() || Quests.isGrandDevice() ? `<button class="btn" id="opt-media-clear">Clear downloaded pictures here</button>` : ''}${Media.canSaveOriginals() ? `<button class="btn" id="opt-orig-save">Save originals to Photos</button><button class="btn" id="opt-orig-clear">Clear saved originals</button>` : ''}</div>${Media.origHint() ? `<p class="tiny muted">${esc(Media.origHint())}</p>` : ''}${Quests.isParentDevice() ? `<div class="row"><button class="btn danger" id="opt-stories-wipe">🗑️ Delete all stories and photos (everyone)</button></div>` : ''}<div class="tiny mono" id="diag" style="margin-top:8px;white-space:pre-wrap"></div><div class="row"><button class="btn" id="opt-errlog-clear">Clear error log</button></div><p class="tiny muted">Pictures and pages are encrypted on this device and in the cloud; only an unlocked device can open them, so the PIN and the phone's own lock are the gate.</p></div>
     ${Quests.isGrandDevice() ? '' : `<div class="card"><div class="h3">Preview a trip day</div><p class="small muted">Shows the app as it will look on that day: for testing and the dry run. Tap a day; tap Now to come back.</p>${previewPicker()}</div>`}
-    <div class="card"><div class="h3">This device</div>
-      ${switchRow('readerMode', 'Reader mode: hide the Vault (for the iPad)')}
+    ${grand && !setup ? `<div class="card"><div class="h3">Set-up</div><p class="small muted">Whose phone this is, opening without a PIN, and forgetting the device sit behind the device PIN, so nothing changes by accident.</p><div class="row"><button class="btn" id="opt-setup">Open set-up (asks for the PIN)</button></div></div>` : ''}
+    ${setup ? Quests.roleCard() : ''}
+    ${grand && !setup ? '' : `<div class="card"><div class="h3">This device</div>
+      ${grand ? '' : switchRow('readerMode', 'Reader mode: hide the Vault (for the iPad)')}
       ${switchRow('autoFamily', 'Open the family view without a PIN on this device')}
-      <button class="btn block" id="opt-forget">Forget this device (wipe stored keys, PINs and quest scores)</button></div>
+      <button class="btn block" id="opt-forget">Forget this device (wipe stored keys, PINs and quest scores)</button></div>`}
     <div class="card"><div class="h3">Build</div><div>${esc(VERSION)} · built ${esc(BUILT)}</div><button class="btn block" id="opt-update">Check for a newer build</button><div class="small muted" id="update-msg"></div></div>
     <div class="card small muted">Storage: <span id="storage-msg">…</span></div>`;
   document.querySelectorAll('[data-theme]').forEach((b) => b.onclick = () => { settings.theme = b.dataset.theme; renderSettings(); if (window.DossierMap) window.DossierMap.setTheme(currentTheme()); });
   document.querySelectorAll('[data-fx]').forEach((b) => b.onclick = () => { FX.setPref(b.dataset.fx); const y = window.scrollY; renderSettings(); window.scrollTo(0, y); });
-  $('#opt-fx-demo').onclick = () => FX.demo();
+  const fd = $('#opt-fx-demo'); if (fd) fd.onclick = () => FX.demo();          // absent on Grandma and Grandpa's phone
   document.querySelectorAll('[data-switch]').forEach((b) => b.onclick = () => {
     const opt = b.dataset.switch; settings[opt] = !settings[opt];
     if (opt === 'readerMode') { renderBook(); if (settings.readerMode) lockVault(); }
     const y = window.scrollY; renderSettings(); window.scrollTo(0, y);
   });
-  $('#opt-forget').onclick = () => { if (confirm('Forget this device? You will need the passphrase again.')) forgetDevice(); };
+  const fg = $('#opt-forget'); if (fg) fg.onclick = () => { if (confirm('Forget this device? You will need the passphrase again.')) forgetDevice(); };
+  const su = $('#opt-setup');
+  if (su) su.onclick = async () => {                   // the grandparents' gate: the device PIN opens the role, PIN-less opening and Forget until Settings is left
+    const pin = prompt('Device PIN to open set-up:'); if (pin === null) return;
+    if (!(await verifyPin(pin))) { alert('That is not the PIN.'); return; }
+    S.setupOpen = true; const y = window.scrollY; renderSettings(); window.scrollTo(0, y);
+  };
   $('#opt-update').onclick = () => checkForUpdate(true);
   const setPreview = (v) => { S.preview = v || null; if (v) localStorage.setItem('previewDate', v); else localStorage.removeItem('previewDate'); rerender(); Quests.refreshTop(); const y = window.scrollY; renderSettings(); window.scrollTo(0, y); Quests.checkNewBadges(currentContext()); };
   const dates = S.family.days.map((d) => d.date), pi = dates.indexOf(S.preview || '');

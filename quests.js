@@ -44,7 +44,8 @@ window.Quests = (() => {
   }
   const avatarsOk = () => AVATARS.filter(emojiOk);
   const DEFAULT_AVATAR = { Andrew: '🕵️', Sarah: '🌟', Vince: '🦖', Drew: '🦄', Grandma: '👵', Grandpa: '👴' };
-  const GRAND = ['Grandma', 'Grandpa'];                       // the authors on Grandma and Grandpa's phone (2 Nov 2026): replies and reactions, never points
+  const GRAND = ['Grandma', 'Grandpa'];                       // the two faces on Grandma and Grandpa's phone (2 Nov 2026); never points
+  const GRANDS = 'Grandparents';                              // the one author on that phone (3 Nov 2026): a ❤️ or a reply is from "Grandma and Grandpa", both faces, no "I'm Grandma" to tap first
   const DISPLAY = { Andrew: 'Dad', Sarah: 'Mum' };          // the parents; everyone else is a kid
   // [points, name, glyph, colour]: the glyph is also the mini badge in the corner of every face (3 Nov 2026), so each level has its own
   const LEVELS = [[0, 'Rookie', '🥾', '#8D99AE'], [100, 'Explorer', '🗺️', '#2A9D8F'], [250, 'Adventurer', '🎒', '#FF7A00'], [500, 'Navigator', '🧭', '#3A86FF'], [900, 'Globetrotter', '🌏', '#06D6A0'], [1500, 'Legend', '👑', '#FFB703']];
@@ -210,7 +211,7 @@ window.Quests = (() => {
 
   /* ---------------------------------------------------------------- people and roles */
   function people() { return ((typeof S !== 'undefined' && S.family && S.family.trip && S.family.trip.people) || ['Andrew', 'Sarah', 'Vince', 'Drew']).slice(); }
-  const label = (p) => DISPLAY[p] || p;
+  const label = (p) => DISPLAY[p] || (p === GRANDS ? 'Grandma and Grandpa' : p);
   const isParent = (p) => !!DISPLAY[p];
   const parents = () => people().filter(isParent);
   const kids = () => people().filter((p) => !isParent(p));
@@ -218,7 +219,7 @@ window.Quests = (() => {
   const owner = () => localStorage.getItem('deviceOwner') || '';          // the parent a parent phone belongs to
   const isParentDevice = () => role() === 'parent';
   const isGrandDevice = () => role() === 'grand';
-  const visiblePlayers = () => (isParentDevice() ? people() : isGrandDevice() ? GRAND : kids());
+  const visiblePlayers = () => (isParentDevice() ? people() : isGrandDevice() ? [GRANDS] : kids());
   function setRole(r, who) {
     localStorage.setItem('deviceRole', r); localStorage.setItem('deviceOwner', who || '');
     if (typeof applyRoleChrome === 'function') applyRoleChrome();
@@ -350,16 +351,16 @@ window.Quests = (() => {
       pct: next ? Math.round(((pts - cur[0]) / (next[0] - cur[0])) * 100) : 100 };
   }
   const levelOf = (p) => level(points(view(state(), p)));
-  /* a face with its level in the corner (3 Nov 2026): every family member's avatar, wherever it is drawn, carries a tiny
-     badge of their level (🥾 🗺️ 🎒 🧭 🌏 👑); Grandma, Grandpa and anyone else get the plain face. Memoised per player
-     until the next state write (save) or refreshTop, because points() walks every fact. */
+  /* a face (3 Nov 2026): the avatar in a .face span, so every draw site sizes it the same way. The mini level badge that sat
+     in its corner lasted a day (too busy, and it covered the face; Andy): the level now shows only in the level cards and
+     the level-up show. The grandparents' joint author shows both their faces. Memoised per player until the next state
+     write (save) or refreshTop, because view() walks every fact. */
   let faceMemo = {};
   function face(p, cls) {
     const k = p + '|' + (cls || '');
     if (faceMemo[k]) return faceMemo[k];
-    const st = state(), pl = view(st, p), lv = people().includes(p) ? level(points(pl)) : null;
-    const badge = lv ? `<i class="lvb${lv.idx === LEVELS.length - 1 ? ' gold' : ''}" style="--lv:${lv.colour}" title="${esc(lv.name)}">${lv.emoji}</i>` : '';
-    return (faceMemo[k] = `<span class="face${cls ? ' ' + cls : ''}"><span class="fe">${pl.avatar}</span>${badge}</span>`);
+    const st = state(), av = p === GRANDS ? GRAND.map((g) => view(st, g).avatar).join('') : view(st, p).avatar;
+    return (faceMemo[k] = `<span class="face${cls ? ' ' + cls : ''}">${av}</span>`);
   }
 
   /* ---------------------------------------------------------------- changes (every one is a fact) */
@@ -731,6 +732,9 @@ window.Quests = (() => {
     const pill = (r, who, text) => `<button class="pill${cur === r && (r !== 'parent' || owner() === who) ? ' active' : ''}" data-role="${r}" data-who="${who}">${text}</button>`;
     return `<div class="card rolecard"><div class="h3">Whose device is this?</div><p class="small muted">A parent phone can tick for everyone and approves what the kids tick on their device. The kids' device shows only the kids, and every tick there waits for a parent's ✓. Becoming a parent phone asks for the device PIN. Grandma and Grandpa's phone only reads the stories and shows where we are.</p><div class="row">${parents().map((p) => pill('parent', p, `📱 ${esc(label(p))}'s phone`)).join('')}${pill('kids', '', "🧒 Kids' device")}${pill('grand', '', "👵👴 Grandma and Grandpa's phone")}</div></div>`;
   }
+  function grandPhoneCard() {   // Grandma and Grandpa's phone (3 Nov 2026): whose phone this is cannot change by accident; Settings → Set-up asks for the device PIN first (app.js)
+    return `<div class="card rolecard"><div class="h3">👵👴 Grandma and Grandpa's phone</div><p class="small muted">This phone shows the family's stories and where they are. Tap ❤️ under a story, or Reply, and the family sees it from Grandma and Grandpa.</p></div>`;
+  }
   function approvalsCard(st) {
     const pend = pendingAll(st);
     if (!isParentDevice() || !pend.length) return '';
@@ -799,6 +803,7 @@ window.Quests = (() => {
     setRole(r, who);
     if (typeof closeModal === 'function' && document.querySelector('#modal:not(.hidden) .rolecard')) closeModal();   // the first-unlock question
     if (typeof rerender === 'function') rerender();                                                                 // Home, Book and the chrome differ by role
+    if (typeof renderSettings === 'function' && document.querySelector('#screen-settings:not(.hidden)')) renderSettings();   // Settings differ by role too (3 Nov 2026)
     if (window.Journal) Journal.refreshBadge();
     afterChange();
   }
@@ -828,7 +833,7 @@ window.Quests = (() => {
   function settingsCard() {
     const st = state(), eff = effective(st);
     const devices = Object.values(st.devices || {}).filter((d) => d && d.name).map((d) => d.name);
-    if (isGrandDevice()) return roleCard() + `<div class="card"><div class="h3">Your faces</div><p class="small muted">Tap a face to change it. The family sees it next to your replies.</p>${GRAND.map((p) => { const pl = view(st, p, eff); return `<button class="avrow" data-avatar="${esc(p)}" aria-label="Change ${esc(label(p))}'s avatar"><span class="av big-av">${pl.avatar}</span><b>${esc(label(p))}</b><span class="muted small avgo">Change ›</span></button>`; }).join('')}</div>` + `<div class="card"><div class="h3">Sync</div><div class="syncline" id="sync-line">${esc(syncText())}</div>${devices.length ? `<div class="tiny muted">Other devices seen: ${esc(devices.join(', '))}</div>` : ''}<div class="row"><button class="btn" id="opt-sync-now">Sync now</button></div></div>`;
+    if (isGrandDevice()) return grandPhoneCard() + `<div class="card"><div class="h3">Your faces</div><p class="small muted">Tap a face to change it. The family sees both next to your ❤️ and replies.</p>${GRAND.map((p) => { const pl = view(st, p, eff); return `<button class="avrow" data-avatar="${esc(p)}" aria-label="Change ${esc(label(p))}'s avatar"><span class="av big-av">${pl.avatar}</span><b>${esc(label(p))}</b><span class="muted small avgo">Change ›</span></button>`; }).join('')}</div>` + `<div class="card"><div class="h3">Sync</div><div class="syncline" id="sync-line">${esc(syncText())}</div>${devices.length ? `<div class="tiny muted">Other devices seen: ${esc(devices.join(', '))}</div>` : ''}<div class="row"><button class="btn" id="opt-sync-now">Sync now</button></div></div>`;
     return roleCard() +
       `<div class="card"><div class="h3">Quest players</div><p class="small muted">Tap a face to change it.</p>` +
       visiblePlayers().map((p) => { const pl = view(st, p, eff); return `<button class="avrow" data-avatar="${esc(p)}" aria-label="Change ${esc(label(p))}'s avatar">${face(p, 'av big-av')}<b>${esc(label(p))}</b><span class="muted small">${points(pl)} pts</span><span class="muted small avgo">Change ›</span></button>`; }).join('') +
@@ -859,7 +864,7 @@ window.Quests = (() => {
     faceMemo = {};
     const el = $('#top-points'), fe = $('#top-face'); if (!el || !S.family) return;
     const st = state(), pl = view(st, st.active), n = points(pl);
-    if (fe) fe.innerHTML = face(st.active);                       // the face and its level badge; the number counts up on its own
+    if (fe) fe.innerHTML = face(st.active);                       // the face; the number counts up on its own
     if (lastTop && lastTop[0] === st.active && lastTop[1] !== n) { FX.countUp(el, lastTop[1], n, 700); FX.pulse($('#btn-points'), 'bump', 700); }
     else el.textContent = String(n);
     lastTop = [st.active, n];

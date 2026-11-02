@@ -176,16 +176,12 @@ table.t td { padding: 6px 6px 6px 0; border-top: 1px solid var(--border); vertic
 .player .av { font-size: 1.9em; line-height: 1.1; }
 .player .nm { font-weight: 900; }
 .player .pt { font-size: 0.72em; color: var(--muted); font-weight: 700; }
-/* faces with the level in the corner (3 Nov 2026): Quests.face() wraps any avatar in .face; .lvb is the mini level badge */
+/* faces (3 Nov 2026): Quests.face() wraps any avatar in .face so every draw site sizes it the same way. The mini level badge
+   in the corner lasted a day (too busy, Andy); the badge disc now exists only inside the level-up show (.lu-av .lvb). */
 .face { position: relative; display: inline-block; line-height: 1; vertical-align: middle; }
 .face .fe { display: inline-block; }
-.face .lvb { position: absolute; right: -0.3em; bottom: -0.24em; width: 1.8em; height: 1.8em; font-size: 0.44em; font-style: normal; line-height: 1; display: grid; place-items: center; border-radius: 50%; background: var(--card); border: 2px solid var(--lv, var(--border)); box-shadow: 0 1px 3px rgba(0,0,0,0.3); overflow: hidden; pointer-events: none; }
-.face .lvb.gold { background: linear-gradient(135deg, #FFF3B0, #FFD24D); }
-.face .lvb.gold::after { content: ""; position: absolute; top: -40%; left: 0; width: 45%; height: 180%; background: linear-gradient(100deg, transparent, rgba(255,255,255,0.85), transparent); animation: glint 4s ease-in-out infinite; }
-.face .lvb.new { animation: bump 0.6s cubic-bezier(0.2, 1.5, 0.4, 1) 3; }
 .icon-btn.pts { display: inline-flex; align-items: center; gap: 5px; }
 .icon-btn.pts .face { font-size: 1.25em; }
-.icon-btn.pts .face .lvb { right: -0.38em; bottom: -0.32em; }
 .qn .face, .tile .ts .face { font-size: 1.15em; }
 .levelcard { background: var(--card); border: 2px solid var(--border); border-radius: var(--radius); padding: var(--pad); margin: 8px 0; }
 .lv-top { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
@@ -310,7 +306,9 @@ details .quest { margin: 6px 0; }
 .lu-card.s3 .lu-ribbon { opacity: 1; animation: lu-swing 0.9s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
 .lu-av { position: relative; display: block; font-size: 5em; line-height: 1; margin: 6px 0 2px; opacity: 0; filter: drop-shadow(0 10px 18px rgba(0,0,0,0.4)); }
 .lu-card.s1 .lu-av { opacity: 1; animation: lu-drop 0.7s cubic-bezier(0.2, 1.3, 0.4, 1) both; }
-.lu-av .face .lvb { font-size: 0.4em; right: -0.2em; bottom: -0.1em; border-width: 3px; color: var(--text); }
+.lu-av .lvb { position: absolute; right: -0.2em; bottom: -0.1em; width: 1.8em; height: 1.8em; font-size: 0.4em; font-style: normal; line-height: 1; display: grid; place-items: center; border-radius: 50%; background: var(--card); border: 3px solid var(--lv, var(--border)); box-shadow: 0 1px 3px rgba(0,0,0,0.3); overflow: hidden; pointer-events: none; color: var(--text); }
+.lu-av .lvb.gold { background: linear-gradient(135deg, #FFF3B0, #FFD24D); }
+.lu-av .lvb.gold::after { content: ""; position: absolute; top: -40%; left: 0; width: 45%; height: 180%; background: linear-gradient(100deg, transparent, rgba(255,255,255,0.85), transparent); animation: glint 4s ease-in-out infinite; }
 .lu-av .lvb.new { opacity: 0; }
 .lu-card.s2 .lu-av .lvb.old { animation: lu-off 0.5s ease-in both; }
 .lu-card.s2 .lu-av .lvb.new { opacity: 1; animation: emoji-slam 0.7s cubic-bezier(0.2, 1.4, 0.4, 1) 0.15s both; }
@@ -397,11 +395,11 @@ details .quest { margin: 6px 0; }
 @keyframes quake { 0%, 100% { transform: none; } 15% { transform: translate(-3px, 2px); } 30% { transform: translate(3px, -2px); } 45% { transform: translate(-3px, -1px); } 60% { transform: translate(2px, 3px); } 75% { transform: translate(-2px, 1px); } }
 /* motion: the phone's reduce-motion setting stills everything unless Settings → Animations is "on"; "off" stills everything regardless */
 @media (prefers-reduced-motion: reduce) {
-  html:not([data-fx="on"]) :is(.party, .party.out, .party-card, .party-e, .party-big, .party-small, .party-who, .party-card .shine, .party-card .rays, .party-card.k-wait .party-e, .fx-float, .quest.just-done, .quest.just-done .qe, .quest.just-done::after, .foodcard.just-done::after, .quest.just-sent, .quest.just-sent .qe, .quest.just-undone, .foodcard.just-done, .stamps .stampc.reveal, .player.just, .icon-btn.bump, .lv-av.bump, .approve-row.yes-out, .approve-row.no-out, .screen.enter > *, .screen.enter .tiles > *, .screen.enter .book > *, .screen.enter .stamps > *, .hero-emoji, .day.today::after, .bar i::after, .stampc .glint, .face .lvb.gold::after, .face .lvb.new, .levelup, .levelup.out, .lu-card .rays, .lu-card.s3 .lu-ribbon, .lu-card.s1 .lu-av, .lu-card.s2 .lu-av .lvb.old, .lu-card.s2 .lu-av .lvb.new, .lu-card.s2 .lu-ring, .lu-card.s3 .lu-name span, .lu-card.s4 .lu-step.lit i, .lu-card.s4 .lu-step.now i::after, .lu-card.s5 .lu-pts, .levelup.legend .lu-card.s5 .shine, #main.quake, #top.quake) { animation: none !important; }
+  html:not([data-fx="on"]) :is(.party, .party.out, .party-card, .party-e, .party-big, .party-small, .party-who, .party-card .shine, .party-card .rays, .party-card.k-wait .party-e, .fx-float, .quest.just-done, .quest.just-done .qe, .quest.just-done::after, .foodcard.just-done::after, .quest.just-sent, .quest.just-sent .qe, .quest.just-undone, .foodcard.just-done, .stamps .stampc.reveal, .player.just, .icon-btn.bump, .lv-av.bump, .approve-row.yes-out, .approve-row.no-out, .screen.enter > *, .screen.enter .tiles > *, .screen.enter .book > *, .screen.enter .stamps > *, .hero-emoji, .day.today::after, .bar i::after, .stampc .glint, .lu-av .lvb.gold::after,.levelup, .levelup.out, .lu-card .rays, .lu-card.s3 .lu-ribbon, .lu-card.s1 .lu-av, .lu-card.s2 .lu-av .lvb.old, .lu-card.s2 .lu-av .lvb.new, .lu-card.s2 .lu-ring, .lu-card.s3 .lu-name span, .lu-card.s4 .lu-step.lit i, .lu-card.s4 .lu-step.now i::after, .lu-card.s5 .lu-pts, .levelup.legend .lu-card.s5 .shine, #main.quake, #top.quake) { animation: none !important; }
   html:not([data-fx="on"]) .bar i { transition: none; }
   html:not([data-fx="on"]) .fx-canvas { display: none !important; }
 }
-html[data-fx="off"] :is(.party, .party.out, .party-card, .party-e, .party-big, .party-small, .party-who, .party-card .shine, .party-card .rays, .party-card.k-wait .party-e, .fx-float, .quest.just-done, .quest.just-done .qe, .quest.just-done::after, .foodcard.just-done::after, .quest.just-sent, .quest.just-sent .qe, .quest.just-undone, .foodcard.just-done, .stamps .stampc.reveal, .player.just, .icon-btn.bump, .lv-av.bump, .approve-row.yes-out, .approve-row.no-out, .screen.enter > *, .screen.enter .tiles > *, .screen.enter .book > *, .screen.enter .stamps > *, .hero-emoji, .day.today::after, .bar i::after, .stampc .glint, .face .lvb.gold::after, .face .lvb.new, .levelup, .levelup.out, .lu-card .rays, .lu-card.s3 .lu-ribbon, .lu-card.s1 .lu-av, .lu-card.s2 .lu-av .lvb.old, .lu-card.s2 .lu-av .lvb.new, .lu-card.s2 .lu-ring, .lu-card.s3 .lu-name span, .lu-card.s4 .lu-step.lit i, .lu-card.s4 .lu-step.now i::after, .lu-card.s5 .lu-pts, .levelup.legend .lu-card.s5 .shine, #main.quake, #top.quake) { animation: none !important; }
+html[data-fx="off"] :is(.party, .party.out, .party-card, .party-e, .party-big, .party-small, .party-who, .party-card .shine, .party-card .rays, .party-card.k-wait .party-e, .fx-float, .quest.just-done, .quest.just-done .qe, .quest.just-done::after, .foodcard.just-done::after, .quest.just-sent, .quest.just-sent .qe, .quest.just-undone, .foodcard.just-done, .stamps .stampc.reveal, .player.just, .icon-btn.bump, .lv-av.bump, .approve-row.yes-out, .approve-row.no-out, .screen.enter > *, .screen.enter .tiles > *, .screen.enter .book > *, .screen.enter .stamps > *, .hero-emoji, .day.today::after, .bar i::after, .stampc .glint, .lu-av .lvb.gold::after,.levelup, .levelup.out, .lu-card .rays, .lu-card.s3 .lu-ribbon, .lu-card.s1 .lu-av, .lu-card.s2 .lu-av .lvb.old, .lu-card.s2 .lu-av .lvb.new, .lu-card.s2 .lu-ring, .lu-card.s3 .lu-name span, .lu-card.s4 .lu-step.lit i, .lu-card.s4 .lu-step.now i::after, .lu-card.s5 .lu-pts, .levelup.legend .lu-card.s5 .shine, #main.quake, #top.quake) { animation: none !important; }
 html[data-fx="off"] .bar i { transition: none; }
 html[data-fx="off"] .fx-canvas { display: none !important; }
 

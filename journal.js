@@ -145,7 +145,7 @@ window.Journal = (() => {
     s = String(s || '').trim();
     try { return !!s && /\p{Extended_Pictographic}/u.test(s) && /^[\p{Extended_Pictographic}\p{Emoji_Component}‍️\s]+$/u.test(s); } catch (e) { return false; }
   }
-  const canDelete = (x, st) => !x.legacy && (x._d === st.device || Quests.isParentDevice());
+  const canDelete = (x, st) => !x.legacy && !Quests.isGrandDevice() && (x._d === st.device || Quests.isParentDevice());   // no bin on Grandma and Grandpa's phone (3 Nov 2026); a second tap on ❤️ still takes their ❤️ back
   function unseenCount(st) {             // stories and replies from another device since this device last looked at the feed
     const seen = +(localStorage.getItem('storiesSeen') || 0); let n = 0;
     for (const po of Object.values(J.posts)) if (!po.legacy && po._d !== st.device && po._t > seen) n++;
@@ -355,7 +355,7 @@ window.Journal = (() => {
     const ov = $('#overlay'), st = Quests.state(), ctx = currentContext(), dr = J.draft, reply = dr.mode === 'reply';
     if (typeof Nav !== 'undefined') Nav.pushOverlay();
     const post = reply ? J.posts[dr.postId] : null, city = cityOf(dr.d, ctx), prompt = reply ? null : promptFor(city, dr.d);
-    const players = Quests.visiblePlayers(), max = reply ? 1 : MAX_MEDIA, av = (p) => Quests.face(p, 'av');   // the face with its level badge (memoised in quests.js)
+    const players = Quests.visiblePlayers(), max = reply ? 1 : MAX_MEDIA, av = (p) => Quests.face(p, 'av');   // the face (memoised in quests.js)
     const title = reply ? `💬 Reply to ${esc(Quests.label(post ? post.p : ''))}` : (dr.d === ctx.date ? '✏️ New story' : `✏️ Story for ${esc(fmtDate(dr.d))}`);
     let html = `<div class="composer"><div class="pad-bar cbar"><button id="c-cancel" aria-label="Close">✕</button><div class="ctitle">${title}</div><button class="done" id="c-post" disabled>${reply ? 'Reply' : 'Post'}</button></div><div class="cbody">`;
     if (players.length > 1) html += `<div class="players">` + players.map((q) => `<button class="player${q === dr.p ? ' active' : ''}" data-pl="${esc(q)}">${av(q)}<span class="nm">${esc(Quests.label(q))}</span></button>`).join('') + `</div>`;
@@ -471,7 +471,7 @@ window.Journal = (() => {
     const el = $('#screen-story'), ctx = currentContext(), F = S.family, st = Quests.state();
     if (!Media.enabled) { el.innerHTML = `<h1 class="h1">📖 Stories</h1><div class="card">Stories and photos need a full rebuild of the app: this build has no media key.</div>`; return; }
     if (!J.warmed) { el.innerHTML = `<h1 class="h1">📖 Stories</h1><p class="muted">Opening the stories…</p>`; warm(); return; }
-    const avc = {}, av = (p) => avc[p] || (avc[p] = Quests.view(st, p).avatar), ro = Quests.isGrandDevice();   // ro: Grandma and Grandpa's phone reads only (2 Nov 2026)
+    const av = (p) => Quests.face(p), ro = Quests.isGrandDevice();   // ro: Grandma and Grandpa's phone reads only (2 Nov 2026); face() is memoised and draws the grandparents' joint author as both faces
     const used = usedMediaIds(), dates = new Set(), cards = Quests.cardStatuses ? Quests.cardStatuses(st) : {};
     for (let d = F.trip.start; d <= ctx.date && d <= F.trip.end; d = Quests.addDays(d, 1)) dates.add(d);
     for (const po of Object.values(J.posts)) if (po.d) dates.add(po.d);
@@ -479,8 +479,7 @@ window.Journal = (() => {
     const badgeDates = {};
     for (const b of Quests.badges(Quests.view(st, st.active), ctx)) { const on = b.opens || b.on; if (b.earned && on && (b.kind === 'stamp' || b.kind === 'milestone')) (badgeDates[on] = badgeDates[on] || []).push(b); }
     let html = `<h1 class="h1">📖 Stories</h1>`, any = false;
-    if (ro) html += `<div class="row">${Quests.visiblePlayers().map((p) => `<button class="pill${st.active === p ? ' active' : ''}" data-me="${esc(p)}">${av(p)} I'm ${esc(Quests.label(p))}</button>`).join('')}</div>`;   // whose ❤️ and replies these are
-    if (!ro) html += `<button class="btn primary block new-story" data-new="${esc(ctx.date)}">✏️ New story</button>`;
+    if (!ro) html += `<button class="btn primary block new-story" data-new="${esc(ctx.date)}">✏️ New story</button>`;   // Grandma and Grandpa's phone: no "I'm Grandma" pills any more (3 Nov 2026); a ❤️ or a reply there is from both of them
     if (J.error) html += `<div class="card red"><b>Could not open the stories.</b><div class="small">${esc(J.error)}</div><div class="small">Tell Andy what it says, then try Settings → Sync now.</div></div>`;
     const o = Media.originalsSummary();
     if (!ro && Media.canSaveOriginals() && o.waiting) {
@@ -505,7 +504,6 @@ window.Journal = (() => {
     el.innerHTML = html;
     window.scrollTo(0, y);
     wireViews(el);
-    el.querySelectorAll('[data-me]').forEach((b) => b.onclick = () => { Quests.setActive(b.dataset.me); renderStory(); });
     el.querySelectorAll('[data-new]').forEach((b) => b.onclick = () => openComposer({ mode: 'post', d: b.dataset.new }));
     el.querySelectorAll('[data-reply]').forEach((b) => b.onclick = () => openComposer({ mode: 'reply', postId: b.dataset.reply, d: (J.posts[b.dataset.reply] || {}).d }));
     el.querySelectorAll('[data-card]').forEach((b) => b.onclick = () => { if (window.Postcard) Postcard.openPreview(b.dataset.card); });

@@ -479,5 +479,12 @@ img.missing { opacity: 0.3; }
 /* postcards (1 Nov 2026): the preview modal */
 .pc-preview img { width: 100%; aspect-ratio: 3 / 2; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); display: block; margin: 8px 0; background: #FFF8EE; }
 .pc-words { white-space: pre-wrap; margin: 8px 0; }
+/* 2 Nov 2026: the picker strip, one thumbnail per picture in the story */
+.pc-pick { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px; margin: 4px 0; }
+.pc-pick button { flex: 0 0 76px; width: 76px; height: 76px; padding: 0; border: 3px solid transparent; border-radius: 16px; background: var(--pale); overflow: hidden; }
+.pc-pick button.on { border-color: var(--city); }
+.pc-pick button img { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; display: block; }
+.pc-pick[data-locked] button { opacity: 0.55; }
+.pc-pick[data-locked] button.on { opacity: 1; }
 .chip.pc { margin-left: 6px; }
 

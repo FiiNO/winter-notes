@@ -548,22 +548,22 @@ window.Quests = (() => {
     const po = window.Journal && Journal.post ? Journal.post(postId) : null;
     const line = po && window.Postcard ? Postcard.firstLine(po) : '';
     const by = f ? (f.v.by || 'kid') : 'parent', needs = by !== 'parent';
-    return { kind: 'card', key, id: postId, title: `Postcard to the grandparents${line ? ': “' + line + '”' : ''}`, e: '📮', pts: 15, date: (f && f.v.date) || (po && po.d) || '', by, t: f ? f.t : 0,
+    return { kind: 'card', key, id: postId, pic: (f && f.v && f.v.pic) || null, title: `Postcard to the grandparents${line ? ': “' + line + '”' : ''}`, e: '📮', pts: 15, date: (f && f.v.date) || (po && po.d) || '', by, t: f ? f.t : 0,
       player: (f && f.v.p) || (po && po.p) || st.active, verify: needs, needs, ok: a, okBy: okValid ? ok.v.who || '' : '', pending: !!f && needs && !a, rejected: !!f && needs && a === 'no', counted: a === 'yes' || (!!f && !needs) };
   }
   function pendingCards(st, eff) { const out = []; for (const k of Object.keys(eff)) if (k.startsWith('card|')) { const it = cardItem(st, eff, k.slice(5)); if (it && it.pending) out.push(it); } return out; }
   function cardStatuses(st) {            // postId → {pending, rejected, sent} for every story that has a request or a sent mark
     const eff = effective(st), out = {};
-    for (const k of Object.keys(eff)) { const m = k.match(/^(?:ok\|)?card\|(.+)$/); if (m && !out[m[1]]) { const it = cardItem(st, eff, m[1]); if (it) out[m[1]] = { pending: it.pending, rejected: it.rejected, sent: it.counted, who: it.okBy }; } }
+    for (const k of Object.keys(eff)) { const m = k.match(/^(?:ok\|)?card\|(.+)$/); if (m && !out[m[1]]) { const it = cardItem(st, eff, m[1]); if (it) out[m[1]] = { pending: it.pending, rejected: it.rejected, sent: it.counted, who: it.okBy, pic: it.pic }; } }
     return out;
   }
-  function cardStatus(postId) { return cardStatuses(state())[postId] || { pending: false, rejected: false, sent: false, who: '' }; }
-  function requestCard(postId) {         // the kids' iPad: ask Mum and Dad to send this story as a postcard
+  function cardStatus(postId) { return cardStatuses(state())[postId] || { pending: false, rejected: false, sent: false, who: '', pic: null }; }
+  function requestCard(postId, pickId) { // the kids' iPad: ask Mum and Dad to send this story as a postcard, with the picture they chose
     const po = window.Journal && Journal.post ? Journal.post(postId) : null; if (!po) return;
     const st = state(), key = 'card|' + postId, cur = cardItem(st, effective(st), postId);
     if (cur && cur.pending) return;
     if (cur && cur.counted) { celebrate('📮', 'Already sent', 'That postcard has gone to the grandparents', po.p, 'ok'); return; }
-    put(st, key, { on: true, by: by(), p: po.p, date: po.d });
+    put(st, key, { on: true, by: by(), p: po.p, date: po.d, pic: pickId || null });
     save(st); Sync.touch();
     if (by() !== 'parent') celebrate('⏳', 'Sent to Mum and Dad', 'Postcard · 15 points when they send it', po.p, 'wait');
     afterChange();
@@ -709,7 +709,7 @@ window.Quests = (() => {
   function approvalsCard(st) {
     const pend = pendingAll(st);
     if (!isParentDevice() || !pend.length) return '';
-    for (const it of pend) if (it.kind === 'card' && window.Postcard) Postcard.prepare(it.id);   // drawn now, so the ✓ can share inside its own tap
+    for (const it of pend) if (it.kind === 'card' && window.Postcard) Postcard.prepare(it.id, it.pic || null);   // drawn now with their pick, so the ✓ can share inside its own tap
     const eff = effective(st);
     return `<div class="card approvals"><div class="h3 approvals-head"><span>⏳ Waiting for a parent (${pend.length})</span>${pend.length > 1 ? `<button class="qbtn yes all" data-ok-all aria-label="Approve all">✓ All ${pend.length}</button>` : ''}</div>` + pend.map((it) => `<div class="approve-row"><span class="qe">${it.e}</span><div class="qt"><div class="qn">${view(st, it.player, eff).avatar} ${esc(label(it.player))}: ${esc(it.title)}</div><div class="qp">${it.pts} pts · ${esc(fmtDate(it.date))}</div></div><button class="qbtn yes" data-ok="${esc(it.key)}" aria-label="Approve">✓</button><button class="qbtn no" data-no="${esc(it.key)}" aria-label="Not this time">✗</button></div>`).join('') + `</div>`;
   }

@@ -4,18 +4,44 @@
    phone "Share" is direct; on the kids' iPad "Ask Mum and Dad to send it" writes a `card|<postId>` fact that waits in
    the parents' approvals card, and the parent's ✓ opens the share sheet on the parent's phone (quests.js hands that ✓
    to sendApproved). A sent postcard ticks the `postcard` quest for the story's author. Loaded after journal.js and
-   before app.js; uses Journal.post/cityOf, Media.url/ensure, Quests.*, and app.js helpers at call time only. */
+   before app.js; uses Journal.post/cityOf, Media.url/ensure, Quests.*, and app.js helpers at call time only.
+   2 Nov 2026 (Andy: "instead of the same postcard every day lets have them change based on the city we are in and
+   make them larger. If a story has multiple photos choose which one"): every city has its own look (greeting, motifs,
+   one of three layouts), the card is 2400×1600 (a 6×4 inch print) with the picture as the hero, and the preview has
+   a strip of the story's pictures to pick from; the kids' pick travels in the card| fact so the parent's ✓ sends it. */
 'use strict';
 window.Postcard = (() => {
-  const W = 1600, H = 1067;                                           // a 3:2 postcard
+  const W = 2400, H = 1600;                                           // a 3:2 postcard, 6×4 inches at 400 dpi
   const FONT = '-apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+  const PAPER = '#FFF8EE', INK = '#1B1B2F', SOFT = '#5F6B7A';
   const MOOD = { amazing: '🤩', good: '😊', ok: '😐', tired: '😴', sad: '😢' };
-  const P = { files: new Map(), urls: [] };                           // prepared files by post id; preview URLs to revoke
+  const P = { files: new Map(), urls: [], pick: {} };                 // prepared files by post id + pick; preview URLs to revoke; the picker's choice per post
+
+  /* the look of each city: a greeting, a set of motifs drawn faintly over the paper, and a layout. hero = the picture
+     fills the left of the card edge to edge; print = a big white-framed print, slightly tilted; polaroid = a square
+     print with the greeting on its white strip. Nothing here may name a venue the kids must not read about. */
+  const LOOKS = {
+    Tokyo: { greet: 'Konnichiwa from Tokyo!', motifs: ['🗼', '🍣', '🏮', '🌸', '🍜', '🚄'], layout: 'hero' },
+    Nagoya: { greet: 'Konnichiwa from Nagoya!', motifs: ['🏯', '🍤', '🚄', '🍡', '🧱'], layout: 'print' },
+    Vancouver: { greet: 'Hello from Vancouver!', motifs: ['🌲', '🏔️', '🦫', '⛵', '🌧️'], layout: 'hero' },
+    Whistler: { greet: 'Hello from snowy Whistler!', motifs: ['⛷️', '❄️', '🏂', '⛄', '🚡', '🔥'], layout: 'polaroid' },
+    Toronto: { greet: 'Hello from Toronto!', motifs: ['🍁', '🏒', '🗼', '🦝', '🍩'], layout: 'print' },
+    'New York': { greet: 'Hello from New York!', motifs: ['🗽', '🚕', '🍕', '🌆', '🥨', '🎭'], layout: 'hero' },
+    'Montréal': { greet: 'Bonjour from Montréal!', motifs: ['🥯', '🏒', '❄️', '⛪', '🍁', '🥞'], layout: 'polaroid' },
+    Brisbane: { greet: "G'day from Brisbane!", motifs: ['🐨', '🌞', '🌴', '🦘', '🌉'], layout: 'print' },
+    Cairns: { greet: "G'day from Cairns!", motifs: ['🐠', '🐢', '🌴', '🐊', '🤿', '🌊'], layout: 'hero' },
+    Townsville: { greet: "G'day from Townsville!", motifs: ['🏡', '🌞', '🐚', '🌴'], layout: 'print' },
+    Home: { greet: 'Hello from home!', motifs: ['🏡', '🧳', '🌏', '🎒'], layout: 'print' },
+    Air: { greet: 'Hello from the sky!', motifs: ['✈️', '☁️', '🌍', '🛫'], layout: 'polaroid' },
+  };
+  const DEFAULT_LOOK = { greet: 'Hello from our adventure!', motifs: ['🌏', '🧳', '📸', '⭐'], layout: 'print' };
+  const lookOf = (city) => LOOKS[city] || (city === 'Montreal' ? LOOKS['Montréal'] : null) || DEFAULT_LOOK;
 
   const firstLine = (po) => (po.text || '').split('\n')[0].slice(0, 60) || (po.media && po.media.length ? 'A picture from our adventure' : 'Thinking of you');
   const placeOf = (city) => (city === 'Home' ? 'At home' : city === 'Air' ? 'In the air' : city);
   function cityColour(key) { try { return getComputedStyle(document.documentElement).getPropertyValue('--c-' + key).trim() || '#2A9D8F'; } catch (e) { return '#2A9D8F'; } }
   function loadImg(url) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('picture')); i.src = url; }); }
+  function seeded(s) { let h = 2166136261; for (const ch of String(s)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; } return () => { h = (Math.imul(h, 1664525) + 1013904223) >>> 0; return h / 4294967296; }; }
   function wrap(g, text, maxW) {                                       // word-wrap for the canvas; keeps the story's own line breaks
     const lines = [];
     for (const para of String(text || '').split('\n')) {
@@ -31,11 +57,60 @@ window.Postcard = (() => {
   }
   function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
   function words(po) { return `${po.q ? po.q + '\n' : ''}${po.text || ''}\n\nLove, ${Quests.label(po.p)}`; }
+  function picOf(po, pickId) {                                         // the picture on the card: the chosen one, else the first photo, else the first drawing
+    const media = po.media || [];
+    return (pickId && media.find((m) => m.id === pickId)) || media.find((m) => m.k === 'photo') || media.find((m) => m.k === 'drawing') || null;
+  }
 
   /* ---------------------------------------------------------------- drawing the card */
-  async function render(po) {
-    const ctx = currentContext(), city = Journal.cityOf(po.d, ctx), key = Quests.CITY_KEY[city] || 'home', col = cityColour(key);
-    const pic = (po.media || []).find((m) => m.k === 'photo') || (po.media || []).find((m) => m.k === 'drawing') || null;
+  function drawCover(g, img, x, y, w, h) {                             // the picture cover-fit into a box, clipped
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height, s = Math.max(w / iw, h / ih), dw = iw * s, dh = ih * s;
+    g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip(); g.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh); g.restore();
+  }
+  function drawMotifs(g, look, seed, region) {                         // faint motifs scattered over the paper (never over the picture)
+    const rnd = seeded(seed), n = Math.round(region.w * region.h / 150000);
+    g.save(); g.globalAlpha = 0.13; g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (let i = 0; i < n; i++) {
+      const m = look.motifs[Math.floor(rnd() * look.motifs.length)], size = 90 + Math.floor(rnd() * 70);
+      const x = region.x + 60 + rnd() * (region.w - 120), y = region.y + 60 + rnd() * (region.h - 120);
+      g.save(); g.translate(x, y); g.rotate((rnd() - 0.5) * 0.9); g.font = `${size}px ${FONT}`; g.fillStyle = '#000'; g.fillText(m, 0, 0); g.restore();
+    }
+    g.restore();
+  }
+  function drawStamp(g, city, col, date, sx, sy, ss) {                 // the stamp and the postmark waves to its left
+    g.save(); g.translate(sx, sy); g.rotate(4 * Math.PI / 180);
+    g.shadowColor = 'rgba(0,0,0,0.18)'; g.shadowBlur = 18; g.shadowOffsetY = 6;
+    g.fillStyle = '#fff'; roundRect(g, 0, 0, ss, ss, 18); g.fill(); g.shadowColor = 'transparent';
+    g.strokeStyle = col; g.lineWidth = 8; g.setLineDash([14, 11]); roundRect(g, 14, 14, ss - 28, ss - 28, 12); g.stroke(); g.setLineDash([]);
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = `${Math.round(ss * 0.46)}px ${FONT}`; g.fillStyle = '#000'; g.fillText(Quests.CITY_EMOJI[city] || '📍', ss / 2, ss / 2 - 22);
+    g.font = `bold ${Math.round(ss * 0.082)}px ${FONT}`; g.fillStyle = col; g.fillText('WORLD ADVENTURE', ss / 2, ss - 58);
+    g.font = `${Math.round(ss * 0.072)}px ${FONT}`; g.fillStyle = SOFT; g.fillText(date, ss / 2, ss - 34);
+    g.restore();
+    g.save(); g.strokeStyle = 'rgba(0,0,0,0.28)'; g.lineWidth = 6; g.beginPath();
+    for (let i = 0; i < 3; i++) { const yy = sy + ss * 0.3 + i * 38; g.moveTo(sx - 300, yy); g.bezierCurveTo(sx - 210, yy - 30, sx - 120, yy + 30, sx - 24, yy); }
+    g.stroke(); g.restore();
+  }
+  function drawMessage(g, po, city, look, col, box) {                  // greeting, Dear…, the question, the words, Love…, place and date; fits the box
+    const big = box.w > 1400, size = big ? 60 : 48, lh = big ? 78 : 62, maxLines = big ? 8 : 9;
+    g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+    let y = box.y;
+    g.font = `bold ${big ? 84 : 64}px ${FONT}`; g.fillStyle = col;
+    for (const l of wrap(g, look.greet, box.w).slice(0, 2)) { g.fillText(l, box.x, y); y += big ? 96 : 74; }
+    y += big ? 30 : 16;
+    g.font = `bold ${big ? 62 : 52}px ${FONT}`; g.fillStyle = INK; g.fillText('Dear Grandma and Grandpa,', box.x, y); y += big ? 90 : 78;
+    if (po.q) { g.font = `italic ${big ? 44 : 38}px ${FONT}`; g.fillStyle = SOFT; for (const l of wrap(g, po.q, box.w).slice(0, 2)) { g.fillText(l, box.x, y); y += big ? 54 : 46; } y += 16; }
+    g.font = `${size}px ${FONT}`; g.fillStyle = INK;
+    let lines = wrap(g, po.text || ((po.media || []).length ? 'Here is a picture from our adventure!' : 'Thinking of you from our adventure!'), box.w);
+    if (lines.length > maxLines) { lines = lines.slice(0, maxLines); lines[maxLines - 1] = lines[maxLines - 1].replace(/\s*\S*$/, '') + ' …'; }
+    for (const l of lines) { g.fillText(l, box.x, y); y += lh; }
+    const sign = Math.max(y + 36, box.y + box.h - 120);
+    g.font = `bold ${big ? 64 : 56}px ${FONT}`; g.fillStyle = INK; g.fillText(`Love, ${Quests.label(po.p)}${MOOD[po.mood] ? ' ' + MOOD[po.mood] : ''}`, box.x, sign);
+    g.font = `bold ${big ? 44 : 40}px ${FONT}`; g.fillStyle = col; g.fillText(`${placeOf(city)} · ${fmtDate(po.d)}`, box.x, sign + (big ? 66 : 60));
+  }
+  async function render(po, pickId) {
+    const ctx = currentContext(), city = Journal.cityOf(po.d, ctx), key = Quests.CITY_KEY[city] || 'home', col = cityColour(key), look = lookOf(city);
+    const pic = picOf(po, pickId);
     let img = null;
     if (pic) {
       const kind = pic.k === 'drawing' ? 'drawing' : 'photo';
@@ -43,53 +118,53 @@ window.Postcard = (() => {
     }
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
     const g = cv.getContext('2d');
-    g.fillStyle = '#FFF8EE'; g.fillRect(0, 0, W, H);                                  // the card
-    g.fillStyle = col; g.fillRect(0, 0, W, 28);                                         // the city band
-    g.strokeStyle = '#D9CDBE'; g.lineWidth = 3; g.setLineDash([14, 10]); g.strokeRect(24, 52, W - 48, H - 76); g.setLineDash([]);
-    const hasPic = !!img, textX = hasPic ? 1010 : 100, textW = hasPic ? 490 : W - 200;
-    if (hasPic) {                                                                       // the picture: a tilted white-framed print, left two thirds
-      const bx = 70, by = 110, bw = 880, bh = 760, inner = { w: bw - 24, h: bh - 24 };
-      g.save(); g.translate(bx + bw / 2, by + bh / 2); g.rotate(-2 * Math.PI / 180);
-      g.shadowColor = 'rgba(0,0,0,0.28)'; g.shadowBlur = 26; g.shadowOffsetY = 12;
-      g.fillStyle = '#fff'; g.fillRect(-bw / 2, -bh / 2, bw, bh);
-      g.shadowColor = 'transparent';
-      const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height, s = Math.max(inner.w / iw, inner.h / ih), dw = iw * s, dh = ih * s;
-      g.save(); g.beginPath(); g.rect(-inner.w / 2, -inner.h / 2, inner.w, inner.h); g.clip(); g.drawImage(img, -dw / 2, -dh / 2, dw, dh); g.restore();
+    g.fillStyle = PAPER; g.fillRect(0, 0, W, H);                                       // the paper
+    const seed = `${city}|${po.id}`, layout = img ? look.layout : 'words', stamp = 250;
+    let box;                                                                           // where the message goes
+    if (layout === 'hero') {                                                           // the picture edge to edge on the left
+      drawMotifs(g, look, seed, { x: 1440, y: 0, w: W - 1440, h: H });
+      drawCover(g, img, 0, 0, 1440, H);
+      g.fillStyle = col; g.fillRect(1440, 0, 22, H);                                   // a city-colour spine between picture and words
+      g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineWidth = 6; g.strokeRect(36, 36, 1440 - 72, H - 72);
+      box = { x: 1540, y: 430, w: W - 1540 - 90, h: H - 430 - 90 };
+    } else if (layout === 'print') {                                                   // a big white-framed print, slightly tilted
+      drawMotifs(g, look, seed, { x: 0, y: 0, w: W, h: H });
+      g.fillStyle = col; g.fillRect(0, 0, W, 40);                                      // the city band
+      const bx = 100, by = 120, bw = 1340, bh = 1370, bd = 30;
+      g.save(); g.translate(bx + bw / 2, by + bh / 2); g.rotate(-1.5 * Math.PI / 180);
+      g.shadowColor = 'rgba(0,0,0,0.3)'; g.shadowBlur = 40; g.shadowOffsetY = 18; g.fillStyle = '#fff'; g.fillRect(-bw / 2, -bh / 2, bw, bh); g.shadowColor = 'transparent';
+      drawCover(g, img, -bw / 2 + bd, -bh / 2 + bd, bw - 2 * bd, bh - 2 * bd);
       g.restore();
+      box = { x: 1540, y: 440, w: W - 1540 - 90, h: H - 440 - 90 };
+    } else if (layout === 'polaroid') {                                                // a square print with the greeting on its white strip
+      drawMotifs(g, look, seed, { x: 0, y: 0, w: W, h: H });
+      g.fillStyle = col; g.fillRect(0, 0, W, 40);
+      const bw = 1300, bh = 1440, bd = 40, strip = 160, bx = 110, by = 80;
+      g.save(); g.translate(bx + bw / 2, by + bh / 2); g.rotate(-3 * Math.PI / 180);
+      g.shadowColor = 'rgba(0,0,0,0.3)'; g.shadowBlur = 40; g.shadowOffsetY = 18; g.fillStyle = '#fff'; g.fillRect(-bw / 2, -bh / 2, bw, bh); g.shadowColor = 'transparent';
+      drawCover(g, img, -bw / 2 + bd, -bh / 2 + bd, bw - 2 * bd, bh - 2 * bd - strip);
+      g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `italic bold 64px ${FONT}`; g.fillStyle = col; g.fillText(look.greet, 0, bh / 2 - strip / 2 - 10);
+      g.restore();
+      box = { x: 1540, y: 440, w: W - 1540 - 90, h: H - 440 - 90 };
+    } else {                                                                           // no picture: the words fill the card
+      drawMotifs(g, look, seed, { x: 0, y: 0, w: W, h: H });
+      g.fillStyle = col; g.fillRect(0, 0, W, 40);
+      g.strokeStyle = '#D9CDBE'; g.lineWidth = 4; g.setLineDash([18, 14]); g.strokeRect(40, 80, W - 80, H - 120); g.setLineDash([]);
+      box = { x: 160, y: 420, w: W - 160 - 440, h: H - 420 - 120 };
     }
-    const sx = W - 250, sy = 80, ss = 170;                                             // the stamp, top right
-    g.save(); g.translate(sx, sy); g.rotate(4 * Math.PI / 180);
-    g.fillStyle = '#fff'; roundRect(g, 0, 0, ss, ss, 14); g.fill();
-    g.strokeStyle = col; g.lineWidth = 6; g.setLineDash([10, 8]); roundRect(g, 10, 10, ss - 20, ss - 20, 10); g.stroke(); g.setLineDash([]);
-    g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.font = `84px ${FONT}`; g.fillStyle = '#000'; g.fillText(Quests.CITY_EMOJI[city] || '📍', ss / 2, ss / 2 - 8);
-    g.font = `bold 18px ${FONT}`; g.fillStyle = col; g.fillText('WORLD ADVENTURE', ss / 2, ss - 30);
-    g.restore();
-    g.save(); g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 4; g.beginPath();                       // the postmark waves
-    for (let i = 0; i < 3; i++) { const yy = sy + 50 + i * 26; g.moveTo(sx - 200, yy); g.bezierCurveTo(sx - 140, yy - 22, sx - 80, yy + 22, sx - 16, yy); }
-    g.stroke(); g.restore();
-    g.textAlign = 'left'; g.textBaseline = 'alphabetic';                               // the message
-    let y = hasPic ? 300 : 280;
-    g.fillStyle = '#1B1B2F'; g.font = `bold 44px ${FONT}`; g.fillText('Dear Grandma and Grandpa,', textX, y); y += 72;
-    if (po.q) { g.font = `italic 28px ${FONT}`; g.fillStyle = '#5F6B7A'; for (const l of wrap(g, po.q, textW).slice(0, 2)) { g.fillText(l, textX, y); y += 36; } y += 12; }
-    const size = hasPic ? 36 : 44, lh = hasPic ? 46 : 56, maxLines = hasPic ? 9 : 9;
-    g.font = `${size}px ${FONT}`; g.fillStyle = '#1B1B2F';
-    let lines = wrap(g, po.text || (pic ? 'Here is a picture from our adventure!' : 'Thinking of you from our adventure!'), textW);
-    if (lines.length > maxLines) { lines = lines.slice(0, maxLines); lines[maxLines - 1] = lines[maxLines - 1].replace(/\s*\S*$/, '') + ' …'; }
-    for (const l of lines) { g.fillText(l, textX, y); y += lh; }
-    const sign = Math.max(y + 30, H - 180);
-    g.font = `bold 40px ${FONT}`; g.fillStyle = '#1B1B2F'; g.fillText(`Love, ${Quests.label(po.p)}${MOOD[po.mood] ? ' ' + MOOD[po.mood] : ''}`, textX, sign);
-    g.font = `bold 30px ${FONT}`; g.fillStyle = col; g.fillText(`${placeOf(city)} · ${fmtDate(po.d)}`, textX, sign + 50);
-    const blob = await new Promise((res, rej) => cv.toBlob((b) => (b ? res(b) : rej(new Error('Could not draw the postcard.'))), 'image/jpeg', 0.88));
+    drawStamp(g, city, col, fmtDate(po.d), W - stamp - 70, 70, stamp);
+    drawMessage(g, po, city, look, col, box);
+    const blob = await new Promise((res, rej) => cv.toBlob((b) => (b ? res(b) : rej(new Error('Could not draw the postcard.'))), 'image/jpeg', 0.9));
     cv.width = cv.height = 0;
-    return { blob, missing: !!(pic && !img) };
+    return { blob, missing: !!(pic && !img), pic: pic ? pic.id : null, layout };
   }
   function fileName(po) { return `Postcard_${Quests.label(po.p).replace(/[^\w]+/g, '')}_${po.d}.jpg`; }
-  function prepare(id) {                                                               // the file ahead of the tap: iOS keeps share inside the tap only briefly
-    if (P.files.has(id)) return P.files.get(id);
+  function prepare(id, pickId) {                                                       // the file ahead of the tap: iOS keeps share inside the tap only briefly
+    const ck = `${id}|${pickId || ''}`;
+    if (P.files.has(ck)) return P.files.get(ck);
     const po = Journal.post(id); if (!po) return Promise.resolve(null);
-    const p = render(po).then((r) => { if (r.missing) P.files.delete(id); return new File([r.blob], fileName(po), { type: 'image/jpeg', lastModified: Date.now() }); });
-    P.files.set(id, p); p.catch(() => P.files.delete(id));
+    const p = render(po, pickId).then((r) => { if (r.missing) P.files.delete(ck); return new File([r.blob], fileName(po), { type: 'image/jpeg', lastModified: Date.now() }); });
+    P.files.set(ck, p); p.catch(() => P.files.delete(ck));
     return p;
   }
   /* which browser the app runs in, and whether its share sheet takes a picture (2 Nov 2026: Andy's phone showed
@@ -126,23 +201,37 @@ window.Postcard = (() => {
   function releaseUrls() { for (const u of P.urls) URL.revokeObjectURL(u); P.urls.length = 0; }
 
   /* ---------------------------------------------------------------- the preview (a modal) */
+  function pickerHtml(po, pickId, locked) {                                          // the story's pictures to choose from; locked while Mum and Dad have the request
+    const media = po.media || []; if (media.length < 2) return '';
+    const cur = picOf(po, pickId);
+    return `<div class="pc-pick"${locked ? ' data-locked="1"' : ''}>${media.map((m) => `<button type="button" class="${cur && cur.id === m.id ? 'on' : ''}" data-pick="${esc(m.id)}" aria-label="Use this picture"><img class="${m.k === 'drawing' ? 'dr' : 'ph'}" data-oid="${esc(m.k === 'drawing' ? m.id : m.id + 't')}" data-kind="${m.k === 'drawing' ? 'drawing' : 'thumb'}" alt=""></button>`).join('')}</div><div class="tiny muted">${locked ? 'The picture they chose.' : 'Tap the picture to put on the card.'}</div>`;
+  }
   async function openPreview(id) {
     const po = Journal.post(id); if (!po) return;
     releaseUrls();
     openModal(`<h2 class="h2">📮 Postcard</h2><div class="pc-preview" id="pc-preview"><p class="muted">Drawing the postcard…</p></div>`);
-    let file = null;
-    try { file = await prepare(id); } catch (e) { const el = $('#pc-preview'); if (el) el.innerHTML = `<div class="card red">${esc((e && e.message) || 'Could not draw the postcard.')}</div>`; return; }
-    const el = $('#pc-preview'); if (!el || !file) return;                            // the modal closed meanwhile
-    const url = URL.createObjectURL(file); P.urls.push(url);
+    const st0 = Quests.cardStatus(id);
+    let pickId = P.pick[id] || st0.pic || null, file = null, url = null, drawing = 0;
+    const draw = async () => {                                                       // (re)draw for the current pick; the newest tap wins
+      const my = ++drawing;
+      let f = null;
+      try { f = await prepare(id, pickId); } catch (e) { const el = $('#pc-preview'); if (el && my === drawing) el.innerHTML = `<div class="card red">${esc((e && e.message) || 'Could not draw the postcard.')}</div>`; return false; }
+      if (my !== drawing || !f) return false;
+      file = f; url = URL.createObjectURL(file); P.urls.push(url);
+      return true;
+    };
+    if (!(await draw())) return;
+    const el = $('#pc-preview'); if (!el) return;                                     // the modal closed meanwhile
     const st = Quests.cardStatus(id), parent = Quests.isParentDevice(), info = shareInfo(file);
-    el.innerHTML = `<img src="${url}" alt="Postcard"><div class="small muted pc-words">${esc(po.text || '')}</div><div id="pc-actions"></div>`;
-    const mailto = `mailto:?subject=${encodeURIComponent('Postcard from ' + Quests.label(po.p))}&body=${encodeURIComponent(words(po))}`;
+    el.innerHTML = `<img id="pc-img" src="${url}" alt="Postcard">${pickerHtml(po, pickId, !parent && st.pending)}<div class="small muted pc-words">${esc(po.text || '')}</div><div id="pc-actions"></div>`;
+    el.querySelectorAll('img[data-oid]').forEach((img) => Media.url(img.dataset.oid, img.dataset.kind).then((u) => { if (u) img.src = u; }));
+    const mailto = () => `mailto:?subject=${encodeURIComponent('Postcard from ' + Quests.label(po.p))}&body=${encodeURIComponent(words(po))}`;
     const extra = `${st.sent ? ' Sent before; sending again is fine.' : ''}${st.rejected && !parent ? ' Last time they said not this time; you can ask again.' : ''}`;
     const actions = (why) => {                                                       // why: the NoShare error after a Share that the sheet refused, else null
       const box = $('#pc-actions'); if (!box) return;
       const can = !why && canShareFile(file);
       let html = '<div class="row">';
-      if (parent) html += can ? `<button class="btn primary" id="pc-share">📤 Share</button>` : `<a class="btn primary" href="${url}" download="${esc(file.name)}">⬇️ Save the picture</a><a class="btn" href="${mailto}">✉️ Email the words</a>`;
+      if (parent) html += can ? `<button class="btn primary" id="pc-share">📤 Share</button>` : `<a class="btn primary" href="${url}" download="${esc(file.name)}">⬇️ Save the picture</a><a class="btn" href="${mailto()}">✉️ Email the words</a>`;
       else html += st.sent ? `<span class="chip">✓ Sent</span>` : st.pending ? `<span class="chip">⏳ Mum and Dad have it</span>` : `<button class="btn primary" id="pc-ask">📮 Ask Mum and Dad to send it</button>`;
       html += `<button class="btn" id="pc-copy">📋 Copy the words</button></div>`;
       const fallback = `${why ? why.message : noShare(info).message} Chrome on Android and Safari on iPhone usually share it in one tap.`;
@@ -150,21 +239,29 @@ window.Postcard = (() => {
       box.innerHTML = html;
       const sh = $('#pc-share');
       if (sh) sh.onclick = async () => { sh.disabled = true; try { await share(file, po); Quests.approveCard(id); closeModal(); } catch (e) { sh.disabled = false; if (e && e.name === 'NoShare') actions(e); else if (e && e.name !== 'AbortError') alert((e && e.message) || 'Could not share.'); } };
-      const ask = $('#pc-ask'); if (ask) ask.onclick = () => { Quests.requestCard(id); closeModal(); };
+      const ask = $('#pc-ask'); if (ask) ask.onclick = () => { Quests.requestCard(id, pickId); closeModal(); };
       const cp = $('#pc-copy'); if (cp) cp.onclick = () => { if (navigator.clipboard) navigator.clipboard.writeText(words(po)).then(() => { cp.textContent = '✓ Copied'; }, () => {}); };
     };
     actions(null);
+    const strip = el.querySelector('.pc-pick');
+    if (strip && !strip.dataset.locked) strip.querySelectorAll('[data-pick]').forEach((b) => b.onclick = async () => {
+      if (b.classList.contains('on')) return;
+      strip.querySelectorAll('[data-pick]').forEach((o) => o.classList.toggle('on', o === b));
+      pickId = b.dataset.pick; P.pick[id] = pickId;
+      const im = $('#pc-img'); if (im) im.style.opacity = '0.4';
+      if (await draw()) { const i2 = $('#pc-img'); if (i2) { i2.src = url; i2.style.opacity = ''; } actions(null); }
+    });
   }
   /* the parent's ✓ on a waiting postcard: share from this phone, then mark it sent and tick the quest for the author */
   async function sendApproved(key) {
     const id = String(key || '').replace(/^card\|/, ''), po = Journal.post(id);
     if (!po) { alert('That story is gone.'); return false; }
     let file = null;
-    try { file = await prepare(id); } catch (e) { alert((e && e.message) || 'Could not draw the postcard.'); return false; }
+    try { file = await prepare(id, Quests.cardStatus(id).pic || null); } catch (e) { alert((e && e.message) || 'Could not draw the postcard.'); return false; }
     if (!file) return false;
     try { await share(file, po); Quests.approveCard(id); return true; }
     catch (e) { if (e && e.name !== 'AbortError') alert((e && e.message) || 'Could not share.'); return false; }
   }
 
-  return { render, prepare, share, openPreview, sendApproved, firstLine, canShareFile, shareInfo, diag, releaseUrls };
+  return { render, prepare, share, openPreview, sendApproved, firstLine, canShareFile, shareInfo, diag, releaseUrls, lookOf };
 })();

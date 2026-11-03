@@ -381,7 +381,6 @@ function renderHome() {
   const city = ctx.inAir ? 'Air' : ctx.city;
   setCityColour(city);
   const total = Quests.daysBetween(F.trip.start, F.trip.end) + 1, dayN = Quests.daysBetween(F.trip.start, ctx.date) + 1;
-  const q = Quests.summary(ctx);
   const photoKey = 'photo:' + ctx.date;
   let html = '';
   if (ctx.before) {
@@ -391,6 +390,12 @@ function renderHome() {
     html += `<div class="hero"><div class="hero-emoji">${Quests.CITY_EMOJI[city] || '📍'}</div><div class="hero-text"><div class="hero-kicker">Day ${dayN} of ${total} · ${esc(ctx.inAir ? 'In the air' : ctx.city)}${S.preview ? ' · preview' : ''}</div><div class="hero-date">${esc(fmtDate(ctx.date))}</div><div class="hero-sub">${esc(localTime(ctx.tz))} here · ${esc(localTime(TZ.Home))} at home</div></div></div>`;
   }
   html += dayStrip(ctx);
+  /* 3 Nov 2026 (Andy: "a lot of info… how could we tidy it up"): Home is right now only. Tonight, the next move and today's
+     plan; a slim row of Taxi card / Call / I'm lost; Stories. Quests, Passport, Where, SOS and the build line live in the
+     nav, the header and the Book. The morning photo is one line until it is done, then nothing. */
+  const morning = Media.enabled ? Journal.index().filter((m) => m.k === 'photo' && m.tag === 'morning' && m.d === ctx.date).length : 0;
+  const parentish = !Quests.role() || Quests.isParentDevice();
+  if (!ctx.before && parentish && !morning && !localStorage.getItem(photoKey)) html += `<div class="photo-strip"><span>📸 Morning photo for the lost-kid card</span>${Media.enabled ? `<button id="photo-snap">📷 Snap</button>` : ''}<button id="photo-done">Done</button></div>`;
   html += `<div class="tiles">`;
   const landed = Quests.stampsReady(ctx);        // we have landed somewhere and nobody has stamped the passport yet
   if (landed.length) html += `<button class="tile ht wide stampt" data-go="passport"><span class="ico">${Quests.CITY_EMOJI[landed[0]] || '🛬'}</span><span class="tt">We made it to ${esc(landed.join(' and '))}!</span><span class="ts">Tap to stamp the passport${Quests.isParentDevice() ? '' : ' (Mum or Dad say yes)'}</span></button>`;
@@ -405,28 +410,19 @@ function renderHome() {
   }
   const day = dayOf(ctx.date), ev = eventsOn(ctx.date);
   if (day) html += `<button class="tile ht wide t3" data-day="${day.date}"><span class="ico">${ev.length ? '🎟️' : '📅'}</span><span class="tt">Today${ev.length ? ' · ' + esc(ev[0].time) + ' ' + esc(ev[0].event) : ''}</span><span class="ts">${esc(day.plan)}</span>${day.heads_up ? `<span class="ts small">⚠️ ${esc(day.heads_up)}</span>` : ''}</button>`;
-  html += `<button class="tile ht t7" data-go="quests"><span class="ico">🏆</span><span class="tt">Quests</span><span class="ts">${Quests.face(q.player)} ${esc(q.name)} · ${q.points} pts · ${q.level.emoji} ${esc(q.level.name)}</span><span class="ts small">${q.pending && q.role === 'parent' ? `⏳ ${q.pending} to approve` : `${q.todayLeft} to do today`}</span></button>`;
-  html += `<button class="tile ht t8" data-go="passport"><span class="ico">📘</span><span class="tt">Passport</span><span class="ts">${q.stamps} of ${q.stampsTotal} stamps</span><span class="ts small">Badges and levels</span></button>`;
-  html += `<button class="tile ht t4" data-taxi="${esc(ctx.stay ? (ctx.stay.ja_id || 'stay-' + ctx.stay.n) : '')}"><span class="ico">🚕</span><span class="tt">Taxi card</span><span class="ts">${ctx.stay ? "Show the driver tonight's bed" : 'All cards and phrases'}</span></button>`;
+  html += `</div>`;
   const mob = ((F.trip || {}).family || {}).mobiles || {};
   const calls = [['Mum', intlNum(mob.sarah)], ['Dad', intlNum(mob.andy)], ctx.stay && ctx.stay.phone ? ['Host', ctx.stay.phone] : null, ['Emergency', EMERGENCY_NUMBER[ctx.country]]].filter((c) => c && c[1]);
-  html += `<button class="tile ht t5" data-call="1"><span class="ico">📞</span><span class="tt">Call</span><span class="ts">${calls.map((c) => esc(c[0])).join(' · ') || 'Numbers'}</span></button>`;
-  html += `<button class="tile ht wide t6" data-kid="1"><span class="ico">🙋</span><span class="tt">I'm lost</span><span class="ts">Your own card: big words, Mum and Dad's numbers, what to say</span></button>`;
-  html += Journal.storiesTileHtml(ctx);
-  html += `<button class="tile ht wide t2" data-go="where"><span class="ico">🌏</span><span class="tt">Where are we</span><span class="ts">${esc(ctx.before ? "The globe, the route and today's dot" : whereLine(ctx, "The globe, the route and today's dot"))}</span></button>`;
-  html += `</div>`;
-  const morning = Media.enabled ? Journal.index().filter((m) => m.k === 'photo' && m.tag === 'morning' && m.d === ctx.date).length : 0;
-  if (!ctx.before && (!Quests.role() || Quests.isParentDevice())) {
-    const snap = Media.enabled ? `<button id="photo-snap">📷 Snap</button>` : '';
-    if (morning || localStorage.getItem(photoKey)) html += `<div class="photo-reminder done"><div><b>📸 ${morning ? `${morning} morning photo${morning === 1 ? '' : 's'} in the app` : 'Morning photo done'}</b><br><span class="small">${morning ? 'Ready on the lost-kid card, on every parent phone.' : 'Add one here for the lost-kid card?'}</span></div>${snap}</div>`;
-    else html += `<div class="photo-reminder"><div><b>📸 Morning photo</b><br><span class="small">Snap each kid in today's clothes: it goes on the lost-kid card.</span></div>${snap}<button id="photo-done">Done</button></div>`;
-  }
-  html += `<button class="btn danger block sos" id="home-sos">🆘 SOS · lost kid · sick · disasters</button>`;
-  html += `<p class="tiny muted">Built ${esc(BUILT)} · ${esc(VERSION)}${S.preview ? ' · previewing ' + esc(S.preview) + ' (clear it in Settings)' : ''}</p>`;
+  const quick = [];                                // the slim row: parent phones get the taxi card too; the kids' device keeps Call and I'm lost
+  if (parentish) quick.push(`<button class="tile ht sm t4" data-taxi="${esc(ctx.stay ? (ctx.stay.ja_id || 'stay-' + ctx.stay.n) : '')}"><span class="ico">🚕</span><span class="tt">Taxi card</span></button>`);
+  quick.push(`<button class="tile ht sm t5" data-call="1"><span class="ico">📞</span><span class="tt">Call</span></button>`);
+  quick.push(`<button class="tile ht sm t6" data-kid="1"><span class="ico">🙋</span><span class="tt">I'm lost</span></button>`);
+  html += `<div class="tiles quick${quick.length === 2 ? ' two' : ''}">${quick.join('')}</div>`;
+  html += `<div class="tiles">${Journal.storiesTileHtml(ctx)}</div>`;
+  if (S.preview) html += `<p class="tiny muted">Previewing ${esc(S.preview)} · clear it in Settings</p>`;
   const el = $('#screen-home'); el.innerHTML = html;
   const pd = $('#photo-done'); if (pd) pd.onclick = () => { localStorage.setItem(photoKey, '1'); Quests.complete(Quests.state().active, 'photo', ctx.date); renderHome(); };
   const ps = $('#photo-snap'); if (ps) ps.onclick = () => Journal.addPhoto(Quests.state().active, ctx.date, 'morning', true).then((id) => { if (!id) return; localStorage.setItem(photoKey, '1'); if (Quests.isParentDevice()) Quests.complete(Quests.state().active, 'photo', ctx.date); renderHome(); });
-  $('#home-sos').onclick = () => show('sos');
   el.querySelectorAll('[data-day]').forEach((b) => b.onclick = () => openDay(b.dataset.day));
   el.querySelectorAll('[data-taxi]').forEach((b) => b.onclick = () => { if (b.dataset.taxi) openTaxiById(b.dataset.taxi); else show('taxi'); });
   el.querySelectorAll('[data-kid]').forEach((b) => b.onclick = () => openKidCard());
@@ -441,12 +437,11 @@ function openCalls(calls) {
   openModal(html);
   $('#modal-inner').querySelectorAll('[data-go]').forEach((a) => a.onclick = (e) => { e.preventDefault(); closeModal(); show(a.dataset.go); });
 }
-function renderBook() {
+function renderBook() {                              // 3 Nov 2026: the reference shelf only, one screen of compact rows (Map, Quests, Passport and Settings live in the nav and the header)
   const items = [['days', '📅', 'Days', 'The plan, day by day'], ['moves', '✈️', 'Moves', 'Flights, trains, buses, taxis'], ['stays', '🛏️', 'Stays', 'Every bed, check-in times'],
-    ['taxi', '🚕', 'Taxi cards', 'Japanese and French, phrases'], ['map', '🗺️', 'Map', 'Offline maps, places, GPS'], ['where', '🌏', 'Where are we', 'The globe and the route'], ['protocols', '📋', 'Protocols', 'Lost kid, PACE, phone stolen'],
-    ['gates', '✅', 'Before we go', "Mum and Dad's to-do list"], ['quests', '🏆', 'Quests', 'Points, levels, new foods'], ['passport', '📘', 'Passport', 'Stamps and badges'],
-    ['vault', '🔒', 'Vault', 'PINs and document numbers'], ['settings', '⚙️', 'Settings', 'Theme, text size, players']];
-  $('#screen-book').innerHTML = `<h1 class="h1">📖 Book</h1><div class="book">` + items.filter((i) => !(i[0] === 'vault' && settings.readerMode)).map((i, k) => `<button class="bk c${k % 8}" data-go="${i[0]}"><span class="ico">${i[1]}</span><span class="tt">${esc(i[2])}</span><span class="ts">${esc(i[3])}</span></button>`).join('') + `</div>`;
+    ['taxi', '🚕', 'Taxi cards', 'Japanese and French, phrases'], ['protocols', '📋', 'Protocols', 'Lost kid, PACE, phone stolen'], ['gates', '✅', 'Before we go', "Mum and Dad's to-do list"],
+    ['where', '🌏', 'Where are we', 'The globe and the route'], ['vault', '🔒', 'Vault', 'PINs and document numbers']];
+  $('#screen-book').innerHTML = `<h1 class="h1">📖 Book</h1><div class="booklist">` + items.filter((i) => !(i[0] === 'vault' && settings.readerMode)).map((i, k) => `<button class="bkrow c${k % 8}" data-go="${i[0]}"><span class="ico">${i[1]}</span><span class="bt"><span class="tt">${esc(i[2])}</span><span class="ts">${esc(i[3])}</span></span><span class="chev">›</span></button>`).join('') + `</div>`;
   wireGo($('#screen-book'));
 }
 function renderGates() {

@@ -166,6 +166,26 @@ table.t td { padding: 6px 6px 6px 0; border-top: 1px solid var(--border); vertic
 .bk .ts { font-size: 0.8em; font-weight: 600; opacity: 0.85; }
 .bk.c0 { background: var(--t1); color: var(--t1-ink); } .bk.c1 { background: var(--t2); color: var(--t2-ink); } .bk.c2 { background: var(--t3); color: var(--t3-ink); } .bk.c3 { background: var(--t4); color: var(--t4-ink); }
 .bk.c4 { background: var(--t5); color: var(--t5-ink); } .bk.c5 { background: var(--t6); color: var(--t6-ink); } .bk.c6 { background: var(--t7); color: var(--t7-ink); } .bk.c7 { background: var(--t8); color: var(--t8-ink); }
+/* 3 Nov 2026 (Andy: "a lot of info… how could we tidy it up"): Home keeps right now only, with a slim row of small buttons and a one-line
+   morning-photo strip; the Book is a one-screen list of compact rows with a coloured icon */
+.tiles.quick { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 0; }
+.tiles.quick.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tile.ht.sm { min-height: 0; flex-direction: row; align-items: center; gap: 8px; padding: 10px 12px; }
+.tile.ht.sm .ico { font-size: 1.5em; margin: 0; }
+.tile.ht.sm .tt { font-size: 0.95em; }
+.photo-strip { display: flex; align-items: center; gap: 8px; background: var(--t3); color: var(--t3-ink); border-radius: 16px; padding: 8px 12px; margin: 0 0 10px; font-weight: 800; font-size: 0.95em; }
+.photo-strip span { flex: 1 1 auto; min-width: 0; }
+.photo-strip button { background: var(--card); color: var(--text); border: 0; border-radius: 999px; padding: 6px 12px; font-weight: 800; min-height: 40px; }
+.booklist { display: flex; flex-direction: column; gap: 8px; }
+.bkrow { display: flex; align-items: center; gap: 12px; border: 0; border-radius: 18px; padding: 10px 14px; min-height: 60px; text-align: left; cursor: pointer; color: var(--text); background: var(--card); width: 100%; }
+.bkrow:active { transform: scale(0.98); }
+.bkrow .ico { font-size: 1.6em; line-height: 1; width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; flex: 0 0 auto; }
+.bkrow .bt { flex: 1 1 auto; min-width: 0; }
+.bkrow .tt { display: block; font-weight: 900; font-size: 1.02em; }
+.bkrow .ts { display: block; font-size: 0.8em; font-weight: 600; opacity: 0.8; }
+.bkrow .chev { font-size: 1.5em; opacity: 0.45; font-weight: 300; }
+.bkrow.c0 .ico { background: var(--t1); color: var(--t1-ink); } .bkrow.c1 .ico { background: var(--t2); color: var(--t2-ink); } .bkrow.c2 .ico { background: var(--t3); color: var(--t3-ink); } .bkrow.c3 .ico { background: var(--t4); color: var(--t4-ink); }
+.bkrow.c4 .ico { background: var(--t5); color: var(--t5-ink); } .bkrow.c5 .ico { background: var(--t6); color: var(--t6-ink); } .bkrow.c6 .ico { background: var(--t7); color: var(--t7-ink); } .bkrow.c7 .ico { background: var(--t8); color: var(--t8-ink); }
 .gates li { padding: 10px 0; }
 
 /* quests and passport */

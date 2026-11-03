@@ -226,6 +226,7 @@ window.Postcard = (() => {
     return `<div class="pc-pick"${locked ? ' data-locked="1"' : ''}>${media.map((m) => `<button type="button" class="${cur && cur.id === m.id ? 'on' : ''}" data-pick="${esc(m.id)}" aria-label="Use this picture"><img class="${m.k === 'drawing' ? 'dr' : 'ph'}" data-oid="${esc(m.k === 'drawing' ? m.id : m.id + 't')}" data-kind="${m.k === 'drawing' ? 'drawing' : 'thumb'}" alt=""></button>`).join('')}</div><div class="tiny muted">${locked ? 'The picture they chose.' : 'Tap the picture to put on the card.'}</div>`;
   }
   async function openPreview(id) {
+    if (Quests.isGrandDevice()) return;                                               // Grandma and Grandpa never send cards or ask Mum and Dad (3 Nov 2026)
     const po = Journal.post(id); if (!po) return;
     releaseUrls();
     openModal(`<h2 class="h2">📮 Postcard</h2><div class="pc-preview" id="pc-preview"><p class="muted">Drawing the postcard…</p></div>`);

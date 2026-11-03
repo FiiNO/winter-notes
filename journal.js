@@ -287,14 +287,14 @@ window.Journal = (() => {
   }
 
   /* ---------------------------------------------------------------- the viewer (same overlay) */
-  function openViewer(ids, i) {
+  function openViewer(ids, i, opts) {    // opts.back: what to show when the viewer closes (the postcard it came from, 3 Nov 2026)
     const ov = $('#overlay');
     J.viewer = { ids, i: i || 0 };
     ov.innerHTML = `<div class="viewer"><div class="viewer-img" id="viewer-img"><img alt=""></div><div class="viewer-bar"><button id="v-prev" aria-label="Previous">‹</button><div class="vi" id="v-info"></div><button id="v-next" aria-label="Next">›</button><button id="v-save" aria-label="Save this picture to the phone" title="Save">⬇️</button>${Quests.isParentDevice() ? `<button class="del" id="v-del" aria-label="Delete">🗑️</button>` : ''}<button id="v-close" aria-label="Close">✕</button></div></div>`;
     ov.classList.remove('hidden');
     if (typeof Nav !== 'undefined') Nav.pushOverlay();
     const img = ov.querySelector('img'), info = ov.querySelector('#v-info');
-    const closeViewer = () => { ov.classList.add('hidden'); ov.innerHTML = ''; J.viewer = null; J.overlay = null; };
+    const closeViewer = () => { ov.classList.add('hidden'); ov.innerHTML = ''; J.viewer = null; J.overlay = null; if (opts && opts.back) opts.back(); };
     J.overlay = { back: () => { closeViewer(); return true; }, kind: 'viewer' };
     const showAt = async (k) => {
       if (!J.viewer) return;
@@ -336,12 +336,13 @@ window.Journal = (() => {
   async function openCard(id) {           // the card full width, the words in readable text under it, save the card or the photo
     const po = J.posts[id]; if (!po || !window.Postcard) return;
     const ov = $('#overlay'), pick = Quests.cardStatus(id).pic || null, pic = Postcard.picOf(po, pick);
-    ov.innerHTML = `<div class="viewer card-view"><div class="viewer-img"><img alt="Postcard" id="cv-img"></div><div class="cv-words" id="cv-words">${esc(Postcard.words(po))}</div><div class="viewer-bar"><div class="vi">${esc(Quests.label(po.p))} · ${esc(fmtDate(po.d))}</div><button class="txt" id="cv-card" aria-label="Save the postcard">⬇️ Card</button>${pic ? `<button class="txt" id="cv-photo" aria-label="Save the photo">⬇️ Photo</button>` : ''}<button id="cv-close" aria-label="Close">✕</button></div></div>`;
+    ov.innerHTML = `<div class="viewer card-view"><div class="viewer-img"><img alt="Postcard" id="cv-img"${pic ? ' class="tap"' : ''}></div><div class="cv-words" id="cv-words">${esc(Postcard.words(po))}</div><div class="viewer-bar"><div class="vi">${esc(Quests.label(po.p))} · ${esc(fmtDate(po.d))}${pic ? '<br><span class="tiny">Tap the card for the photo full screen</span>' : ''}</div><button class="txt" id="cv-card" aria-label="Save the postcard">⬇️ Card</button>${pic ? `<button class="txt" id="cv-photo" aria-label="Save the photo">⬇️ Photo</button>` : ''}<button id="cv-close" aria-label="Close">✕</button></div></div>`;
     ov.classList.remove('hidden');
     if (typeof Nav !== 'undefined') Nav.pushOverlay();
     const close = () => { ov.classList.add('hidden'); ov.innerHTML = ''; J.overlay = null; };
     J.overlay = { back: () => { close(); return true; }, kind: 'card' };
     ov.querySelector('#cv-close').onclick = close;
+    if (pic) ov.querySelector('#cv-img').onclick = () => { close(); openViewer([pic.id], 0, { back: () => openCard(id) }); };   // the photo full screen, back to the card on ✕
     const tick = (b, label) => { b.textContent = '✓'; setTimeout(() => { b.textContent = label; b.disabled = false; }, 1500); };
     const sc = ov.querySelector('#cv-card');
     if (sc) sc.onclick = async () => { sc.disabled = true; try { const f = await Postcard.prepare(id, pick); if (!f) throw new Error('Could not draw the postcard.'); await Media.saveFile(f); tick(sc, '⬇️ Card'); } catch (e) { sc.disabled = false; if (e && e.name !== 'AbortError') alert((e && e.message) || 'Could not save the postcard.'); } };
@@ -475,7 +476,7 @@ window.Journal = (() => {
     let h;
     if (ro) {                                                          // Grandma and Grandpa's phone (3 Nov 2026): the story is its postcard; tap it for the large view, ❤️ and Reply below
       const pick = cards && cards[po.id] && cards[po.id].pic;
-      h = `<div class="post pc-post" data-post="${esc(po.id)}"><button type="button" class="pc-open" data-card-open="${esc(po.id)}" aria-label="Open the postcard"><img class="pc-feed" data-card="${esc(po.id)}"${pick ? ` data-pick="${esc(pick)}"` : ''} alt="Postcard from ${esc(Quests.label(po.p))}"><span class="pc-from">💌 From ${esc(Quests.label(po.p))} · ${esc(fmtDate(po.d))}${po.legacy ? '' : ' · ' + esc(timeOf(po, ctx))}</span></button>`;
+      h = `<div class="post pc-post" data-post="${esc(po.id)}"><button type="button" class="pc-open" data-card-open="${esc(po.id)}" aria-label="Open the postcard"><img class="pc-feed" data-pc="${esc(po.id)}"${pick ? ` data-pick="${esc(pick)}"` : ''} alt="Postcard from ${esc(Quests.label(po.p))}"><span class="pc-from">💌 From ${esc(Quests.label(po.p))} · ${esc(fmtDate(po.d))}${po.legacy ? '' : ' · ' + esc(timeOf(po, ctx))}</span></button>`;
     } else {
       h = `<div class="post" data-post="${esc(po.id)}"><div class="post-head">${Quests.face(po.p, 'av')}<b>${esc(Quests.label(po.p))}</b>${MOOD[po.mood] ? `<span class="pmood">${MOOD[po.mood][1]}</span>` : ''}${cards && cards[po.id] ? (cards[po.id].sent ? '<span class="chip pc">📮 sent</span>' : cards[po.id].pending ? '<span class="chip pc">📮 waiting</span>' : '') : ''}<span class="post-time">${po.legacy ? '' : esc(timeOf(po, ctx))}</span></div>`;
       if (po.q) h += `<div class="post-q">${esc(po.q)}</div>`;
@@ -549,7 +550,7 @@ window.Journal = (() => {
     J.observer = new IntersectionObserver((entries) => {
       for (const en of entries) {
         const img = en.target;
-        if (img.dataset.card) { if (en.isIntersecting) loadCard(img); continue; }     // a drawn postcard stays (postcard.js caches it)
+        if (img.dataset.pc) { if (en.isIntersecting) loadCard(img); continue; }       // a drawn postcard stays (postcard.js caches it); data-pc, not data-card, which is the family's 📮 button (3 Nov 2026)
         if (en.isIntersecting) { if (!img.src) Media.url(img.dataset.oid, img.dataset.kind).then((u) => { if (u) img.src = u; else img.classList.add('missing'); }); }
         else if (img.src) img.removeAttribute('src');
       }
@@ -558,12 +559,12 @@ window.Journal = (() => {
       if (i < 12) Media.url(img.dataset.oid, img.dataset.kind).then((u) => { if (u && !img.src) img.src = u; });   // the first screenful at once; the observer handles the rest
       J.observer.observe(img);
     });
-    root.querySelectorAll('img[data-card]').forEach((img, i) => { if (i < 3) loadCard(img); J.observer.observe(img); });
+    root.querySelectorAll('img[data-pc]').forEach((img, i) => { if (i < 3) loadCard(img); J.observer.observe(img); });
   }
   function loadCard(img) {               // the grandparents' feed: the story's postcard drawn at half size (3 Nov 2026)
     if (img.src || img.dataset.busy || !window.Postcard) return;
     img.dataset.busy = '1';
-    Postcard.cardUrl(img.dataset.card, img.dataset.pick || null, 0.5).then((r) => { if (r && r.url) img.src = r.url; }).catch(() => {}).then(() => { delete img.dataset.busy; });
+    Postcard.cardUrl(img.dataset.pc, img.dataset.pick || null, 0.5).then((r) => { if (r && r.url) img.src = r.url; }).catch(() => {}).then(() => { delete img.dataset.busy; });
   }
   function onLeave(screen) {
     if (screen !== 'story') return;

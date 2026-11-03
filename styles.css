@@ -599,13 +599,22 @@ html:not([data-role="grand"]) #nav [data-screen="where"] { display: none; }
 .gb .ge { width: 30px; height: 30px; border-radius: 50%; background: #fff; border: 3px solid var(--gc); display: grid; place-items: center; font-size: 16px; line-height: 1; box-shadow: 0 2px 6px rgba(0,0,0,0.35); }
 .gb .gn { font-size: 10px; font-weight: 800; line-height: 1; color: #1B1B2F; background: rgba(255,255,255,0.88); padding: 2px 5px; border-radius: 6px; margin-top: 2px; white-space: nowrap; }
 .gb:not(.seen) { opacity: 0.6; }
-.gb.now .ge { width: 40px; height: 40px; font-size: 21px; animation: gb-pulse 1.7s ease-out infinite; }
+.gb .gh { display: none; }
+/* the city the family is in (4 Nov 2026, Andy: "make it more noticeable, there are many cities close to each other"): a bigger badge
+   on top of its neighbours, a beacon ring, the name as a coloured pill and a WE ARE HERE tag */
+.gb.now { z-index: 5; }
+.gb.now .ge { width: 56px; height: 56px; font-size: 29px; border-width: 4px; animation: gb-pulse 1.4s ease-out infinite; }
+.gb.now::before { content: ""; position: absolute; left: 50%; top: 28px; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%; border: 3px solid var(--gc); animation: gb-beacon 1.4s ease-out infinite; pointer-events: none; }
+.gb.now .gn { background: var(--gc); color: #fff; font-size: 12px; padding: 3px 9px; text-shadow: 0 1px 0 rgba(0,0,0,0.35); box-shadow: 0 2px 6px rgba(0,0,0,0.35); }
+.gb.now .gh { display: block; margin-top: 2px; font-size: 9px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; color: #fff; background: #1B1B2F; padding: 2px 7px; border-radius: 6px; white-space: nowrap; }
 .gb.land .ge { animation: gb-land 0.45s ease-out; }
-@keyframes gb-pulse { 0% { box-shadow: 0 0 0 0 var(--gc), 0 2px 6px rgba(0,0,0,0.35); } 100% { box-shadow: 0 0 0 18px rgba(0,0,0,0), 0 2px 6px rgba(0,0,0,0.35); } }
+@keyframes gb-pulse { 0% { box-shadow: 0 0 0 0 var(--gc), 0 2px 6px rgba(0,0,0,0.35); } 100% { box-shadow: 0 0 0 26px rgba(0,0,0,0), 0 2px 6px rgba(0,0,0,0.35); } }
+@keyframes gb-beacon { 0% { transform: scale(1); opacity: 0.9; } 100% { transform: scale(2.8); opacity: 0; } }
 @keyframes gb-land { 0% { transform: scale(1); } 40% { transform: scale(1.5); } 100% { transform: scale(1); } }
-html[data-fx="off"] .gb.now .ge, html[data-fx="off"] .gb.land .ge { animation: none; }
-.gp { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,0.92); display: grid; place-items: center; font-size: 20px; line-height: 1; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+html[data-fx="off"] .gb.now .ge, html[data-fx="off"] .gb.land .ge, html[data-fx="off"] .gb.now::before, html[data-fx="off"] .gp.bob::after { animation: none; }
+.gp { position: relative; width: 46px; height: 46px; border-radius: 50%; background: rgba(255,255,255,0.95); display: grid; place-items: center; font-size: 27px; line-height: 1; box-shadow: 0 3px 10px rgba(0,0,0,0.45); z-index: 6; }
 .gp.bob { animation: gp-bob 1.6s ease-in-out infinite; }
+.gp.bob::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 3px solid #fff; animation: gb-beacon 1.4s ease-out infinite; pointer-events: none; }
 @keyframes gp-bob { 0%, 100% { margin-top: 0; } 50% { margin-top: -6px; } }
 /* the calendar and clock over the globe (3 Nov 2026): a page-a-day calendar that flips, and a clock; they run with the replay and then show now */
 .gclock { position: absolute; left: 10px; top: 10px; z-index: 2; display: flex; align-items: center; gap: 8px; pointer-events: none; }

@@ -252,10 +252,11 @@ function captionHtml(ctx, family, r) {
   return `<h1 class="h1">🌏 ${grand ? 'Where are they?' : 'Where are we?'}</h1><div class="card where-card"><div class="big">${esc(big)}</div><div class="small muted">${esc(sub)}</div>${next}</div>`;
 }
 function addBadges(map, r) {
+  const hereWord = Quests.isGrandDevice() ? 'They are here' : 'We are here';   // shown under the city the family is in (4 Nov 2026: cities sit close together, so the badge shouts)
   for (const c of r.cities) {
     const el = document.createElement('div');
     el.className = 'gb' + (c.visited ? ' seen' : '') + (c.now ? ' now' : ''); el.style.setProperty('--gc', c.col); el.dataset.city = c.city;
-    el.innerHTML = `<span class="ge">${emojiOf(c.city)}</span><span class="gn">${esc(c.city)}</span>`;
+    el.innerHTML = `<span class="ge">${emojiOf(c.city)}</span><span class="gn">${esc(c.city)}</span><span class="gh">${hereWord}</span>`;
     el.addEventListener('click', (e) => { e.stopPropagation(); stopPlaying(); openPopup(c.city); });
     G.markers[c.city] = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat(CITY_LL[c.city]).addTo(map);
   }

@@ -179,6 +179,10 @@ window.Media = (() => {
     if (M.origMode === 'share' && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'World Adventure' }); return 'shared'; }
     saveDownload(file, name); return 'downloaded';
   }
+  async function saveFile(file) {                   // any picture file out to the phone the same way (3 Nov 2026: the grandparents' postcard)
+    if (M.origMode === 'share' && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'World Adventure' }); return 'shared'; }
+    saveDownload(file, file.name); return 'downloaded';
+  }
   function saveDownload(file, name) {               // Android Chrome: straight to Downloads, no dialog
     const url = URL.createObjectURL(file), a = document.createElement('a');
     a.href = url; a.download = name; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove();
@@ -320,7 +324,7 @@ window.Media = (() => {
 
   return { init, get enabled() { return M.enabled; }, seal, open, pick, addImage, addCanvas, url, has, ensure, release, flush, pendingList, pendingCount,
     countPending, usage, remove, wipe, clearDownloaded, onChange: (fn) => { M.onChange = fn; }, LIMITS,
-    newId, keepOriginal, originals, originalsSummary, canSaveOriginals, origHint, prepareOriginals, saveOriginals, clearSavedOriginals, saveCopy, saveDownload,
+    newId, keepOriginal, originals, originalsSummary, canSaveOriginals, origHint, prepareOriginals, saveOriginals, clearSavedOriginals, saveCopy, saveDownload, saveFile,
     get origMode() { return M.origMode; }, setOrigMode: (m) => { M.origMode = m; M.prepared = null; },
     diag: () => ({ up: M.last.up, down: M.last.down, open: M.last.open, add: M.last.add, mode: M.origMode, enabled: M.enabled, pending: M.pending }) };
 })();

@@ -15,7 +15,7 @@ window.Postcard = (() => {
   const FONT = '-apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
   const PAPER = '#FFF8EE', INK = '#1B1B2F', SOFT = '#5F6B7A';
   const MOOD = { amazing: '🤩', good: '😊', ok: '😐', tired: '😴', sad: '😢' };
-  const P = { files: new Map(), urls: [], pick: {} };                 // prepared files by post id + pick; preview URLs to revoke; the picker's choice per post
+  const P = { files: new Map(), urls: [], pick: {}, cards: new Map() };   // prepared files by post id + pick; preview URLs to revoke; the picker's choice per post; drawn feed cards (3 Nov 2026)
 
   /* the look of each city: a greeting, a set of motifs drawn faintly over the paper, and a layout. hero = the picture
      fills the left of the card edge to edge; print = a big white-framed print, slightly tilted; polaroid = a square
@@ -67,6 +67,17 @@ window.Postcard = (() => {
     const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height, s = Math.max(w / iw, h / ih), dw = iw * s, dh = ih * s;
     g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip(); g.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh); g.restore();
   }
+  function drawHero(g, img, col, x, y, w, h) {                         // the whole picture, never cropped, over a soft blurred copy of itself (3 Nov 2026: cover-fit cut a landscape photo to its middle third)
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip();
+    g.fillStyle = col; g.fillRect(x, y, w, h);
+    if ('filter' in g) { g.filter = 'blur(30px) saturate(1.15)'; drawCover(g, img, x - 60, y - 60, w + 120, h + 120); g.filter = 'none'; g.fillStyle = 'rgba(0,0,0,0.2)'; g.fillRect(x, y, w, h); }
+    else { g.globalAlpha = 0.3; drawCover(g, img, x, y, w, h); g.globalAlpha = 1; }   // older Safari: a faint copy over the city colour
+    const pad = 44, s = Math.min((w - 2 * pad) / iw, (h - 2 * pad) / ih), dw = Math.round(iw * s), dh = Math.round(ih * s), dx = Math.round(x + (w - dw) / 2), dy = Math.round(y + (h - dh) / 2);
+    g.shadowColor = 'rgba(0,0,0,0.35)'; g.shadowBlur = 30; g.shadowOffsetY = 12; g.fillStyle = '#fff'; g.fillRect(dx - 12, dy - 12, dw + 24, dh + 24); g.shadowColor = 'transparent';
+    g.drawImage(img, dx, dy, dw, dh);
+    g.restore();
+  }
   function drawMotifs(g, look, seed, region) {                         // faint motifs scattered over the paper (never over the picture)
     const rnd = seeded(seed), n = Math.round(region.w * region.h / 150000);
     g.save(); g.globalAlpha = 0.13; g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -108,7 +119,7 @@ window.Postcard = (() => {
     g.font = `bold ${big ? 64 : 56}px ${FONT}`; g.fillStyle = INK; g.fillText(`Love, ${Quests.label(po.p)}${MOOD[po.mood] ? ' ' + MOOD[po.mood] : ''}`, box.x, sign);
     g.font = `bold ${big ? 44 : 40}px ${FONT}`; g.fillStyle = col; g.fillText(`${placeOf(city)} · ${fmtDate(po.d)}`, box.x, sign + (big ? 66 : 60));
   }
-  async function render(po, pickId) {
+  async function render(po, pickId, opts) {
     const ctx = currentContext(), city = Journal.cityOf(po.d, ctx), key = Quests.CITY_KEY[city] || 'home', col = cityColour(key), look = lookOf(city);
     const pic = picOf(po, pickId);
     let img = null;
@@ -116,16 +127,16 @@ window.Postcard = (() => {
       const kind = pic.k === 'drawing' ? 'drawing' : 'photo';
       try { await Media.ensure(pic.id, kind); const u = await Media.url(pic.id, kind); if (u) img = await loadImg(u); } catch (e) { img = null; }
     }
-    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-    const g = cv.getContext('2d');
+    const sc = (opts && opts.scale) || 1;                                              // 0.5 for the cards in the grandparents' feed (3 Nov 2026)
+    const cv = document.createElement('canvas'); cv.width = Math.round(W * sc); cv.height = Math.round(H * sc);
+    const g = cv.getContext('2d'); if (sc !== 1) g.scale(sc, sc);
     g.fillStyle = PAPER; g.fillRect(0, 0, W, H);                                       // the paper
     const seed = `${city}|${po.id}`, layout = img ? look.layout : 'words', stamp = 250;
     let box;                                                                           // where the message goes
-    if (layout === 'hero') {                                                           // the picture edge to edge on the left
+    if (layout === 'hero') {                                                           // the left of the card is the picture: whole, on a blurred wash of itself
       drawMotifs(g, look, seed, { x: 1440, y: 0, w: W - 1440, h: H });
-      drawCover(g, img, 0, 0, 1440, H);
+      drawHero(g, img, col, 0, 0, 1440, H);
       g.fillStyle = col; g.fillRect(1440, 0, 22, H);                                   // a city-colour spine between picture and words
-      g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineWidth = 6; g.strokeRect(36, 36, 1440 - 72, H - 72);
       box = { x: 1540, y: 430, w: W - 1540 - 90, h: H - 430 - 90 };
     } else if (layout === 'print') {                                                   // a big white-framed print, slightly tilted
       drawMotifs(g, look, seed, { x: 0, y: 0, w: W, h: H });
@@ -154,7 +165,7 @@ window.Postcard = (() => {
     }
     drawStamp(g, city, col, fmtDate(po.d), W - stamp - 70, 70, stamp);
     drawMessage(g, po, city, look, col, box);
-    const blob = await new Promise((res, rej) => cv.toBlob((b) => (b ? res(b) : rej(new Error('Could not draw the postcard.'))), 'image/jpeg', 0.9));
+    const blob = await new Promise((res, rej) => cv.toBlob((b) => (b ? res(b) : rej(new Error('Could not draw the postcard.'))), 'image/jpeg', sc < 1 ? 0.82 : 0.9));
     cv.width = cv.height = 0;
     return { blob, missing: !!(pic && !img), pic: pic ? pic.id : null, layout };
   }
@@ -165,6 +176,14 @@ window.Postcard = (() => {
     const po = Journal.post(id); if (!po) return Promise.resolve(null);
     const p = render(po, pickId).then((r) => { if (r.missing) P.files.delete(ck); return new File([r.blob], fileName(po), { type: 'image/jpeg', lastModified: Date.now() }); });
     P.files.set(ck, p); p.catch(() => P.files.delete(ck));
+    return p;
+  }
+  function cardUrl(id, pickId, scale) {                                                // a drawn card as an object URL, cached per story, pick and size (the grandparents' feed, 3 Nov 2026); a card still missing its picture is not cached
+    const ck = `${id}|${pickId || ''}|${scale || 1}`;
+    if (P.cards.has(ck)) return P.cards.get(ck);
+    const po = Journal.post(id); if (!po) return Promise.resolve(null);
+    const p = render(po, pickId, { scale: scale || 1 }).then((r) => { if (r.missing) P.cards.delete(ck); return { url: URL.createObjectURL(r.blob), missing: r.missing }; });
+    P.cards.set(ck, p); p.catch(() => P.cards.delete(ck));
     return p;
   }
   /* which browser the app runs in, and whether its share sheet takes a picture (2 Nov 2026: Andy's phone showed
@@ -263,5 +282,5 @@ window.Postcard = (() => {
     catch (e) { if (e && e.name !== 'AbortError') alert((e && e.message) || 'Could not share.'); return false; }
   }
 
-  return { render, prepare, share, openPreview, sendApproved, firstLine, canShareFile, shareInfo, diag, releaseUrls, lookOf };
+  return { render, prepare, cardUrl, picOf, words, share, openPreview, sendApproved, firstLine, canShareFile, shareInfo, diag, releaseUrls, lookOf };
 })();

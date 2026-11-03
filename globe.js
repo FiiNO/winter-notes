@@ -190,6 +190,48 @@ function styleOf(r) {
   };
 }
 
+/* ---------------------------------------------------------------- the calendar and clock over the globe (3 Nov 2026: "a calendar and clock tick over while it runs through up to the current time") */
+const CLK = { el: null, day: null };
+function dateIn(ms, tz) { try { const p = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(ms)); const g = (t) => p.find((x) => x.type === t).value; return `${g('year')}-${g('month')}-${g('day')}`; } catch (e) { return ''; } }
+function clockEl() {
+  if (CLK.el && document.body.contains(CLK.el)) return CLK.el;
+  const wrap = document.getElementById('globe-wrap'); if (!wrap) return null;
+  const el = document.createElement('div'); el.className = 'gclock'; el.setAttribute('aria-live', 'off');
+  el.innerHTML = `<span class="gcal"><i></i><b></b><u></u></span><span class="gtime"><b></b><i></i></span>`;
+  wrap.appendChild(el); CLK.el = el; CLK.day = null;
+  return el;
+}
+function showClock(ms, tz, label) {                                    // a page-a-day calendar (flips when the day changes) and the time, in tz
+  const el = clockEl(); if (!el || ms == null) return;
+  let p; try { p = new Intl.DateTimeFormat('en-GB', { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(ms)); } catch (e) { return; }
+  const g = (t) => (p.find((x) => x.type === t) || {}).value || '', day = `${g('day')}|${g('month')}`;
+  el.querySelector('.gcal i').textContent = g('month').toUpperCase(); el.querySelector('.gcal b').textContent = g('day'); el.querySelector('.gcal u').textContent = g('weekday');
+  el.querySelector('.gtime b').textContent = `${g('hour')}:${g('minute')}`; el.querySelector('.gtime i').textContent = label || '';
+  if (CLK.day !== null && CLK.day !== day) { const c = el.querySelector('.gcal'); c.classList.remove('flip'); void c.offsetWidth; c.classList.add('flip'); }
+  CLK.day = day;
+}
+function showNow(r) {                                                  // the real clock where the family is (the destination while on a leg)
+  const city = r.riding ? r.riding.to[0] : (r.here || HOME);
+  showClock(r.now != null ? r.now : Date.now(), tzOf(city), `${city} time`);
+}
+function showLegClock(lg, frac) {                                      // the replay: the time along a leg, in the destination's zone
+  if (lg.dep == null || lg.arr == null) { showClock(Date.parse(lg.date + 'T12:00:00Z'), tzOf(lg.to[0]), `${lg.to[0]} time`); return; }
+  showClock(lg.dep + Math.max(0, Math.min(1, frac)) * (lg.arr - lg.dep), tzOf(lg.to[0]), `${lg.to[0]} time`);
+}
+function tickDays(map, fromMs, toMs, tz, city, done) {                // between legs the calendar flips a day at a time (and up to today after the last)
+  if (fromMs == null || toMs == null || toMs <= fromMs) { done(); return; }
+  const n = Math.max(0, Quests.daysBetween(dateIn(fromMs, tz), dateIn(toMs, tz))), step = n > 12 ? 70 : 150;
+  let k = 0;
+  const tick = () => {
+    if (!G.playing || G.map !== map) return;
+    k++;
+    if (k > n) { showClock(toMs, tz, `${city} time`); done(); return; }
+    showClock(fromMs + k * 86400000, tz, `${city} time`);
+    G.timers.push(setTimeout(tick, step));
+  };
+  G.timers.push(setTimeout(tick, n ? 220 : 0));
+}
+
 /* ---------------------------------------------------------------- caption, badges, popup */
 function captionHtml(ctx, family, r) {
   const grand = Quests.isGrandDevice(), total = Quests.daysBetween(family.trip.start, family.trip.end) + 1, dayN = Quests.daysBetween(family.trip.start, ctx.date) + 1, nl = r.next;
@@ -262,7 +304,7 @@ function refresh() {                                                   // the cl
   const cap = document.getElementById('where-cap'); if (cap) cap.innerHTML = captionHtml(ctx, G.family, r);
   for (const c of r.cities) { const m = G.markers[c.city]; if (m) { m.getElement().classList.toggle('now', c.now); m.getElement().classList.toggle('seen', c.visited); } }
   const todo = map.getSource('todo'); if (todo) todo.setData(lines(legFeatures(r.todo, { done: false })));
-  placeVehicle(r);
+  placeVehicle(r); showNow(r);
 }
 function stopPlaying() {
   G.playing = false; if (G.raf) { cancelAnimationFrame(G.raf); G.raf = 0; }
@@ -271,7 +313,7 @@ function stopPlaying() {
 }
 function settle(map, r, reduce) {
   if (G.map !== map) return;
-  placeVehicle(r);
+  placeVehicle(r); showNow(r);
   const zoom = r.here || r.planeAt ? 2.5 : 1.5;
   if (reduce) map.jumpTo({ center: r.target, zoom }); else map.easeTo({ center: r.target, zoom, duration: 1400, essential: true });
   G.timers.push(setTimeout(() => startIdle(map), reduce ? 0 : 1800));
@@ -295,7 +337,7 @@ function playJourney(map, r) {
   if (!flown.length) {                                                 // not yet departed: a quick tour of the whole route, then home
     setDone(map, []);
     let i = 0;
-    const hop = () => { if (!G.playing || G.map !== map) return; if (i >= r.L.length) { settle(map, r, false); stopPlaying(); return; } const lg = r.L[i++]; map.easeTo({ center: lg.to[1], zoom: 1.6, duration: 420, easing: (t) => t }); G.timers.push(setTimeout(hop, 440)); };
+    const hop = () => { if (!G.playing || G.map !== map) return; if (i >= r.L.length) { settle(map, r, false); stopPlaying(); return; } const lg = r.L[i++]; showLegClock(lg, 1); map.easeTo({ center: lg.to[1], zoom: 1.6, duration: 420, easing: (t) => t }); G.timers.push(setTimeout(hop, 440)); };
     map.easeTo({ center: CITY_LL[HOME], zoom: 1.6, duration: 600 }); G.timers.push(setTimeout(hop, 650));
     return;
   }
@@ -312,13 +354,21 @@ function playJourney(map, r) {
       if (!G.playing || G.map !== map) return;
       const f = Math.min(1, (now - t0) / dur), e = f < 0.5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2, k = Math.round(e * kEnd);
       pl.setLngLat(pts[k]).setRotation(plane ? bearing(pts[Math.max(0, k - 1)], pts[Math.min(pts.length - 1, k + 1)]) - 45 : 0);
+      showLegClock(lg, k / (pts.length - 1));
       const partial = split(pts.slice(0, k + 1)).map((seg) => ({ type: 'Feature', properties: { col, done: true }, geometry: { type: 'LineString', coordinates: seg } }));
       setDone(map, doneSegs.concat(partial));
       if (f < 1) G.raf = requestAnimationFrame(step);
-      else { for (const seg of split(pts.slice(0, kEnd + 1))) doneSegs.push({ type: 'Feature', properties: { col, done: true }, geometry: { type: 'LineString', coordinates: seg } }); if (lg.upTo == null) landPop(lg.to[0]); G.timers.push(setTimeout(flyLeg, 160)); }
+      else {
+        for (const seg of split(pts.slice(0, kEnd + 1))) doneSegs.push({ type: 'Feature', properties: { col, done: true }, geometry: { type: 'LineString', coordinates: seg } });
+        if (lg.upTo != null) { G.timers.push(setTimeout(flyLeg, 160)); return; }          // the leg under way ends at now
+        landPop(lg.to[0]);
+        const nx = flown[i];                                                               // the days in the city flip by on the calendar, up to the next departure (or today)
+        tickDays(map, lg.arr, nx ? nx.dep : r.now, tzOf(lg.to[0]), lg.to[0], () => G.timers.push(setTimeout(flyLeg, 120)));
+      }
     };
     G.raf = requestAnimationFrame(step);
   };
+  showLegClock(flown[0], 0);
   map.easeTo({ center: flown[0].from[1], zoom: 2.0, duration: 500 }); G.timers.push(setTimeout(flyLeg, 520));
 }
 
@@ -334,8 +384,13 @@ function build(ctx, family) {
     addBadges(map, r);
     vehicle(map);
     if (G.plane && !r.planeAt) G.plane.getElement().style.display = 'none';
-    G.timers.push(setInterval(() => { if (G.map !== map) return; const a = map.getSource('night'), b = map.getSource('night2'); if (a) a.setData(lines([night(new Date(), 0)])); if (b) b.setData(lines([night(new Date(), 7)])); }, 60000));
+    G.timers.push(setInterval(() => {
+      if (G.map !== map) return;
+      const a = map.getSource('night'), b = map.getSource('night2'); if (a) a.setData(lines([night(new Date(), 0)])); if (b) b.setData(lines([night(new Date(), 7)]));
+      if (!G.playing && G.route) showNow(Object.assign({}, G.route, { now: nowMs(G.ctx) }));   // the clock keeps time between refreshes
+    }, 60000));
     G.timers.push(setInterval(refresh, REFRESH_MS));
+    showNow(r);
     playJourney(map, r);
   });
   map.on('error', (e) => { if (window.logErr && e && e.error) logErr('globe: ' + (e.error.message || e.error)); });
@@ -354,7 +409,7 @@ function enter(ctx, family) {
   if (b) b.onclick = () => { if (!G.map) return; if (G.playing) { stopPlaying(); settle(G.map, G.route, true); } else { G.touched = false; playJourney(G.map, G.route); } };
 }
 function leave() {
-  stopPlaying(); G.idle = false;
+  stopPlaying(); G.idle = false; CLK.el = null; CLK.day = null;
   for (const t of G.timers) { clearTimeout(t); clearInterval(t); } G.timers.length = 0;
   if (G.popup) { G.popup.remove(); G.popup = null; }
   for (const m of Object.values(G.markers)) { try { m.remove(); } catch (e) { /* gone */ } } G.markers = {};

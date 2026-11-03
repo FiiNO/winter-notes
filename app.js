@@ -418,7 +418,7 @@ function renderHome() {
   quick.push(`<button class="tile ht sm t5" data-call="1"><span class="ico">📞</span><span class="tt">Call</span></button>`);
   quick.push(`<button class="tile ht sm t6" data-kid="1"><span class="ico">🙋</span><span class="tt">I'm lost</span></button>`);
   html += `<div class="tiles quick${quick.length === 2 ? ' two' : ''}">${quick.join('')}</div>`;
-  html += `<div class="tiles">${Journal.storiesTileHtml(ctx)}</div>`;
+  html += `<div class="tiles">${Journal.storiesTileHtml(ctx)}<button class="tile ht wide t2" data-go="where"><span class="ico">🌏</span><span class="tt">Where are we</span><span class="ts">${esc(ctx.before ? "The globe, the route and today's dot" : whereLine(ctx, "The globe, the route and today's dot"))}</span></button></div>`;   // back on Home (Andy, 3 Nov 2026)
   if (S.preview) html += `<p class="tiny muted">Previewing ${esc(S.preview)} · clear it in Settings</p>`;
   const el = $('#screen-home'); el.innerHTML = html;
   const pd = $('#photo-done'); if (pd) pd.onclick = () => { localStorage.setItem(photoKey, '1'); Quests.complete(Quests.state().active, 'photo', ctx.date); renderHome(); };
@@ -691,7 +691,7 @@ function renderMap() {
       <button class="btn primary" id="map-me" title="Centre on me">◉ Me</button>
       <div id="map-outside" class="hidden">Outside the offline packs here. <a class="btn" href="#" target="_blank" rel="noopener">Open in Google Maps</a></div>
       <div id="map-card" class="hidden"></div></div>
-    <div class="row" id="map-filter"><button class="pill active" data-filter="today">Today + tomorrow</button><button class="pill" data-filter="all">Everything</button><button class="pill" id="map-packs-toggle">Offline maps</button></div>
+    <div class="row" id="map-filter"><button class="pill" id="map-packs-toggle">Offline maps</button></div>
     <div id="map-packs" class="card hidden"></div>
     <p class="tiny muted">Directions and search: use the Organic Maps or Google Maps buttons on a place. Location is used only on this screen and never stored.</p>
     <h2 class="h2">All places as a list</h2>`;

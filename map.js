@@ -13,7 +13,7 @@ maplibregl.addProtocol('pmtiles', protocol.tile);
 const TILE_CACHE = 'dossier-tiles';
 const LAYER_COLOURS = { stays: '#0B1F3A', moves: '#8A5A00', venues: '#B3261E', emergency: '#2C6B3A', rally: '#5C6670', vault: '#7A1FA2' };
 const S = { map: null, container: null, family: null, vaultFeatures: [], manifest: null, styles: {}, theme: 'light',
-  activePack: null, overview: null, watchId: null, visible: false, filter: 'today', today: null, onTaxi: null,
+  activePack: null, overview: null, watchId: null, visible: false, filter: 'all', today: null, onTaxi: null,   // 3 Nov 2026: every place always shows (the Today + tomorrow pill is gone)
   gpsExplained: localStorage.getItem('gpsExplained') === '1', storageKind: null, loadedSources: new Set(), ready: false };
 
 /* ------------------------------------------------------------------ pack storage */

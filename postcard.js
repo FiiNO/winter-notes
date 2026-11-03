@@ -17,24 +17,26 @@ window.Postcard = (() => {
   const MOOD = { amazing: '🤩', good: '😊', ok: '😐', tired: '😴', sad: '😢' };
   const P = { files: new Map(), urls: [], pick: {}, cards: new Map() };   // prepared files by post id + pick; preview URLs to revoke; the picker's choice per post; drawn feed cards (3 Nov 2026)
 
-  /* the look of each city: a greeting, a set of motifs drawn faintly over the paper, and a layout. hero = the picture
-     fills the left of the card edge to edge; print = a big white-framed print, slightly tilted; polaroid = a square
-     print with the greeting on its white strip. Nothing here may name a venue the kids must not read about. */
+  /* the look of each city: a greeting, a set of motifs drawn faintly over the paper, a layout and the tilt of the attached
+     picture in degrees. print = a white-framed print the shape of the photo, stuck on at a slight angle; polaroid = a
+     square print with the greeting on its white strip. (The edge-to-edge "hero" look lasted a day: Andy, 3 Nov 2026,
+     "why are they different? keep them the same as the others, maybe change the angle of the photo attached".)
+     Nothing here may name a venue the kids must not read about. */
   const LOOKS = {
-    Tokyo: { greet: 'Konnichiwa from Tokyo!', motifs: ['🗼', '🍣', '🏮', '🌸', '🍜', '🚄'], layout: 'hero' },
-    Nagoya: { greet: 'Konnichiwa from Nagoya!', motifs: ['🏯', '🍤', '🚄', '🍡', '🧱'], layout: 'print' },
-    Vancouver: { greet: 'Hello from Vancouver!', motifs: ['🌲', '🏔️', '🦫', '⛵', '🌧️'], layout: 'hero' },
-    Whistler: { greet: 'Hello from snowy Whistler!', motifs: ['⛷️', '❄️', '🏂', '⛄', '🚡', '🔥'], layout: 'polaroid' },
-    Toronto: { greet: 'Hello from Toronto!', motifs: ['🍁', '🏒', '🗼', '🦝', '🍩'], layout: 'print' },
-    'New York': { greet: 'Hello from New York!', motifs: ['🗽', '🚕', '🍕', '🌆', '🥨', '🎭'], layout: 'hero' },
-    'Montréal': { greet: 'Bonjour from Montréal!', motifs: ['🥯', '🏒', '❄️', '⛪', '🍁', '🥞'], layout: 'polaroid' },
-    Brisbane: { greet: "G'day from Brisbane!", motifs: ['🐨', '🌞', '🌴', '🦘', '🌉'], layout: 'print' },
-    Cairns: { greet: "G'day from Cairns!", motifs: ['🐠', '🐢', '🌴', '🐊', '🤿', '🌊'], layout: 'hero' },
-    Townsville: { greet: "G'day from Townsville!", motifs: ['🏡', '🌞', '🐚', '🌴'], layout: 'print' },
-    Home: { greet: 'Hello from home!', motifs: ['🏡', '🧳', '🌏', '🎒'], layout: 'print' },
-    Air: { greet: 'Hello from the sky!', motifs: ['✈️', '☁️', '🌍', '🛫'], layout: 'polaroid' },
+    Tokyo: { greet: 'Konnichiwa from Tokyo!', motifs: ['🗼', '🍣', '🏮', '🌸', '🍜', '🚄'], layout: 'print', tilt: 2 },
+    Nagoya: { greet: 'Konnichiwa from Nagoya!', motifs: ['🏯', '🍤', '🚄', '🍡', '🧱'], layout: 'print', tilt: -1.5 },
+    Vancouver: { greet: 'Hello from Vancouver!', motifs: ['🌲', '🏔️', '🦫', '⛵', '🌧️'], layout: 'print', tilt: -2.5 },
+    Whistler: { greet: 'Hello from snowy Whistler!', motifs: ['⛷️', '❄️', '🏂', '⛄', '🚡', '🔥'], layout: 'polaroid', tilt: -3 },
+    Toronto: { greet: 'Hello from Toronto!', motifs: ['🍁', '🏒', '🗼', '🦝', '🍩'], layout: 'print', tilt: -1.5 },
+    'New York': { greet: 'Hello from New York!', motifs: ['🗽', '🚕', '🍕', '🌆', '🥨', '🎭'], layout: 'print', tilt: 2.5 },
+    'Montréal': { greet: 'Bonjour from Montréal!', motifs: ['🥯', '🏒', '❄️', '⛪', '🍁', '🥞'], layout: 'polaroid', tilt: 3 },
+    Brisbane: { greet: "G'day from Brisbane!", motifs: ['🐨', '🌞', '🌴', '🦘', '🌉'], layout: 'print', tilt: 1.5 },
+    Cairns: { greet: "G'day from Cairns!", motifs: ['🐠', '🐢', '🌴', '🐊', '🤿', '🌊'], layout: 'print', tilt: -2 },
+    Townsville: { greet: "G'day from Townsville!", motifs: ['🏡', '🌞', '🐚', '🌴'], layout: 'print', tilt: -1 },
+    Home: { greet: 'Hello from home!', motifs: ['🏡', '🧳', '🌏', '🎒'], layout: 'print', tilt: 1 },
+    Air: { greet: 'Hello from the sky!', motifs: ['✈️', '☁️', '🌍', '🛫'], layout: 'polaroid', tilt: -3 },
   };
-  const DEFAULT_LOOK = { greet: 'Hello from our adventure!', motifs: ['🌏', '🧳', '📸', '⭐'], layout: 'print' };
+  const DEFAULT_LOOK = { greet: 'Hello from our adventure!', motifs: ['🌏', '🧳', '📸', '⭐'], layout: 'print', tilt: -1.5 };
   const lookOf = (city) => LOOKS[city] || (city === 'Montreal' ? LOOKS['Montréal'] : null) || DEFAULT_LOOK;
 
   const firstLine = (po) => (po.text || '').split('\n')[0].slice(0, 60) || (po.media && po.media.length ? 'A picture from our adventure' : 'Thinking of you');
@@ -66,17 +68,6 @@ window.Postcard = (() => {
   function drawCover(g, img, x, y, w, h) {                             // the picture cover-fit into a box, clipped
     const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height, s = Math.max(w / iw, h / ih), dw = iw * s, dh = ih * s;
     g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip(); g.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh); g.restore();
-  }
-  function drawHero(g, img, col, x, y, w, h) {                         // the whole picture, never cropped, over a soft blurred copy of itself (3 Nov 2026: cover-fit cut a landscape photo to its middle third)
-    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
-    g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip();
-    g.fillStyle = col; g.fillRect(x, y, w, h);
-    if ('filter' in g) { g.filter = 'blur(30px) saturate(1.15)'; drawCover(g, img, x - 60, y - 60, w + 120, h + 120); g.filter = 'none'; g.fillStyle = 'rgba(0,0,0,0.2)'; g.fillRect(x, y, w, h); }
-    else { g.globalAlpha = 0.3; drawCover(g, img, x, y, w, h); g.globalAlpha = 1; }   // older Safari: a faint copy over the city colour
-    const pad = 44, s = Math.min((w - 2 * pad) / iw, (h - 2 * pad) / ih), dw = Math.round(iw * s), dh = Math.round(ih * s), dx = Math.round(x + (w - dw) / 2), dy = Math.round(y + (h - dh) / 2);
-    g.shadowColor = 'rgba(0,0,0,0.35)'; g.shadowBlur = 30; g.shadowOffsetY = 12; g.fillStyle = '#fff'; g.fillRect(dx - 12, dy - 12, dw + 24, dh + 24); g.shadowColor = 'transparent';
-    g.drawImage(img, dx, dy, dw, dh);
-    g.restore();
   }
   function drawMotifs(g, look, seed, region) {                         // faint motifs scattered over the paper (never over the picture)
     const rnd = seeded(seed), n = Math.round(region.w * region.h / 150000);
@@ -133,25 +124,22 @@ window.Postcard = (() => {
     g.fillStyle = PAPER; g.fillRect(0, 0, W, H);                                       // the paper
     const seed = `${city}|${po.id}`, layout = img ? look.layout : 'words', stamp = 250;
     let box;                                                                           // where the message goes
-    if (layout === 'hero') {                                                           // the left of the card is the picture: whole, on a blurred wash of itself
-      drawMotifs(g, look, seed, { x: 1440, y: 0, w: W - 1440, h: H });
-      drawHero(g, img, col, 0, 0, 1440, H);
-      g.fillStyle = col; g.fillRect(1440, 0, 22, H);                                   // a city-colour spine between picture and words
-      box = { x: 1540, y: 430, w: W - 1540 - 90, h: H - 430 - 90 };
-    } else if (layout === 'print') {                                                   // a big white-framed print, slightly tilted
+    const tilt = (look.tilt == null ? -1.5 : look.tilt) * Math.PI / 180;               // each city sticks its picture on at its own angle
+    if (layout === 'print') {                                                          // a white-framed print the shape of the photo, whole, slightly tilted (3 Nov 2026: no crop)
       drawMotifs(g, look, seed, { x: 0, y: 0, w: W, h: H });
       g.fillStyle = col; g.fillRect(0, 0, W, 40);                                      // the city band
-      const bx = 100, by = 120, bw = 1340, bh = 1370, bd = 30;
-      g.save(); g.translate(bx + bw / 2, by + bh / 2); g.rotate(-1.5 * Math.PI / 180);
+      const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height, bd = 30, maxW = 1340 - 2 * bd, maxH = 1370 - 2 * bd;
+      const s = Math.min(maxW / iw, maxH / ih), dw = Math.round(iw * s), dh = Math.round(ih * s), bw = dw + 2 * bd, bh = dh + 2 * bd;
+      g.save(); g.translate(100 + 1340 / 2, 120 + 1370 / 2); g.rotate(tilt);
       g.shadowColor = 'rgba(0,0,0,0.3)'; g.shadowBlur = 40; g.shadowOffsetY = 18; g.fillStyle = '#fff'; g.fillRect(-bw / 2, -bh / 2, bw, bh); g.shadowColor = 'transparent';
-      drawCover(g, img, -bw / 2 + bd, -bh / 2 + bd, bw - 2 * bd, bh - 2 * bd);
+      g.drawImage(img, -bw / 2 + bd, -bh / 2 + bd, dw, dh);
       g.restore();
       box = { x: 1540, y: 440, w: W - 1540 - 90, h: H - 440 - 90 };
     } else if (layout === 'polaroid') {                                                // a square print with the greeting on its white strip
       drawMotifs(g, look, seed, { x: 0, y: 0, w: W, h: H });
       g.fillStyle = col; g.fillRect(0, 0, W, 40);
       const bw = 1300, bh = 1440, bd = 40, strip = 160, bx = 110, by = 80;
-      g.save(); g.translate(bx + bw / 2, by + bh / 2); g.rotate(-3 * Math.PI / 180);
+      g.save(); g.translate(bx + bw / 2, by + bh / 2); g.rotate(tilt);
       g.shadowColor = 'rgba(0,0,0,0.3)'; g.shadowBlur = 40; g.shadowOffsetY = 18; g.fillStyle = '#fff'; g.fillRect(-bw / 2, -bh / 2, bw, bh); g.shadowColor = 'transparent';
       drawCover(g, img, -bw / 2 + bd, -bh / 2 + bd, bw - 2 * bd, bh - 2 * bd - strip);
       g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `italic bold 64px ${FONT}`; g.fillStyle = col; g.fillText(look.greet, 0, bh / 2 - strip / 2 - 10);

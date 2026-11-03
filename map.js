@@ -73,6 +73,9 @@ function inBbox(b, lon, lat) { return lon >= b[0] && lon <= b[2] && lat >= b[1] 
 function detailPacks() { return (S.manifest ? S.manifest.packs : []).filter((p) => !p.always); }
 function overviewFor(lon) { const ps = (S.manifest ? S.manifest.packs : []).filter((p) => p.always); return ps.find((p) => inBbox(p.bbox, lon, (p.bbox[1] + p.bbox[3]) / 2)) || ps.find((p) => lon > 100 ? p.name.endsWith('jp') : p.name.endsWith('na')) || ps[0] || null; }
 function packForToday(today) { return detailPacks().find((p) => p.dates && p.dates.length === 2 && p.dates[0] <= today && today <= p.dates[1] && !p.name.includes('corridor') && !p.name.includes('narita') && !p.name.includes('sea-to-sky')) || null; }
+function firstStop() {                            // the first city pack of the trip by date (3 Nov 2026: before the trip the map opens here on purpose; home has no tiles)
+  return detailPacks().filter((p) => p.dates && p.dates.length === 2 && !p.name.includes('corridor') && !p.name.includes('narita') && !p.name.includes('sea-to-sky')).sort((a, b) => a.dates[0].localeCompare(b.dates[0]))[0] || detailPacks()[0] || null;
+}
 function packAt(lon, lat) { const cands = detailPacks().filter((p) => inBbox(p.bbox, lon, lat)); cands.sort((a, b) => b.maxzoom - a.maxzoom); return cands[0] || null; }
 
 /* ------------------------------------------------------------------ style assembly */
@@ -203,6 +206,7 @@ function startGps() {
   S.watchId = navigator.geolocation.watchPosition((pos) => {
     const { latitude: lat, longitude: lon, accuracy } = pos.coords;
     S.me = { lat, lon, accuracy };
+    if (S.centreWanted && S.map) { S.centreWanted = false; S.map.easeTo({ center: [lon, lat], zoom: Math.max(S.map.getZoom(), 15) }); }   // the tap on 📍 waits for this first fix (3 Nov 2026)
     if (!S.map || !S.map.getSource('me')) return;
     S.map.getSource('me').setData({ type: 'FeatureCollection', features: [
       { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: {} },
@@ -222,8 +226,9 @@ function centreOnMe() {
     const ok = confirm('The map can show a blue dot where you are. Location is used only on this screen, never stored or sent. Allow?');
     if (!ok) return; S.gpsExplained = true; localStorage.setItem('gpsExplained', '1');
   }
+  S.centreWanted = true;                           // 3 Nov 2026: the first tap used to start the GPS and stop there; now the first fix centres the map
   startGps();
-  if (S.me && S.map) S.map.easeTo({ center: [S.me.lon, S.me.lat], zoom: Math.max(S.map.getZoom(), 15) });
+  if (S.me && S.map) { S.centreWanted = false; S.map.easeTo({ center: [S.me.lon, S.me.lat], zoom: Math.max(S.map.getZoom(), 15) }); }
 }
 
 /* ------------------------------------------------------------------ offline packs panel */
@@ -263,7 +268,8 @@ async function getPack(name) {
 }
 function renderPackBar() {
   const el = S.container.querySelector('#map-packbar'); if (!el) return;
-  el.textContent = S.activePack ? `${S.activePack.title} · z${S.activePack.maxzoom}` : (S.overview ? 'Overview only here' : 'No packs');
+  const pre = S.preTrip && S.activePack && S.activePack.name === S.firstStopName ? ' · the first stop (home has no map tiles)' : '';
+  el.textContent = S.activePack ? `${S.activePack.title} · z${S.activePack.maxzoom}${pre}` : (S.overview ? 'Overview only here' : 'No packs');
 }
 
 /* ------------------------------------------------------------------ public API */
@@ -272,7 +278,9 @@ window.DossierMap = {
     S.container = opts.container; S.family = opts.family; S.theme = opts.theme === 'dark' ? 'dark' : 'light';
     S.today = opts.today; S.onTaxi = opts.onTaxi || null;
     if (!S.manifest) { try { S.manifest = await (await fetch('tiles/manifest.json')).json(); } catch (e) { S.manifest = null; } }
-    S.activePack = S.activePack || packForToday(S.today) || (S.manifest ? detailPacks()[0] : null);
+    const first = firstStop();
+    S.firstStopName = first ? first.name : null; S.preTrip = !!(first && !packForToday(S.today) && S.today < first.dates[0]);
+    S.activePack = S.activePack || packForToday(S.today) || first;
     S.overview = S.activePack ? overviewFor((S.activePack.bbox[0] + S.activePack.bbox[2]) / 2) : overviewFor(139);
     S.container.querySelector('#map-filter').onclick = (e) => { const b = e.target.closest('[data-filter]'); if (!b) return; S.filter = b.dataset.filter; S.container.querySelectorAll('#map-filter .pill').forEach((p) => p.classList.toggle('active', p === b)); refreshOverlay(); };
     S.container.querySelector('#map-me').onclick = centreOnMe;
@@ -290,4 +298,5 @@ window.DossierMap = {
   },
   focusPlace(id) { const f = ((S.family.overlay || {}).features || []).find((x) => x.properties.id === id); if (f) { const [lon, lat] = f.geometry.coordinates; this.focus(lat, lon); openCard(f); } },
   hasPacks() { return !!(S.manifest && S.manifest.packs.length); },
+  get map() { return S.map; },                     // tests
 };

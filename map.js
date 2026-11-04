@@ -29,7 +29,13 @@ async function downloadPack(pack, onProgress) {
   const url = pack.file;
   const resp = await fetch(url, { cache: 'no-store' });
   if (!resp.ok) throw new Error('HTTP ' + resp.status);
-  const total = +resp.headers.get('content-length') || pack.size || 0;
+  /* 4 Nov 2026 (Andy: "the percentage runs up to 100 but then it says online only"): GitHub Pages gzips a pack when the phone
+     asks for gzip, so content-length is the wire size (a few hundred bytes more than the file) and the decoded bytes never
+     matched it; every finished download was thrown away as "incomplete". The manifest's size is the truth; content-length
+     only stands in when the manifest has none and the body is not encoded. */
+  const expected = pack.size || 0, encoded = !!resp.headers.get('content-encoding');
+  const total = expected || (encoded ? 0 : +resp.headers.get('content-length') || 0);
+  const check = async (size) => { if (expected && size !== expected) { await deletePack(pack.name); throw new Error(`incomplete (${fmtMB(size)} of ${fmtMB(expected)}), try again`); } };
   let got = 0;
   const counted = new TransformStream({ transform(chunk, ctl) { got += chunk.byteLength; if (onProgress) onProgress(got, total); ctl.enqueue(chunk); } });
   const stream = resp.body.pipeThrough(counted);
@@ -40,12 +46,12 @@ async function downloadPack(pack, onProgress) {
     await stream.pipeTo(w);
     S.storageKind = 'OPFS';
     const f = await h.getFile();
-    if (total && f.size !== total) { await deletePack(pack.name); throw new Error(`incomplete (${fmtMB(f.size)} of ${fmtMB(total)}), try again`); }
+    await check(f.size);
   } else {
     const c = await caches.open(TILE_CACHE);
     await c.put('tiles/' + pack.name + '.pmtiles', new Response(stream, { headers: { 'content-type': 'application/octet-stream' } }));
     S.storageKind = 'Cache Storage';
-    if (total && got !== total) { await deletePack(pack.name); throw new Error(`incomplete (${fmtMB(got)} of ${fmtMB(total)}), try again`); }
+    await check(got);
   }
 }
 async function deletePack(name) {
@@ -263,7 +269,7 @@ async function getPack(name) {
     S.loadedSources.delete(localKey(name));
     S.lastError = null;
     if (S.activePack && S.activePack.name === name || S.overview && S.overview.name === name) { S.map && S.map.setStyle(await buildStyle(S.theme), { diff: false }); renderPackBar(); }
-  } catch (e) { if (row) row.textContent = 'failed: ' + (e.message || e); }
+  } catch (e) { S.lastError = `${p.title} download failed: ${e.message || e}`; }   // renderPacks shows it under the table (the row's own text is redrawn at once)
   renderPacks();
 }
 function renderPackBar() {

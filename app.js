@@ -54,7 +54,14 @@ const settings = {
   get autoFamily() { return localStorage.getItem('autoFamily') === '1'; }, set autoFamily(v) { localStorage.setItem('autoFamily', v ? '1' : '0'); },
   get bigText() { return localStorage.getItem('bigText') === '1'; }, set bigText(v) { localStorage.setItem('bigText', v ? '1' : '0'); applyBigText(); },
   get sound() { return FX.soundOn(); }, set sound(v) { FX.setSound(!!v); if (v) FX.sound('yes'); },   // 3 Nov 2026: the few synthesised sound effects (fx.js)
+  get lite() { return isLite(); }, set lite(v) { localStorage.setItem('lite', v ? '1' : '0'); location.reload(); },   // 6 Nov 2026: light mode is decided at load (compat.js); the switch pins it for this device
 };
+/* Light mode and what an old engine cannot run (6 Nov 2026, Drew's kids' tablet: Chrome 75, 1 GB). The map library is
+   written in newer JavaScript than Chrome 79 can read, so on such an engine map.js and globe.js never load; and a 1 GB
+   tablet should not try a WebGL globe. Wherever the Map or the globe is offered, these decide. */
+const isLite = () => document.documentElement.classList.contains('lite');
+const hasMap = () => !!window.DossierMap && !isLite();
+const hasGlobe = () => !!window.Globe && !isLite();
 
 /* ------------------------------------------------------------------ tiny DOM helpers */
 const $ = (sel) => document.querySelector(sel);
@@ -171,7 +178,7 @@ function show(screen, fromHistory) {
   if (screen === 'where' && window.Globe) Globe.enter(currentContext(), S.family);
   if (window.DossierMap) window.DossierMap.setVisible(screen === 'map');
 }
-function focusOnMap(placeId) { show('map'); const go = () => window.DossierMap && window.DossierMap.focusPlace(placeId); S.mapMounted ? setTimeout(go, 400) : setTimeout(go, 1500); }
+function focusOnMap(placeId) { if (!hasMap()) return; show('map'); const go = () => window.DossierMap && window.DossierMap.focusPlace(placeId); S.mapMounted ? setTimeout(go, 400) : setTimeout(go, 1500); }
 function openModal(html) { Nav.pushModal(); $('#modal-inner').innerHTML = `<button class="btn close" id="modal-close">Close</button>${html}`; $('#modal').classList.remove('hidden'); $('#modal-close').onclick = closeModal; }
 function closeModal() { $('#modal').classList.add('hidden'); $('#modal-inner').innerHTML = ''; }
 function applyTheme() { const t = settings.theme; if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t); }
@@ -323,8 +330,11 @@ ui.fpin.onsubmit = async (e) => {
 
 function applyRoleChrome() {                         // 2 Nov 2026: the chrome follows the device role (Grandma and Grandpa's phone hides what it cannot use)
   document.documentElement.dataset.role = Quests.role() || 'none';
+  document.documentElement.dataset.nomap = hasMap() ? '0' : '1';       // 6 Nov 2026: the nav's Map and the globe entries go where they cannot run
+  document.documentElement.dataset.noglobe = hasGlobe() ? '0' : '1';
   const ed = $('#top-edition'); if (ed) ed.textContent = Quests.isGrandDevice() ? ' · Grandparents' : ' · Family';
 }
+window.addEventListener('load', () => { if (S.family) { applyRoleChrome(); if (S.screen === 'home') renderHome(); } });   // the map modules finish loading after app.js; a quick unlock must not hide them by mistake
 async function enterApp() {
   const sy = (S.family.trip || {}).sync || {};
   await Media.init(sy.media); delete sy.media;       // the raw media key leaves the plaintext family object at once
@@ -406,7 +416,7 @@ function renderGrandHome() {
   }
   html += installStrip();
   html += `<div class="tiles">`;
-  html += `<button class="tile ht wide t1" data-go="where"><span class="ico">🌏</span><span class="tt">Where are they?</span><span class="ts">${esc(ctx.before ? 'The whole route on the globe' : whereLine(ctx, ctx.inAir ? 'In the air right now' : 'Spin the globe to ' + ctx.city))}</span></button>`;
+  if (hasGlobe()) html += `<button class="tile ht wide t1" data-go="where"><span class="ico">🌏</span><span class="tt">Where are they?</span><span class="ts">${esc(ctx.before ? 'The whole route on the globe' : whereLine(ctx, ctx.inAir ? 'In the air right now' : 'Spin the globe to ' + ctx.city))}</span></button>`;
   html += Journal.storiesTileHtml(ctx);
   if (!ctx.before && ctx.stay) html += `<div class="tile wide t3"><span class="ico">🛏️</span><span class="tt">Tonight</span><span class="ts">${esc(ctx.stay.property || '')}${ctx.stay.city ? ', ' + esc(ctx.stay.city) : ''}</span></div>`;
   if (nm) html += `<div class="tile wide t2"><span class="ico">${/train/i.test(nm.mode || '') ? '🚆' : /coach|bus/i.test(nm.mode || '') ? '🚌' : '✈️'}</span><span class="tt">Next move</span><span class="ts">${esc(nm.frm || '')} → ${esc(nm.to || '')} · ${esc(fmtDate(nm.date))}${nm.depart ? ' · ' + esc(nm.depart) : ''}</span></div>`;
@@ -460,7 +470,7 @@ function renderHome() {
   quick.push(`<button class="tile ht sm t5" data-call="1"><span class="ico">📞</span><span class="tt">Call</span></button>`);
   quick.push(`<button class="tile ht sm t6" data-kid="1"><span class="ico">🙋</span><span class="tt">I'm lost</span></button>`);
   html += `<div class="tiles quick${quick.length === 2 ? ' two' : ''}">${quick.join('')}</div>`;
-  html += `<div class="tiles">${Journal.storiesTileHtml(ctx)}<button class="tile ht wide t2" data-go="where"><span class="ico">🌏</span><span class="tt">Where are we</span><span class="ts">${esc(ctx.before ? "The globe, the route and today's dot" : whereLine(ctx, "The globe, the route and today's dot"))}</span></button></div>`;   // back on Home (Andy, 3 Nov 2026)
+  html += `<div class="tiles">${Journal.storiesTileHtml(ctx)}${hasGlobe() ? `<button class="tile ht wide t2" data-go="where"><span class="ico">🌏</span><span class="tt">Where are we</span><span class="ts">${esc(ctx.before ? "The globe, the route and today's dot" : whereLine(ctx, "The globe, the route and today's dot"))}</span></button>` : ''}</div>`;   // back on Home (Andy, 3 Nov 2026); not where the globe cannot run
   if (S.preview) html += `<p class="tiny muted">Previewing ${esc(S.preview)} · clear it in Settings</p>`;
   const el = $('#screen-home'); el.innerHTML = html;
   const ig = $('#install-go'); if (ig) ig.onclick = promptInstall;
@@ -484,7 +494,7 @@ function renderBook() {                              // 3 Nov 2026: the referenc
   const items = [['days', '📅', 'Days', 'The plan, day by day'], ['moves', '✈️', 'Moves', 'Flights, trains, buses, taxis'], ['stays', '🛏️', 'Stays', 'Every bed, check-in times'],
     ['taxi', '🚕', 'Taxi cards', 'Japanese and French, phrases'], ['protocols', '📋', 'Protocols', 'Lost kid, PACE, phone stolen'], ['gates', '✅', 'Before we go', "Mum and Dad's to-do list"],
     ['where', '🌏', 'Where are we', 'The globe and the route'], ['vault', '🔒', 'Vault', 'PINs and document numbers']];
-  $('#screen-book').innerHTML = `<h1 class="h1">📖 Book</h1><div class="booklist">` + items.filter((i) => !(i[0] === 'vault' && settings.readerMode)).map((i, k) => `<button class="bkrow c${k % 8}" data-go="${i[0]}"><span class="ico">${i[1]}</span><span class="bt"><span class="tt">${esc(i[2])}</span><span class="ts">${esc(i[3])}</span></span><span class="chev">›</span></button>`).join('') + `</div>`;
+  $('#screen-book').innerHTML = `<h1 class="h1">📖 Book</h1><div class="booklist">` + items.filter((i) => !(i[0] === 'vault' && settings.readerMode) && !(i[0] === 'where' && !hasGlobe())).map((i, k) => `<button class="bkrow c${k % 8}" data-go="${i[0]}"><span class="ico">${i[1]}</span><span class="bt"><span class="tt">${esc(i[2])}</span><span class="ts">${esc(i[3])}</span></span><span class="chev">›</span></button>`).join('') + `</div>`;
   wireGo($('#screen-book'));
 }
 function renderGates() {
@@ -877,6 +887,7 @@ function renderSettings() {
     ${grand && !setup ? '' : `<div class="card"><div class="h3">This device</div>
       ${grand ? '' : switchRow('readerMode', 'Reader mode: hide the Vault (for the iPad)')}
       ${switchRow('autoFamily', 'Open the family view without a PIN on this device')}
+      ${switchRow('lite', 'Light mode: no animations, globe or map (older or small tablets)')}
       <button class="btn block" id="opt-forget">Forget this device (wipe stored keys, PINs and quest scores)</button></div>`}
     <div class="card"><div class="h3">Build</div><div>${esc(VERSION)} · built ${esc(BUILT)}</div><button class="btn block" id="opt-update">Check for a newer build</button><div class="small muted" id="update-msg"></div></div>
     <div class="card small muted">Storage: <span id="storage-msg">…</span></div>`;
@@ -936,6 +947,7 @@ function renderSettings() {
         `share: ${window.Postcard && Postcard.diag ? Postcard.diag() : '-'}`,
         `sound: ${(() => { const s = FX.sfxState(); return `${s.on ? 'on' : 'off'} · audio ${s.ctx} · ${s.played} notes played`; })()}`,
         `install: ${isInstalled() ? 'from the Home screen' : 'browser tab'} · offer ${Install.evt ? 'available' : 'none'} · storage ${S.persisted === true ? 'kept' : S.persisted === false ? 'may be cleared by the phone' : '?'}`,
+        `engine: ${window.Compat && Compat.old ? 'old (layout fallbacks on)' : 'modern'} · flex gap ${window.Compat && Compat.noGap ? 'no' : 'yes'} · light mode ${isLite() ? 'on' : 'off'}${window.Compat && Compat.forced ? ' (set here)' : ' (auto)'} · map ${window.DossierMap ? 'yes' : 'no'} · globe ${window.Globe ? 'yes' : 'no'}`,
         log.length ? 'errors:\n' + log.join('\n') : 'errors: none',
       ].join('\n');
     });

@@ -10,7 +10,8 @@
 window.FX = (() => {
   /* Settings → Animations: 'on' forces the full show, 'off' keeps every screen still; otherwise the phone's own
      reduce-motion setting decides. The CSS side reads the same choice from html[data-fx]. */
-  const reduce = () => { const f = localStorage.getItem('fx'); if (f === 'on') return false; if (f === 'off') return true; return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); };
+  const reduce = () => { if (document.documentElement.classList.contains('lite')) return true;   /* light mode (compat.js, 6 Nov 2026): an old or 1 GB tablet gets no particles or motion, whatever the setting */
+    const f = localStorage.getItem('fx'); if (f === 'on') return false; if (f === 'off') return true; return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); };
   function applyPref() { const f = localStorage.getItem('fx'); if (f === 'on' || f === 'off') document.documentElement.setAttribute('data-fx', f); else document.documentElement.removeAttribute('data-fx'); }
   applyPref();
   const PAL = {

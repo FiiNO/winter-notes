@@ -196,9 +196,8 @@ function openCard(f) {
     ${p.dates ? `<div class="small muted">${esc(p.dates)}</div>` : ''}${p.notes ? `<div class="tiny muted">${esc(p.notes)}</div>` : ''}
     <div class="row">
       ${p.taxi_card_id ? `<button class="btn" data-taxi="${esc(p.taxi_card_id)}">Taxi card</button>` : ''}
-      ${btn(`om://map?v=1&ll=${lat},${lon}&n=${encodeURIComponent(name)}`, 'Organic Maps')}
-      ${btn(`https://www.google.com/maps/search/?api=1&query=${lat},${lon}`, 'Google Maps')}
-      ${btn(`https://earth.google.com/web/search/${lat},${lon}`, 'Google Earth')}
+      ${typeof mapButtons === 'function' ? mapButtons(lat, lon, name)   /* app.js: Google Maps first while online, Organic Maps when not (6 Nov 2026) */
+        : btn(`https://www.google.com/maps/search/?api=1&query=${lat},${lon}`, 'Google Maps') + btn(`om://map?v=1&ll=${lat},${lon}&n=${encodeURIComponent(name)}`, 'Organic Maps')}
       ${p.phone ? btn('tel:' + String(p.phone).replace(/[^\d+]/g, ''), 'Call') : ''}
     </div>`;
   card.classList.remove('hidden');

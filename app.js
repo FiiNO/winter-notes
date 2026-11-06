@@ -80,15 +80,28 @@ function kv(rows) {
   return '<div class="kv">' + rows.filter((r) => r[1] !== undefined && r[1] !== null && String(r[1]) !== '').map(([k, v, raw]) =>
     `<div class="k">${esc(k)}</div><div class="v">${raw ? v : tel(v)}</div>`).join('') + '</div>';
 }
-/* Hand-off links, the same three everywhere (Andy, 10 Oct): Organic Maps for offline directions and search (every device
-   carries it with the regions downloaded), Google Maps for live transit, Google Earth for a look at the building.
-   Apple Maps and the Android geo: intent were dropped. Google Maps and Google Earth need data. */
+/* Hand-off links, the same three everywhere. 6 Nov 2026 (Andy: "Google Maps to be the default, and then Organic Maps as a
+   fall back if not online"): the main button is Google Maps while the phone is online and Organic Maps when it is not
+   (every device carries Organic Maps with its regions downloaded). The other one stays beside it, because a phone on
+   Wi-Fi with no internet still says it is online. The buttons follow the connection as it changes (syncMapButtons), so
+   the choice is right at the tap. Google Earth stays for a look at the building; it needs data. Apple Maps and the
+   Android geo: intent were dropped on 10 Oct. */
+const MAP_GO = ['🗺️ Google Maps', '🗺️ Organic Maps (offline)'], MAP_ALT = ['Organic Maps', 'Google Maps'];
 function mapButtons(lat, lon, label) {
   const q = `${(+lat).toFixed(6)},${(+lon).toFixed(6)}`, n = encodeURIComponent(label || 'Here');
-  return `<a class="btn" href="om://map?v=1&ll=${q}&n=${n}">Organic Maps</a>` +
-    `<a class="btn" href="https://www.google.com/maps/search/?api=1&query=${q}" target="_blank" rel="noopener">Google Maps</a>` +
+  const gm = `https://www.google.com/maps/search/?api=1&query=${q}`, om = `om://map?v=1&ll=${q}&n=${n}`, on = navigator.onLine !== false, blank = ' target="_blank" rel="noopener"';
+  return `<a class="btn primary mapgo" href="${on ? gm : om}" data-gm="${gm}" data-om="${om}"${on ? blank : ''}>${MAP_GO[on ? 0 : 1]}</a>` +
+    `<a class="btn mapalt" href="${on ? om : gm}" data-gm="${gm}" data-om="${om}"${on ? '' : blank}>${MAP_ALT[on ? 0 : 1]}</a>` +
     `<a class="btn" href="https://earth.google.com/web/search/${q}" target="_blank" rel="noopener">Google Earth</a>`;
 }
+function syncMapButtons() {                          // the connection changed: every map button on the page swaps with it
+  const on = navigator.onLine !== false;
+  const set = (a, web, text) => { a.href = web ? a.dataset.gm : a.dataset.om; a.textContent = text; if (web) { a.target = '_blank'; a.rel = 'noopener'; } else { a.removeAttribute('target'); a.removeAttribute('rel'); } };
+  document.querySelectorAll('a.mapgo').forEach((a) => set(a, on, MAP_GO[on ? 0 : 1]));
+  document.querySelectorAll('a.mapalt').forEach((a) => set(a, !on, MAP_ALT[on ? 0 : 1]));
+}
+window.addEventListener('online', syncMapButtons);
+window.addEventListener('offline', syncMapButtons);
 function mapsLink(lat, lon, label) {
   if (lat == null || lat === '') return '';
   return `<div class="row">${mapButtons(lat, lon, label)}</div>`;

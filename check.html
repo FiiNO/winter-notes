@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>World Adventure: device check</title>
+<style>
+body { font-family: sans-serif; margin: 0; padding: 14px; background: #10131f; color: #f1f1f6; font-size: 17px; line-height: 1.4; }
+h1 { font-size: 22px; margin: 0 0 6px; }
+#verdict { padding: 12px; border-radius: 12px; font-weight: bold; margin: 10px 0; background: #333a50; }
+#verdict.ok { background: #1f6f43; }
+#verdict.mid { background: #8a5a00; }
+#verdict.bad { background: #a11d2b; }
+table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+td { padding: 5px 4px; border-top: 1px solid #333a50; vertical-align: top; }
+.y { color: #7be39a; font-weight: bold; }
+.n { color: #ff8a8a; font-weight: bold; }
+.w { color: #ffd166; font-weight: bold; }
+.small { font-size: 13px; color: #b9bdd0; word-break: break-all; }
+a.btn { display: inline-block; margin-top: 12px; padding: 12px 18px; border-radius: 999px; background: #2a9d8f; color: #fff; text-decoration: none; font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>World Adventure: device check</h1>
+<div class="small">This page shows what this device's browser can do. Nothing is sent anywhere. Take a photo of it for Andy.</div>
+<div id="verdict">Checking…</div>
+<table id="info"></table>
+<table id="tests"></table>
+<div class="small" id="ua"></div>
+<a class="btn" href="./">Open the app</a>
+<script>
+/* Plain old JavaScript on purpose (no arrow functions, no let or const, no template strings): this page has to run on a
+   browser too old for the app, in order to say so. 6 Nov 2026, for a kids' tablet with a cut-down, older Android. It reads
+   only what the browser reports about itself and sends nothing. */
+(function () {
+  var ua = navigator.userAgent || '';
+  function $(id) { return document.getElementById(id); }
+  function row(tbl, a, b, cls) {
+    var tr = document.createElement('tr'), t1 = document.createElement('td'), t2 = document.createElement('td');
+    t1.appendChild(document.createTextNode(a)); t2.appendChild(document.createTextNode(b));
+    if (cls) t2.className = cls;
+    tr.appendChild(t1); tr.appendChild(t2); $(tbl).appendChild(tr);
+    return t2;
+  }
+  function m(re) { var x = ua.match(re); return x ? x[1] : ''; }
+  var android = m(/Android ([\d.]+)/), chrome = m(/Chrome\/(\d+)/), webview = /; wv\)/.test(ua);
+  row('info', 'Android', android || 'not Android');
+  row('info', 'Browser engine', chrome ? 'Chrome ' + chrome + (webview ? ' (inside another app)' : '') : 'unknown');
+  row('info', 'Memory', navigator.deviceMemory ? navigator.deviceMemory + ' GB (as reported)' : 'not reported');
+  row('info', 'Processor cores', String(navigator.hardwareConcurrency || '?'));
+  row('info', 'Screen', screen.width + ' x ' + screen.height + ' at ' + (window.devicePixelRatio || 1) + 'x, page ' + window.innerWidth + ' x ' + window.innerHeight);
+  $('ua').appendChild(document.createTextNode(ua));
+
+  var need = [], nice = [];
+  function test(name, level, fn) {
+    var ok = false;
+    try { ok = !!fn(); } catch (e) { ok = false; }
+    row('tests', name, ok ? 'yes' : (level === 'need' ? 'NO (the app needs it)' : 'no'), ok ? 'y' : (level === 'need' ? 'n' : 'w'));
+    if (!ok && level !== 'info') (level === 'need' ? need : nice).push(name);   /* 'info' rows are shown but do not change the verdict */
+    return ok;
+  }
+  function css(p, v) { return !!(window.CSS && CSS.supports && CSS.supports(p, v)); }
+
+  test('Modern JavaScript (async)', 'need', function () { return new Function('return (async function () {})')(); });
+  test('Newer JavaScript helpers', 'need', function () { return typeof Object.fromEntries === 'function' && typeof Array.prototype.flatMap === 'function'; });
+  test('Emoji-aware text matching', 'need', function () { return new RegExp('\\p{Extended_Pictographic}', 'u').test('😀'); });
+  test('Encryption (WebCrypto)', 'need', function () { return window.crypto && crypto.subtle && typeof crypto.subtle.deriveKey === 'function'; });
+  test('Storage (IndexedDB)', 'need', function () { return !!window.indexedDB; });
+  test('Network (fetch)', 'need', function () { return typeof fetch === 'function' && typeof Promise === 'function'; });
+  test('Dates in other time zones', 'need', function () { return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tokyo', hour: '2-digit' }).format(new Date()).length > 0; });
+  test('Pictures that load as you scroll', 'need', function () { return typeof IntersectionObserver === 'function'; });
+  test('Works offline (service worker)', 'nice', function () { return 'serviceWorker' in navigator && !!window.caches; });
+  test('Map and globe code (modules)', 'nice', function () { return 'noModule' in document.createElement('script'); });
+  test('Map and globe drawing (WebGL 2)', 'nice', function () { return !!document.createElement('canvas').getContext('webgl2'); });
+  test('Layout: inset', 'nice', function () { return css('inset', '0'); });
+  test('Layout: aspect-ratio', 'nice', function () { return css('aspect-ratio', '1 / 1'); });
+  test('Layout: min() and clamp()', 'nice', function () { return css('width', 'min(1px, 2px)'); });
+  test('Layout: :is() selectors', 'nice', function () { document.querySelector(':is(body)'); return true; });
+  test('Colours: color-mix', 'nice', function () { return css('color', 'color-mix(in srgb, red 50%, blue)'); });
+  test('Offline map storage', 'info', function () { return navigator.storage && typeof navigator.storage.getDirectory === 'function'; });
+  test('Share sheet', 'info', function () { return typeof navigator.share === 'function'; });
+
+  var v = $('verdict');
+  function verdict(extra) {
+    var text;
+    if (need.length) { v.className = 'bad'; text = 'This browser is too old for the app as it is built. Missing: ' + need.join(', ') + '.'; }
+    else if (nice.length) { v.className = 'mid'; text = 'The app should open, with some parts missing or plain: ' + nice.join(', ') + '.'; }
+    else { v.className = 'ok'; text = 'This browser can run the whole app.'; }
+    while (v.firstChild) v.removeChild(v.firstChild);
+    v.appendChild(document.createTextNode(text + (extra || '')));
+  }
+  verdict(' Timing the unlock step…');
+
+  /* how long the unlock's key work takes on this device: the same 600,000 rounds the app uses */
+  function untimed() { row('info', 'Unlock step takes', 'could not be timed', 'w'); verdict(''); }
+  try {
+    var t0 = Date.now(), enc = new TextEncoder();
+    crypto.subtle.importKey('raw', enc.encode('speed test'), 'PBKDF2', false, ['deriveBits']).then(function (k) {
+      return crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode('salt-salt-salt-16'), iterations: 600000 }, k, 256);
+    }).then(function () {
+      var s = (Date.now() - t0) / 1000;
+      row('info', 'Unlock step takes', s.toFixed(1) + ' seconds', s > 8 ? 'w' : 'y');
+      verdict(s > 8 ? ' Unlocking will take about ' + Math.round(s) + ' seconds each time.' : '');
+    }, untimed);
+  } catch (e) { untimed(); }
+})();
+</script>
+</body>
+</html>

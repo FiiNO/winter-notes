@@ -23,6 +23,31 @@ const POLICE_NUMBER = { CA: '911', US: '911', JP: '110', AU: '000' };
 
 const S = { family: null, vault: null, screen: 'home', vaultTimer: null, pendingPassphraseFor: null, preview: localStorage.getItem('previewDate') || null,
   setupOpen: false };                                 // Grandma and Grandpa's phone (3 Nov 2026): Settings → Set-up (role, PIN-less opening, forget) is open after the device PIN, until Settings is left
+/* ------------------------------------------------------------------ home-screen install (6 Nov 2026)
+   Grandma and Grandpa's Nokia C02 (Android 12 Go) would not add the app from Chrome's menu. Chrome tells a page when it
+   is willing to install it (beforeinstallprompt): the app keeps that offer and shows its own one-tap button on Home and
+   in Settings. Where no offer comes, Settings says what to do by hand, and names a mini browser inside another app for
+   what it is. Nothing here can force an install the phone refuses. */
+const Install = { evt: null, done: false };
+function isInstalled() { try { return !!navigator.standalone || matchMedia('(display-mode: standalone)').matches; } catch (e) { return false; } }
+function installRedraw() { if (!S.family) return; if (S.screen === 'home') renderHome(); if (S.screen === 'settings') renderSettings(); }
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); Install.evt = e; installRedraw(); });
+window.addEventListener('appinstalled', () => { Install.evt = null; Install.done = true; installRedraw(); });
+function installHelpHtml() {
+  const ua = navigator.userAgent || '', ios = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1), addr = location.host + location.pathname;
+  if (/; wv\)/.test(ua)) return `<p class="small">This is a mini browser inside another app, and it cannot add icons. Open the <b>Chrome</b> app and go to <b>${esc(addr)}</b>.</p>`;
+  if (ios) return `<p class="small">In <b>Safari</b>, tap the Share button, then <b>Add to Home Screen</b>.</p>`;
+  return `<p class="small">In <b>Chrome</b>, open the ⋮ menu and choose <b>Add to Home screen</b>, then <b>Add</b>. Use the Chrome app itself: a link opened from the Google app, WhatsApp or an email shows in a mini browser with no such choice.</p><p class="small muted">No such choice in Chrome? Tap ☆ in the same menu to bookmark it and open it from Chrome's bookmarks. The app works the same, only without its own icon.</p>`;
+}
+async function promptInstall() {
+  const e = Install.evt;
+  if (!e) { openModal(`<h2 class="h2">📲 Add to the Home screen</h2>${installHelpHtml()}`); return; }
+  Install.evt = null;
+  try { e.prompt(); const r = await e.userChoice; if (r && r.outcome === 'accepted') Install.done = true; } catch (err) { /* the browser withdrew the offer */ }
+  installRedraw();
+}
+function installStrip() { return !isInstalled() && !Install.done && Install.evt ? `<div class="photo-strip install-strip"><span>📲 Put World Adventure on the Home screen</span><button id="install-go">Add</button></div>` : ''; }
+
 const settings = {
   get theme() { return localStorage.getItem('theme') || 'auto'; }, set theme(v) { localStorage.setItem('theme', v); applyTheme(); },
   get readerMode() { return localStorage.getItem('readerMode') === '1'; }, set readerMode(v) { localStorage.setItem('readerMode', v ? '1' : '0'); },
@@ -297,6 +322,7 @@ async function enterApp() {
   renderAll();
   Quests.refreshTop();
   Journal.refreshBadge();
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then((ok) => { S.persisted = ok; }).catch(() => {});   // 6 Nov 2026: ask the phone to keep the keys and pictures (a low-storage phone may clear a site that has no icon)
   show('home');
   if (!Quests.role()) { openModal(Quests.roleCard()); Quests.wireRole($('#modal-inner')); }   // 2 Nov 2026: a fresh device says whose it is first
   else if (!Quests.isGrandDevice()) { Quests.checkNewBadges(currentContext()); setTimeout(() => Quests.checkLevelUp(), 2500); }   // badges earned by the date can tip a level too (3 Nov 2026); the show waits for the map and stories to settle
@@ -365,6 +391,7 @@ function renderGrandHome() {
   } else {
     html += `<div class="hero"><div class="hero-emoji">${Quests.CITY_EMOJI[city] || '📍'}</div><div class="hero-text"><div class="hero-kicker">Day ${dayN} of ${total} · ${esc(ctx.inAir ? 'In the air' : ctx.city)}${S.preview ? ' · preview' : ''}</div><div class="hero-date">${esc(fmtDate(ctx.date))}</div><div class="hero-sub">${esc(localTime(ctx.tz))} there · ${esc(localTime(TZ.Home))} at home</div></div></div>`;
   }
+  html += installStrip();
   html += `<div class="tiles">`;
   html += `<button class="tile ht wide t1" data-go="where"><span class="ico">🌏</span><span class="tt">Where are they?</span><span class="ts">${esc(ctx.before ? 'The whole route on the globe' : whereLine(ctx, ctx.inAir ? 'In the air right now' : 'Spin the globe to ' + ctx.city))}</span></button>`;
   html += Journal.storiesTileHtml(ctx);
@@ -373,6 +400,7 @@ function renderGrandHome() {
   html += `</div>`;
   html += `<p class="tiny muted">Everything here arrives from the family's phones when this one syncs. Built ${esc(BUILT)} · ${esc(VERSION)}</p>`;
   const el = $('#screen-home'); el.innerHTML = html;
+  const ig = $('#install-go'); if (ig) ig.onclick = promptInstall;
   wireGo(el);
 }
 function renderHome() {
@@ -390,6 +418,7 @@ function renderHome() {
     html += `<div class="hero"><div class="hero-emoji">${Quests.CITY_EMOJI[city] || '📍'}</div><div class="hero-text"><div class="hero-kicker">Day ${dayN} of ${total} · ${esc(ctx.inAir ? 'In the air' : ctx.city)}${S.preview ? ' · preview' : ''}</div><div class="hero-date">${esc(fmtDate(ctx.date))}</div><div class="hero-sub">${esc(localTime(ctx.tz))} here · ${esc(localTime(TZ.Home))} at home</div></div></div>`;
   }
   html += dayStrip(ctx);
+  html += installStrip();
   /* 3 Nov 2026 (Andy: "a lot of info… how could we tidy it up"): Home is right now only. Tonight, the next move and today's
      plan; a slim row of Taxi card / Call / I'm lost; Stories. Quests, Passport, Where, SOS and the build line live in the
      nav, the header and the Book. The morning photo is one line until it is done, then nothing. */
@@ -421,6 +450,7 @@ function renderHome() {
   html += `<div class="tiles">${Journal.storiesTileHtml(ctx)}<button class="tile ht wide t2" data-go="where"><span class="ico">🌏</span><span class="tt">Where are we</span><span class="ts">${esc(ctx.before ? "The globe, the route and today's dot" : whereLine(ctx, "The globe, the route and today's dot"))}</span></button></div>`;   // back on Home (Andy, 3 Nov 2026)
   if (S.preview) html += `<p class="tiny muted">Previewing ${esc(S.preview)} · clear it in Settings</p>`;
   const el = $('#screen-home'); el.innerHTML = html;
+  const ig = $('#install-go'); if (ig) ig.onclick = promptInstall;
   const pd = $('#photo-done'); if (pd) pd.onclick = () => { localStorage.setItem(photoKey, '1'); Quests.complete(Quests.state().active, 'photo', ctx.date); renderHome(); };
   const ps = $('#photo-snap'); if (ps) ps.onclick = () => Journal.addPhoto(Quests.state().active, ctx.date, 'morning', true).then((id) => { if (!id) return; localStorage.setItem(photoKey, '1'); if (Quests.isParentDevice()) Quests.complete(Quests.state().active, 'photo', ctx.date); renderHome(); });
   el.querySelectorAll('[data-day]').forEach((b) => b.onclick = () => openDay(b.dataset.day));
@@ -688,7 +718,7 @@ function renderMap() {
   const titles = { stays: 'Stays', moves: 'Airports, stations, pickups', venues: 'Venues', emergency: 'Hospitals, police, pharmacies, consulates, evacuation', rally: 'Rally points (proposed)' };
   let html = `<h1 class="h1">Map</h1>
     <div id="map-wrap"><div id="map"></div><div id="map-packbar">Loading map…</div>
-      <button class="btn primary" id="map-me" title="Centre on me">◉ Me</button>
+      <button class="btn primary" id="map-me" title="Centre on me">◉ Me</button><div id="map-gps-state"></div>
       <div id="map-outside" class="hidden">Outside the offline packs here. <a class="btn" href="#" target="_blank" rel="noopener">Open in Google Maps</a></div>
       <div id="map-card" class="hidden"></div></div>
     <div class="row" id="map-filter"><button class="pill" id="map-packs-toggle">Offline maps</button></div>
@@ -824,6 +854,7 @@ function renderSettings() {
   $('#screen-settings').innerHTML = `<h1 class="h1">⚙️ Settings</h1>
     <div class="card"><div class="h3">Theme</div><div class="row">${['auto', 'light', 'dark'].map((t) => `<button class="pill${settings.theme === t ? ' active' : ''}" data-theme="${t}">${t}</button>`).join('')}</div></div>
     <div class="card"><div class="h3">Text size</div>${switchRow('bigText', grand ? 'Big text' : 'Big text (for the kids and tired eyes)')}</div>
+    <div class="card"><div class="h3">Home screen</div>${isInstalled() ? '<div class="small">✓ Running from its own Home screen icon.</div>' : Install.done ? '<div class="small">✓ Added. Open it from the Home screen icon from now on.</div>' : Install.evt ? '<button class="btn primary block" id="opt-install">📲 Add World Adventure to the Home screen</button>' : installHelpHtml()}</div>
     ${grand ? '' : `<div class="card"><div class="h3">Confetti, animations and sounds</div><p class="small muted">Auto follows the phone's reduce-motion setting.</p><div class="row">${['auto', 'on', 'off'].map((t) => `<button class="pill${FX.pref() === t ? ' active' : ''}" data-fx="${t}">${t}</button>`).join('')}<button class="btn small-btn" id="opt-fx-demo">Show me a level-up</button></div>${switchRow('sound', 'Sound effects: ticks, badges and level-ups')}<p class="tiny muted">Sounds start after the first tap on the phone; the ring/silent switch still wins.</p></div>`}
     ${Quests.settingsCard()}
     <div class="card"><div class="h3">Photos and journal</div><div class="small" id="media-msg">…</div>${Media.canSaveOriginals() ? `<div class="small" id="orig-msg"></div>` : ''}<div class="row"><button class="btn" id="opt-media-dl">Download all pictures (Wi-Fi)</button>${Quests.isParentDevice() || Quests.isGrandDevice() ? `<button class="btn" id="opt-media-clear">Clear downloaded pictures here</button>` : ''}${Media.canSaveOriginals() ? `<button class="btn" id="opt-orig-save">Save originals to Photos</button><button class="btn" id="opt-orig-clear">Clear saved originals</button>` : ''}</div>${Media.origHint() ? `<p class="tiny muted">${esc(Media.origHint())}</p>` : ''}${Quests.isParentDevice() ? `<div class="row"><button class="btn danger" id="opt-stories-wipe">🗑️ Delete all stories and photos (everyone)</button></div>` : ''}<div class="tiny mono" id="diag" style="margin-top:8px;white-space:pre-wrap"></div><div class="row"><button class="btn" id="opt-errlog-clear">Clear error log</button></div><p class="tiny muted">Pictures and pages are encrypted on this device and in the cloud; only an unlocked device can open them, so the PIN and the phone's own lock are the gate.</p></div>
@@ -839,6 +870,7 @@ function renderSettings() {
   document.querySelectorAll('[data-theme]').forEach((b) => b.onclick = () => { settings.theme = b.dataset.theme; renderSettings(); if (window.DossierMap) window.DossierMap.setTheme(currentTheme()); });
   document.querySelectorAll('[data-fx]').forEach((b) => b.onclick = () => { FX.setPref(b.dataset.fx); const y = window.scrollY; renderSettings(); window.scrollTo(0, y); });
   const fd = $('#opt-fx-demo'); if (fd) fd.onclick = () => FX.demo();          // absent on Grandma and Grandpa's phone
+  const oi = $('#opt-install'); if (oi) oi.onclick = promptInstall;            // only while the browser is offering an install
   document.querySelectorAll('[data-switch]').forEach((b) => b.onclick = () => {
     const opt = b.dataset.switch; settings[opt] = !settings[opt];
     if (opt === 'readerMode') { renderBook(); if (settings.readerMode) lockVault(); }
@@ -890,6 +922,7 @@ function renderSettings() {
         `journal: ${Journal.diag ? Journal.diag() : '-'}`,
         `share: ${window.Postcard && Postcard.diag ? Postcard.diag() : '-'}`,
         `sound: ${(() => { const s = FX.sfxState(); return `${s.on ? 'on' : 'off'} · audio ${s.ctx} · ${s.played} notes played`; })()}`,
+        `install: ${isInstalled() ? 'from the Home screen' : 'browser tab'} · offer ${Install.evt ? 'available' : 'none'} · storage ${S.persisted === true ? 'kept' : S.persisted === false ? 'may be cleared by the phone' : '?'}`,
         log.length ? 'errors:\n' + log.join('\n') : 'errors: none',
       ].join('\n');
     });

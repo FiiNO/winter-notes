@@ -148,7 +148,7 @@ async function ensureMap() {
   S.map.on('click', 'places-dot', (e) => openCard(e.features[0]));
   S.map.on('mouseenter', 'places-dot', () => { S.map.getCanvas().style.cursor = 'pointer'; });
   S.map.on('moveend', onMoveEnd);
-  S.map.on('load', () => { S.ready = true; });
+  S.map.on('load', () => { S.ready = true; drawMe(); });
   // Tile or style fetch failures used to vanish into the console; show the last one on the pack bar and in the
   // Offline maps panel so a blank map on a phone can be reported with its reason.
   S.map.on('error', (e) => {
@@ -211,21 +211,34 @@ function startGps() {
   if (S.watchId != null || !navigator.geolocation) return;
   S.watchId = navigator.geolocation.watchPosition((pos) => {
     const { latitude: lat, longitude: lon, accuracy } = pos.coords;
-    S.me = { lat, lon, accuracy };
-    if (S.centreWanted && S.map) { S.centreWanted = false; S.map.easeTo({ center: [lon, lat], zoom: Math.max(S.map.getZoom(), 15) }); }   // the tap on 📍 waits for this first fix (3 Nov 2026)
-    if (!S.map || !S.map.getSource('me')) return;
-    S.map.getSource('me').setData({ type: 'FeatureCollection', features: [
-      { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: {} },
-      { type: 'Feature', geometry: circlePolygon(lon, lat, accuracy || 0), properties: {} }] });
-    const b = S.container.querySelector('#map-gps-state'); if (b) b.textContent = `±${Math.round(accuracy)} m`;
+    S.me = { lat, lon, accuracy }; S.meAt = Date.now();
+    const b = S.container.querySelector('#map-gps-state'); if (b) b.textContent = packAt(lon, lat) ? `You: ±${Math.round(accuracy)} m` : 'You are outside the offline maps · ◉ Me goes there';   // the element itself arrived 6 Nov 2026: the Map screen never had one
+    if (S.centreWanted && S.map) { S.centreWanted = false; S.autoCentre = false; S.map.easeTo({ center: [lon, lat], zoom: Math.max(S.map.getZoom(), 15) }); }   // the tap on ◉ Me waits for this first fix (3 Nov 2026)
+    else autoCentre();
+    drawMe();
   }, (err) => { const b = S.container.querySelector('#map-gps-state'); if (b) b.textContent = err.code === 1 ? 'location blocked' : 'no fix yet'; },
   { enableHighAccuracy: true, maximumAge: 5000, timeout: 60000 });
+}
+function drawMe() {                                // the blue dot and its accuracy ring, once the map has its source (a fix can beat the style; the map's load calls this again)
+  if (!S.me || !S.map || !S.map.getSource('me')) return;
+  const { lat, lon, accuracy } = S.me;
+  S.map.getSource('me').setData({ type: 'FeatureCollection', features: [
+    { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: {} },
+    { type: 'Feature', geometry: circlePolygon(lon, lat, accuracy || 0), properties: {} }] });
 }
 function stopGps() { if (S.watchId != null && navigator.geolocation) navigator.geolocation.clearWatch(S.watchId); S.watchId = null; }
 function circlePolygon(lon, lat, r) {
   const pts = []; const dLat = r / 111320, dLon = r / (111320 * Math.cos(lat * Math.PI / 180));
   for (let i = 0; i <= 48; i++) { const a = (i / 48) * 2 * Math.PI; pts.push([lon + dLon * Math.cos(a), lat + dLat * Math.sin(a)]); }
   return { type: 'Polygon', coordinates: [pts] };
+}
+/* 6 Nov 2026 (Andy: "when you open maps I want it to centre on me"): once per opening, on the first fresh fix, and only where
+   a trip map covers the spot. At home or in the air the map stays on the trip city (centring there opens a blank map); the
+   📍 button still goes to the dot anywhere. */
+function autoCentre() {
+  if (!S.autoCentre || !S.map || !S.me || !S.meAt || Date.now() - S.meAt > 15000) return;
+  S.autoCentre = false;
+  if (packAt(S.me.lon, S.me.lat)) window.DossierMap.focus(S.me.lat, S.me.lon, Math.max(S.map.getZoom(), 15));
 }
 function centreOnMe() {
   if (!S.gpsExplained) {
@@ -294,8 +307,18 @@ window.DossierMap = {
     await ensureMap();
     renderPackBar();
     setTimeout(() => S.map && S.map.resize(), 50);
+    autoCentre();                                    // a fix that arrived while the map was still being built
   },
-  setVisible(v) { S.visible = v; if (v) { if (S.map) setTimeout(() => S.map.resize(), 50); if (S.gpsExplained) startGps(); } else stopGps(); },
+  setVisible(v) {
+    S.visible = v;
+    if (!v) { stopGps(); return; }
+    if (S.map) setTimeout(() => S.map.resize(), 50);
+    if (!S.gpsExplained && !localStorage.getItem('gpsAsked')) {      // asked once, the first time the Map opens (6 Nov 2026); 📍 asks again if this was a no
+      localStorage.setItem('gpsAsked', '1');
+      if (confirm('Open the map centred on where you are? Location is used only on this screen, never stored or sent.')) { S.gpsExplained = true; localStorage.setItem('gpsExplained', '1'); }
+    }
+    if (S.gpsExplained) { S.autoCentre = true; startGps(); }         // each opening centres once on the first fresh fix, where a trip map covers it
+  },
   async setTheme(theme) { const t = theme === 'dark' ? 'dark' : 'light'; if (t === S.theme) return; S.theme = t; if (S.map) S.map.setStyle(await buildStyle(t), { diff: false }); },
   setVaultFeatures(features) { S.vaultFeatures = features || []; refreshOverlay(); },
   async focus(lat, lon, zoom = 15) {

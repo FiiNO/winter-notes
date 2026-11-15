@@ -158,21 +158,29 @@ window.Postcard = (() => {
     return { blob, missing: !!(pic && !img), pic: pic ? pic.id : null, layout };
   }
   function fileName(po) { return `Postcard_${Quests.label(po.p).replace(/[^\w]+/g, '')}_${po.d}.jpg`; }
+  /* the two caches of drawn cards hold the newest few (15 Nov 2026; they grew for as long as the app stayed open): a failed draw
+     is forgotten, and what falls off the end is handed to `drop` (the feed's object URLs are released there) */
+  function keep(map, key, p, max, drop) {
+    map.set(key, p);
+    p.catch(() => map.delete(key));
+    while (map.size > max) { const first = map.entries().next().value; map.delete(first[0]); if (drop) first[1].then(drop, () => {}); }
+    return p;
+  }
   function prepare(id, pickId) {                                                       // the file ahead of the tap: iOS keeps share inside the tap only briefly
     const ck = `${id}|${pickId || ''}`;
     if (P.files.has(ck)) return P.files.get(ck);
     const po = Journal.post(id); if (!po) return Promise.resolve(null);
-    const p = render(po, pickId).then((r) => { if (r.missing) P.files.delete(ck); return new File([r.blob], fileName(po), { type: 'image/jpeg', lastModified: Date.now() }); });
-    P.files.set(ck, p); p.catch(() => P.files.delete(ck));
-    return p;
+    return keep(P.files, ck, render(po, pickId).then((r) => { if (r.missing) P.files.delete(ck); return new File([r.blob], fileName(po), { type: 'image/jpeg', lastModified: Date.now() }); }), 3);
   }
   function cardUrl(id, pickId, scale) {                                                // a drawn card as an object URL, cached per story, pick and size (the grandparents' feed, 3 Nov 2026); a card still missing its picture is not cached
     const ck = `${id}|${pickId || ''}|${scale || 1}`;
     if (P.cards.has(ck)) return P.cards.get(ck);
     const po = Journal.post(id); if (!po) return Promise.resolve(null);
-    const p = render(po, pickId, { scale: scale || 1 }).then((r) => { if (r.missing) P.cards.delete(ck); return { url: URL.createObjectURL(r.blob), missing: r.missing }; });
-    P.cards.set(ck, p); p.catch(() => P.cards.delete(ck));
-    return p;
+    return keep(P.cards, ck, render(po, pickId, { scale: scale || 1 }).then((r) => {
+      const url = URL.createObjectURL(r.blob);
+      if (r.missing) { P.cards.delete(ck); P.urls.push(url); }                       // drawn again once its picture is here; this one goes when Stories is left
+      return { url, missing: r.missing };
+    }), 24, (r) => { if (r && r.url) URL.revokeObjectURL(r.url); });
   }
   /* which browser the app runs in, and whether its share sheet takes a picture (2 Nov 2026: Andy's phone showed
      Download instead of Share, so the preview and the Settings readout now say which browser and why) */
@@ -183,8 +191,7 @@ window.Postcard = (() => {
     let name = 'unknown browser';
     for (const [re, label] of names) { const m = UA.match(re); if (m) { name = label + m[0].split('/')[1].split('.')[0]; break; } }
     let installed = false; try { installed = !!navigator.standalone || matchMedia('(display-mode: standalone)').matches; } catch (e) { /* none */ }
-    const ios = /iPad|iPhone|iPod/.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    return `${name}${/; wv\)/.test(UA) ? ' app view' : ''}${installed ? ', installed' : ', tab'}${/Android/i.test(UA) ? ', Android' : ios ? ', iOS' : ''}`;
+    return `${name}${/; wv\)/.test(UA) ? ' app view' : ''}${installed ? ', installed' : ', tab'}${/Android/i.test(UA) ? ', Android' : Media.ios ? ', iOS' : ''}`;
   }
   function shareInfo(file) {                                                         // has: a share sheet at all; files: does it take this picture (null = cannot tell)
     const has = typeof navigator.share === 'function', can = typeof navigator.canShare === 'function';
@@ -211,7 +218,7 @@ window.Postcard = (() => {
   function pickerHtml(po, pickId, locked) {                                          // the story's pictures to choose from; locked while Mum and Dad have the request
     const media = po.media || []; if (media.length < 2) return '';
     const cur = picOf(po, pickId);
-    return `<div class="pc-pick"${locked ? ' data-locked="1"' : ''}>${media.map((m) => `<button type="button" class="${cur && cur.id === m.id ? 'on' : ''}" data-pick="${esc(m.id)}" aria-label="Use this picture"><img class="${m.k === 'drawing' ? 'dr' : 'ph'}" data-oid="${esc(m.k === 'drawing' ? m.id : m.id + 't')}" data-kind="${m.k === 'drawing' ? 'drawing' : 'thumb'}" alt=""></button>`).join('')}</div><div class="tiny muted">${locked ? 'The picture they chose.' : 'Tap the picture to put on the card.'}</div>`;
+    return `<div class="pc-pick"${locked ? ' data-locked="1"' : ''}>${media.map((m) => `<button type="button" class="${cur && cur.id === m.id ? 'on' : ''}" data-pick="${esc(m.id)}" aria-label="Use this picture">${Journal.thumb(m)}</button>`).join('')}</div><div class="tiny muted">${locked ? 'The picture they chose.' : 'Tap the picture to put on the card.'}</div>`;
   }
   async function openPreview(id) {
     if (Quests.isGrandDevice()) return;                                               // Grandma and Grandpa never send cards or ask Mum and Dad (3 Nov 2026)
@@ -232,7 +239,7 @@ window.Postcard = (() => {
     const el = $('#pc-preview'); if (!el) return;                                     // the modal closed meanwhile
     const st = Quests.cardStatus(id), parent = Quests.isParentDevice(), info = shareInfo(file);
     el.innerHTML = `<img id="pc-img" src="${url}" alt="Postcard">${pickerHtml(po, pickId, !parent && st.pending)}<div class="small muted pc-words">${esc(po.text || '')}</div><div id="pc-actions"></div>`;
-    el.querySelectorAll('img[data-oid]').forEach((img) => Media.url(img.dataset.oid, img.dataset.kind).then((u) => { if (u) img.src = u; }));
+    Journal.fill(el);
     const mailto = () => `mailto:?subject=${encodeURIComponent('Postcard from ' + Quests.label(po.p))}&body=${encodeURIComponent(words(po))}`;
     const extra = `${st.sent ? ' Sent before; sending again is fine.' : ''}${st.rejected && !parent ? ' Last time they said not this time; you can ask again.' : ''}`;
     const actions = (why) => {                                                       // why: the NoShare error after a Share that the sheet refused, else null

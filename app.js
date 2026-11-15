@@ -66,19 +66,23 @@ const hasGlobe = () => !!window.Globe && !isLite();
 /* ------------------------------------------------------------------ tiny DOM helpers */
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const PHONE_RE = /(?<![\w#])(\+\d[\d\s\-]{7,}\d|(?:1[\s\-])?\(?\d{3}\)?[\s\-]\d{3}[\s\-]\d{4}|1\d{3}[\s\-]\d{3}[\s\-]\d{4}|0\d{1,4}(?:[\s\-]\d{2,4}){2,3}|911|811|311|110|119|000)(?![\w\-])/g;
+/* A phone number in running text. The character before it is matched and put back, not looked behind at (15 Nov 2026):
+   a look-behind is a syntax error to Safari before 16.4, and one in this file kept the whole app on "Loading…" on such
+   an iPhone or iPad. */
+const PHONE_RE = /(^|[^\w#])(\+\d[\d\s\-]{7,}\d|(?:1[\s\-])?\(?\d{3}\)?[\s\-]\d{3}[\s\-]\d{4}|1\d{3}[\s\-]\d{3}[\s\-]\d{4}|0\d{1,4}(?:[\s\-]\d{2,4}){2,3}|911|811|311|110|119|000)(?![\w\-])/g;
+const dial = (n) => String(n == null ? '' : n).replace(/[^\d+]/g, '');   // what goes in a tel: link
 function tel(text) {
-  return esc(text).replace(PHONE_RE, (m) => {
-    let d = m.replace(/[^\d+]/g, '');
+  return esc(text).replace(PHONE_RE, (all, pre, m) => {
+    let d = dial(m);
     if (!d.startsWith('+') && (d.length === 10 || d.length === 11) && /^[1-9(]/.test(m.trim())) d = '+1' + d.slice(-10);
-    return `<a href="tel:${d}">${m}</a>`;
+    return `${pre}<a href="tel:${d}">${m}</a>`;
   });
 }
 const nl = (s) => esc(s).replace(/\n/g, '<br>');
 /* An Australian mobile typed as 04xx xxx xxx becomes +61 4xx xxx xxx: that is what a police officer in Tokyo or a shop in
    Whistler can dial as written (1 Nov 2026, Andy: a memorised 04 number is no use abroad). */
 function intlNum(n) {
-  const d = String(n || '').replace(/[^\d+]/g, '');
+  const d = dial(n);
   if (/^04\d{8}$/.test(d)) return `+61 ${d.slice(1, 4)} ${d.slice(4, 7)} ${d.slice(7)}`;
   if (/^\+614\d{8}$/.test(d)) return `+61 ${d.slice(3, 6)} ${d.slice(6, 9)} ${d.slice(9)}`;
   return String(n || '');
@@ -114,6 +118,7 @@ function mapsLink(lat, lon, label) {
   return `<div class="row">${mapButtons(lat, lon, label)}</div>`;
 }
 const isMontreal = (s) => /montr[eé]al/i.test(String(s || ''));
+const moveGlyph = (mode) => (/train|rail|shinkansen/i.test(mode || '') ? '🚆' : /coach|bus/i.test(mode || '') ? '🚌' : '✈️');   // one move's picture, everywhere (Home, Stories, the globe)
 /* One phrase card. Japanese cards carry ja + romaji, French cards (Montréal) fr + a plain pronunciation line. */
 function phraseCard(p, show) {
   const lang = p.lang || 'ja', main = lang === 'fr' ? p.fr : p.ja, sub = lang === 'fr' ? p.say : p.romaji;
@@ -179,20 +184,44 @@ function show(screen, fromHistory) {
   if (window.DossierMap) window.DossierMap.setVisible(screen === 'map');
 }
 function focusOnMap(placeId) { if (!hasMap()) return; show('map'); const go = () => window.DossierMap && window.DossierMap.focusPlace(placeId); S.mapMounted ? setTimeout(go, 400) : setTimeout(go, 1500); }
-function openModal(html) { Nav.pushModal(); $('#modal-inner').innerHTML = `<button class="btn close" id="modal-close">Close</button>${html}`; $('#modal').classList.remove('hidden'); $('#modal-close').onclick = closeModal; }
-function closeModal() { $('#modal').classList.add('hidden'); $('#modal-inner').innerHTML = ''; }
+function openModal(html) { endAsk(null); Nav.pushModal(); $('#modal-inner').innerHTML = `<button class="btn close" id="modal-close">Close</button>${html}`; $('#modal').classList.remove('hidden'); $('#modal-close').onclick = closeModal; }
+function closeModal() { $('#modal').classList.add('hidden'); $('#modal-inner').innerHTML = ''; endAsk(null); }
+/* A question asked in the app's own modal (15 Nov 2026), in place of the browser's prompt(): some app views, the kids'
+   tablet's among them, show no prompt at all, so "+1 new food" and the PIN questions did nothing there. Resolves to the
+   text typed, or null when it is cancelled, closed, or replaced by another modal. */
+function endAsk(v) { const done = S.ask; if (done) { S.ask = null; done(v); } }
+function askText(title, opts) {
+  opts = opts || {};
+  return new Promise((resolve) => {
+    openModal(`<h2 class="h2">${esc(title)}</h2><form id="ask-form" autocomplete="off"><input id="ask-in" class="input${opts.pin ? ' pin' : ''}" ${opts.pin ? 'type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4"' : `type="text" maxlength="${opts.max || 60}"`} placeholder="${esc(opts.placeholder || '')}"><div class="row"><button class="btn primary" type="submit">${esc(opts.ok || 'OK')}</button><button class="btn" type="button" id="ask-cancel">Cancel</button></div></form>`);
+    S.ask = resolve;
+    const input = $('#ask-in');
+    $('#ask-form').onsubmit = (e) => { e.preventDefault(); const v = input.value; S.ask = null; closeModal(); resolve(v); };
+    $('#ask-cancel').onclick = closeModal;
+    setTimeout(() => { try { input.focus(); } catch (e) { /* no keyboard yet */ } }, 60);
+  });
+}
 function applyTheme() { const t = settings.theme; if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t); }
 function applyBigText() { document.documentElement.classList.toggle('big-text', settings.bigText); }
 
 /* ------------------------------------------------------------------ dates and time zones */
+/* One clock formatter per time zone and use, kept (15 Nov 2026): building one is the slow part, the screens ask for the date
+   dozens of times per redraw, and the old tablet builds them slowly. */
+const dtfCache = {};
+function dtf(kind, tz) {
+  const k = kind + '|' + tz;
+  return dtfCache[k] || (dtfCache[k] = kind === 'date' ? new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' })
+    : new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' }));
+}
 function localDate(tz, d = new Date()) {
   if (S.preview) return S.preview;            // Settings: preview a trip day
-  const p = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
+  const p = dtf('date', tz).formatToParts(d);
   const g = (t) => p.find((x) => x.type === t).value;
   return `${g('year')}-${g('month')}-${g('day')}`;
 }
-function localTime(tz, d = new Date()) { if (S.preview) return '12:00'; return new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' }).format(d); }
-function fmtDate(iso) { if (!iso) return ''; const d = new Date(iso + 'T12:00:00Z'); return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }); }
+function localTime(tz, d = new Date()) { if (S.preview) return '12:00'; return dtf('time', tz).format(d); }
+const fmtDateMemo = {};
+function fmtDate(iso) { if (!iso) return ''; return fmtDateMemo[iso] || (fmtDateMemo[iso] = new Date(iso + 'T12:00:00Z').toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })); }
 function tzOf(city) { return TZ[city] || TZ.Home; }
 function currentStay(now = new Date()) {
   for (const s of S.family.stays) {
@@ -201,22 +230,53 @@ function currentStay(now = new Date()) {
   }
   return null;
 }
-function currentContext(now = new Date()) {
+/* A move, by the clock of the place it leaves from: the city named in its "from" gives the time zone and the country. */
+function placeCity(text) { const s = String(text || '').toLowerCase(); return Object.keys(TZ).find((c) => c !== 'Home' && s.includes(c.toLowerCase())) || null; }
+const placeCountry = (text) => COUNTRY[placeCity(text)] || 'AU';
+function moveDeparted(m, now = new Date()) {
+  const tz = tzOf(placeCity(m.frm)), ld = localDate(tz, now);
+  if (ld !== m.date) return ld > m.date;
+  const dep = (String(m.depart || '').match(/\d{1,2}:\d{2}/) || ['99:99'])[0].padStart(5, '0');   // no time given: not gone until the day is over
+  return localTime(tz, now) >= dep;
+}
+/* Where the beds say we are. On a day with no bed, or the first hours of a new one, this is already the next place. */
+function bedContext(now) {
   const stay = currentStay(now);
   if (stay) return { stay, city: stay.city, tz: tzOf(stay.city), country: COUNTRY[stay.city] || 'CA', date: localDate(tzOf(stay.city), now) };
-  const first = S.family.stays[0];
+  const F = S.family, first = F.stays[0];
   const homeDate = localDate(TZ.Home, now);
   if (homeDate < first.checkin_date) return { stay: null, city: 'Home', tz: TZ.Home, country: 'AU', date: homeDate, before: true };
   // travel day without a bed (30 Dec in the air) or after the trip
-  const next = S.family.stays.find((s) => s.checkin_date >= localDate(TZ.Home, now));
+  const next = F.stays.find((s) => s.checkin_date >= homeDate);
   const city = next ? next.city : 'Home';
-  return { stay: null, city, tz: tzOf(city), country: COUNTRY[city] || 'AU', date: localDate(tzOf(city), now), inAir: !!next };
+  let date = localDate(tzOf(city), now);
+  if (date < F.trip.start) date = F.trip.start;      // flying east over the date line: the calendar there is still on yesterday, but the trip has begun
+  return { stay: null, city, tz: tzOf(city), country: COUNTRY[city] || 'AU', date, inAir: !!next };
 }
-function nextMove(ctx) {
-  const today = ctx.date;
-  const nowT = localTime(ctx.tz);
-  return S.family.moves.find((m) => m.date > today || (m.date === today && (m.depart || '99:99').replace('~', '') > nowT)) || null;
+/* The place we are leaving today, while the last move out of its country has not gone yet (15 Nov 2026). The beds alone put
+   the family in the next country from midnight: on the morning of the flight to Japan the SOS screen offered 119 and
+   Japanese phrases in Toronto, on the first morning it offered 911 at home, and on the last it offered 000 in Tokyo. */
+function leavingContext(now) {
+  const F = S.family;
+  let from = null;
+  for (const s of F.stays) { const tz = tzOf(s.city); if (localDate(tz, now) === s.checkout_date) from = { stay: null, city: s.city, tz, country: COUNTRY[s.city] || 'CA', date: s.checkout_date, leaving: true }; }
+  if (!from) { const homeDate = localDate(TZ.Home, now); if (homeDate === F.trip.start && homeDate <= F.stays[0].checkin_date) from = { stay: null, city: 'Home', tz: TZ.Home, country: 'AU', date: homeDate, leaving: true }; }
+  if (!from) return null;
+  const outs = (F.moves || []).filter((m) => m.date === from.date && placeCountry(m.frm) === from.country);
+  return outs.some((m) => !moveDeparted(m, now)) ? from : null;
 }
+let ctxMemo = null;                                  // the answer holds for a few seconds: one redraw asks for it many times
+function currentContext(now) {
+  const live = !now, key = live ? Math.floor(Date.now() / 5000) + '|' + (S.preview || '') : null;
+  if (live && ctxMemo && ctxMemo.key === key && ctxMemo.F === S.family) return ctxMemo.ctx;
+  now = now || new Date();
+  let ctx = bedContext(now);
+  const from = leavingContext(now);
+  if (from && from.country !== ctx.country) ctx = Object.assign(from, { stay: ctx.stay || null });   // only across a border (within a country tonight's bed is the better answer); the bed for tonight stays on the Tonight tile
+  if (live) ctxMemo = { key, F: S.family, ctx };
+  return ctx;
+}
+function nextMove() { return S.family.moves.find((m) => !moveDeparted(m)) || null; }   // the first one that has not left yet, by its own clock
 
 /* ------------------------------------------------------------------ IndexedDB key store */
 let dbOpen = null;                                  // one connection, shared with media.js
@@ -229,14 +289,29 @@ function idb() {
       if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
       if (!db.objectStoreNames.contains('media')) db.createObjectStore('media', { keyPath: 'id' });
     };
-    r.onsuccess = () => { const db = r.result; db.onversionchange = () => { db.close(); dbOpen = null; }; res(db); };
+    r.onsuccess = () => {
+      const db = r.result;
+      db.onversionchange = () => { db.close(); dbOpen = null; };
+      db.onclose = () => { dbOpen = null; };          // iOS drops the connection after a spell in the background: the next call opens a new one (15 Nov 2026; it used to fail until the app was closed)
+      res(db);
+    };
     r.onerror = () => { dbOpen = null; rej(r.error); };
   });
   return dbOpen;
 }
-async function kvGet(k) { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction('kv').objectStore('kv').get(k); t.onsuccess = () => res(t.result); t.onerror = () => rej(t.error); }); }
-async function kvSet(k, v) { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite').objectStore('kv').put(v, k); t.onsuccess = () => res(); t.onerror = () => rej(t.error); }); }
-async function kvDel(k) { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite').objectStore('kv').delete(k); t.onsuccess = () => res(); t.onerror = () => rej(t.error); }); }
+/* One transaction on one store: run(transaction) is called in the same breath that creates it, so its requests are placed
+   while it is still open. A connection the system has closed without telling the page throws at that point: a fresh one is
+   opened and it is tried once more (media.js uses this too). */
+async function idbRun(store, mode, run) {
+  let db = await idb(), t;
+  try { t = db.transaction(store, mode); }
+  catch (e) { dbOpen = null; db = await idb(); t = db.transaction(store, mode); }
+  return run(t);
+}
+function kvDo(mode, fn) { return idbRun('kv', mode, (t) => new Promise((res, rej) => { const r = fn(t.objectStore('kv')); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); })); }
+const kvGet = (k) => kvDo('readonly', (s) => s.get(k));
+const kvSet = (k, v) => kvDo('readwrite', (s) => s.put(v, k)).then(() => {});
+const kvDel = (k) => kvDo('readwrite', (s) => s.delete(k)).then(() => {});
 
 /* ------------------------------------------------------------------ crypto */
 const b64d = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -267,9 +342,15 @@ async function checkPin(edition, pin) {
 }
 async function forgetDevice() {
   for (const k of ['key:family', 'key:vault', 'pin:family', 'pin:vault']) await kvDel(k);
-  try { await Media.wipe(); } catch (e) { /* no media store yet */ }
+  try { await Media.wipeAll(); } catch (e) { /* no media store yet */ }   // everything, the full-size originals too: their key leaves with the device
   localStorage.clear();
   location.reload();
+}
+function forgetQuestion() {                          // says what would be lost for good (15 Nov 2026)
+  const up = Media.pendingCount(), orig = Media.originalsSummary().waiting, lost = [];
+  if (up) lost.push(`${up} picture${up === 1 ? ' has' : 's have'} not been uploaded yet`);
+  if (orig) lost.push(`${orig} full-size photo${orig === 1 ? ' is' : 's are'} not in Photos yet`);
+  return 'Forget this device? You will need the passphrase again.' + (lost.length ? `\n\n${lost.join(' and ')}: ${up + orig === 1 ? 'it' : 'they'} would be lost for good. Sync and save to Photos first.` : '');
 }
 
 /* ------------------------------------------------------------------ unlock flow (family) */
@@ -307,19 +388,25 @@ ui.fpp.onsubmit = async (e) => {
     unlockMode('setpin', 'Passphrase accepted. Now a PIN for everyday use.');
   } catch (err) { unlockMode('passphrase', 'First unlock on this device'); unlockError('That passphrase did not open the family data.'); }
 };
+let pinBusy = false;                                  // the PIN hash takes a second on a slow tablet: a second tap meanwhile is ignored
 ui.fset.onsubmit = async (e) => {
   e.preventDefault();
+  if (pinBusy) return;
   const a = $('#pin1').value, b = $('#pin2').value;
   if (!/^\d{4}$/.test(a)) return unlockError('Four digits, please.');
   if (a !== b) return unlockError('The two PINs differ.');
-  await setPin('family', a);
+  pinBusy = true;
+  try { await setPin('family', a); } finally { pinBusy = false; }
   $('#pin1').value = $('#pin2').value = '';
   enterApp();
 };
 ui.fpin.onsubmit = async (e) => {
   e.preventDefault();
+  if (pinBusy) return;
   const pin = $('#pin').value; $('#pin').value = '';
-  const r = await checkPin('family', pin);
+  let r;
+  pinBusy = true;
+  try { r = await checkPin('family', pin); } finally { pinBusy = false; }
   if (r === 'ok') {
     const key = await kvGet('key:family');
     try { S.family = await decryptWith(key, S.familyEnv); return enterApp(); } catch (err) { await kvDel('key:family'); return unlockMode('passphrase', 'Stored key no longer matches this build. Passphrase again, please.'); }
@@ -335,7 +422,10 @@ function applyRoleChrome() {                         // 2 Nov 2026: the chrome f
   const ed = $('#top-edition'); if (ed) ed.textContent = Quests.isGrandDevice() ? ' · Grandparents' : ' · Family';
 }
 window.addEventListener('load', () => { if (S.family) { applyRoleChrome(); if (S.screen === 'home') renderHome(); } });   // the map modules finish loading after app.js; a quick unlock must not hide them by mistake
+let entered = false;
 async function enterApp() {
+  if (entered) return;                               // once: a second run found the media key already removed and switched photos and stories off
+  entered = true;
   const sy = (S.family.trip || {}).sync || {};
   await Media.init(sy.media); delete sy.media;       // the raw media key leaves the plaintext family object at once
   Journal.init();
@@ -351,9 +441,41 @@ async function enterApp() {
   else if (!Quests.isGrandDevice()) { Quests.checkNewBadges(currentContext()); setTimeout(() => Quests.checkLevelUp(), 2500); }   // badges earned by the date can tip a level too (3 Nov 2026); the show waits for the map and stories to settle
   Quests.startSync();                                // no-op unless the family blob carries a sync address
   checkForUpdate();
+  S.today = currentContext().date;
+  setInterval(clockTick, 60000);
 }
-/* the device PIN, re-used as the gate for making a device a parent phone (same try counter as the lock screen) */
-async function verifyPin(pin) { const r = await checkPin('family', String(pin || '')); return r === 'ok' || r === 'nopin'; }
+/* The app left open (15 Nov 2026): it used to keep showing the day it was opened on, yesterday's bed and plan and a stopped
+   clock, until something else redrew it. Every minute while it is on screen, and whenever it comes back to the front: a new
+   day redraws everything (and may bring a date badge); otherwise Home's clock line is brought up to date. */
+function clockTick() {
+  if (!S.family || document.hidden) return;
+  const ctx = currentContext();
+  if (ctx.date !== S.today) {
+    S.today = ctx.date;
+    rerender(); Quests.refreshTop();
+    if (S.screen === 'quests') Quests.renderQuests();
+    if (S.screen === 'passport') Quests.renderPassport();
+    if (S.screen === 'story') Journal.renderStory();
+    if (!Quests.isGrandDevice()) { Quests.checkNewBadges(ctx); Quests.checkLevelUp(); }
+  } else if (S.screen === 'home' && !Nav.modalOpen() && !Journal.overlayOpen()) renderHome();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) clockTick(); });
+/* The device PIN as the gate for making a device a parent phone, and for the grandparents' set-up. It only compares: it never
+   touches the lock screen's try counter (15 Nov 2026: five wrong guesses here used to delete the PIN and the stored key, and
+   the sixth guess, anything at all, then passed, so a child could turn the kids' tablet into a parent phone, which can
+   delete every story). Five wrong guesses close this gate for five minutes. */
+const pinGate = { wrong: 0, until: 0 };
+async function askPin(question) {
+  if (Date.now() < pinGate.until) { alert('Too many wrong tries. Try again in a few minutes.'); return false; }
+  const pin = await askText(question, { pin: true });
+  if (pin === null) return false;
+  let ok = false;
+  try { const rec = await kvGet('pin:family'); ok = !!rec && (await pinHash(String(pin), rec.salt)) === rec.hash; } catch (e) { ok = false; }
+  if (ok) { pinGate.wrong = 0; return true; }
+  if (++pinGate.wrong >= PIN_MAX_TRIES) { pinGate.wrong = 0; pinGate.until = Date.now() + 5 * 60 * 1000; }
+  alert('That is not the PIN.');
+  return false;
+}
 
 /* ------------------------------------------------------------------ rendering */
 function renderAll() { rerender(); renderMap(); }
@@ -419,7 +541,7 @@ function renderGrandHome() {
   if (hasGlobe()) html += `<button class="tile ht wide t1" data-go="where"><span class="ico">🌏</span><span class="tt">Where are they?</span><span class="ts">${esc(ctx.before ? 'The whole route on the globe' : whereLine(ctx, ctx.inAir ? 'In the air right now' : 'Spin the globe to ' + ctx.city))}</span></button>`;
   html += Journal.storiesTileHtml(ctx);
   if (!ctx.before && ctx.stay) html += `<div class="tile wide t3"><span class="ico">🛏️</span><span class="tt">Tonight</span><span class="ts">${esc(ctx.stay.property || '')}${ctx.stay.city ? ', ' + esc(ctx.stay.city) : ''}</span></div>`;
-  if (nm) html += `<div class="tile wide t2"><span class="ico">${/train/i.test(nm.mode || '') ? '🚆' : /coach|bus/i.test(nm.mode || '') ? '🚌' : '✈️'}</span><span class="tt">Next move</span><span class="ts">${esc(nm.frm || '')} → ${esc(nm.to || '')} · ${esc(fmtDate(nm.date))}${nm.depart ? ' · ' + esc(nm.depart) : ''}</span></div>`;
+  if (nm) html += `<div class="tile wide t2"><span class="ico">${moveGlyph(nm.mode)}</span><span class="tt">Next move</span><span class="ts">${esc(nm.frm || '')} → ${esc(nm.to || '')} · ${esc(fmtDate(nm.date))}${nm.depart ? ' · ' + esc(nm.depart) : ''}</span></div>`;
   html += `</div>`;
   html += `<p class="tiny muted">Everything here arrives from the family's phones when this one syncs. Built ${esc(BUILT)} · ${esc(VERSION)}</p>`;
   const el = $('#screen-home'); el.innerHTML = html;
@@ -457,7 +579,7 @@ function renderHome() {
     html += `<button class="tile ht t1" data-go="moves"><span class="ico">✈️</span><span class="tt">Tonight</span><span class="ts">In the air or between beds · see Moves</span></button>`;
   }
   if (nm) {
-    const sl = sleepsUntil(ctx, nm.date), ico = /train/i.test(nm.mode || '') ? '🚆' : /coach|bus/i.test(nm.mode || '') ? '🚌' : '✈️';
+    const sl = sleepsUntil(ctx, nm.date), ico = moveGlyph(nm.mode);
     html += `<button class="tile ht t2" data-go="moves"><span class="ico">${ico}</span><span class="tt">Next move</span><span class="ts">${esc(nm.carrier.split('·')[0].trim())} · ${esc(nm.frm)} → ${esc(nm.to)}</span><span class="ts small">${esc(fmtDate(nm.date))} ${esc(nm.depart)}${sl === 0 ? ' · today!' : sl === 1 ? ' · tomorrow' : ` · in ${sl} sleeps`}</span></button>`;
   }
   const day = dayOf(ctx.date), ev = eventsOn(ctx.date);
@@ -485,7 +607,7 @@ function renderHome() {
 function openCalls(calls) {
   let html = `<h1 class="h1">📞 Call</h1>`;
   if (!calls.some((c) => c[0] === 'Mum' || c[0] === 'Dad')) html += `<div class="card red">Mum and Dad's numbers appear here once they are in extra.yaml (family.mobiles).</div>`;
-  html += calls.map((c) => `<a class="btn block sos" href="tel:${String(c[1]).replace(/[^\d+]/g, '')}">${esc(c[0])} · ${esc(c[1])}</a>`).join('');
+  html += calls.map((c) => `<a class="btn block sos" href="tel:${dial(c[1])}">${esc(c[0])} · ${esc(c[1])}</a>`).join('');
   html += `<div class="row" style="margin-top:14px"><a class="btn" href="#" data-go="sos">All emergency numbers</a></div>`;
   openModal(html);
   $('#modal-inner').querySelectorAll('[data-go]').forEach((a) => a.onclick = (e) => { e.preventDefault(); closeModal(); show(a.dataset.go); });
@@ -532,7 +654,7 @@ function openSayCard(local, en, sub, lang) {
   openModal(`<div class="say-full"><div class="local ${lang === 'en' ? '' : esc(lang || '')}">${esc(local)}</div>${sub ? `<div class="sub muted">${esc(sub)}</div>` : ''}${en ? `<div class="en">${esc(en)}</div>` : ''}</div>`);
 }
 function stepsList(steps, ctx) { return `<ol class="steps kid">${(steps || []).map((s) => `<li>${tel(fill(s, ctx))}</li>`).join('')}</ol>`; }
-function linesBlock(lines) { return (lines || []).length ? `<div class="row">${lines.map((l) => `<a class="btn" href="tel:${String(l.number).replace(/[^\d+]/g, '')}">📞 ${esc(l.who)} ${esc(l.number)}</a>`).join('')}</div>` : ''; }
+function linesBlock(lines) { return (lines || []).length ? `<div class="row">${lines.map((l) => `<a class="btn" href="tel:${dial(l.number)}">📞 ${esc(l.who)} ${esc(l.number)}</a>`).join('')}</div>` : ''; }
 function callButtons(ctx) {
   const em = emNum(ctx), pol = POLICE_NUMBER[ctx.country];
   return `<a class="btn danger block sos" href="tel:${em}">📞 Call ${em}</a>` + (pol && pol !== em ? `<a class="btn block sos" href="tel:${pol}">👮 Police ${pol}</a>` : '');
@@ -570,7 +692,7 @@ function openKidCard() {
   const nums = [['Mum', intlNum(mob.sarah)], ['Dad', intlNum(mob.andy)]].filter((x) => x[1]);
   let html = `<div class="kid-card"><h1 class="h1">🙋 ${esc(kc.title || "I'm lost")}</h1>${stepsList(kc.steps, ctx)}`;
   html += sayLines(kc, ctx).map((l) => `<div class="say-full"><div class="local ${l.lang === 'en' ? '' : l.lang}">${esc(l.local)}</div>${l.sub ? `<div class="sub muted">${esc(l.sub)}</div>` : ''}${l.en && l.lang !== 'en' ? `<div class="en">${esc(l.en)}</div>` : ''}</div>`).join('');
-  html += nums.length ? nums.map(([who, n]) => `<a class="btn danger block sos" href="tel:${esc(String(n).replace(/[^\d+]/g, ''))}">📞 ${esc(who)} ${esc(n)}</a>`).join('')
+  html += nums.length ? nums.map(([who, n]) => `<a class="btn danger block sos" href="tel:${dial(n)}">📞 ${esc(who)} ${esc(n)}</a>`).join('')
     : `<div class="card red">Mum and dad's numbers go here once they are in extra.yaml (family.mobiles).</div>`;
   html += `</div>`;
   openModal(html);
@@ -727,12 +849,13 @@ function renderStays() {
 }
 
 function currentTheme() { const t = settings.theme; if (t !== 'auto') return t; return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; }
+const vaultPins = () => (S.vault && (S.vault.overlay || {}).features) || [];   // the map pins only an open vault adds
 function mountMap() {
   if (S.mapMounted || !window.DossierMap) return;
   S.mapMounted = true;
   window.DossierMap.mount({ container: $('#screen-map'), family: S.family, theme: currentTheme(), today: currentContext().date, onTaxi: openTaxiById })
-    .then(() => { if (S.vault) window.DossierMap.setVaultFeatures(((S.vault.overlay || {}).features) || []); })
-    .catch((e) => { const b = $('#map-packbar'); if (b) b.textContent = 'Map failed: ' + (e.message || e); });
+    .then(() => { if (S.vault) window.DossierMap.setVaultFeatures(vaultPins()); })
+    .catch((e) => { S.mapMounted = false; const b = $('#map-packbar'); if (b) b.textContent = 'Map failed: ' + (e.message || e) + ' · open the Map again to retry'; });   // the next visit tries again (it used to stay failed until the app was restarted)
 }
 function renderMap() {
   const F = S.family;
@@ -850,7 +973,7 @@ async function renderVault() {
         await kvSet('key:vault', k); await setPin('vault', a);
       }
       renderVault(); renderStays();
-      if (window.DossierMap) window.DossierMap.setVaultFeatures(((S.vault.overlay || {}).features) || []);
+      if (window.DossierMap) window.DossierMap.setVaultFeatures(vaultPins());
     } catch (ex) { err.textContent = 'That did not open the vault.'; err.classList.remove('hidden'); }
   };
 }
@@ -891,26 +1014,29 @@ function renderSettings() {
       <button class="btn block" id="opt-forget">Forget this device (wipe stored keys, PINs and quest scores)</button></div>`}
     <div class="card"><div class="h3">Build</div><div>${esc(VERSION)} · built ${esc(BUILT)}</div><button class="btn block" id="opt-update">Check for a newer build</button><div class="small muted" id="update-msg"></div></div>
     <div class="card small muted">Storage: <span id="storage-msg">…</span></div>`;
-  document.querySelectorAll('[data-theme]').forEach((b) => b.onclick = () => { settings.theme = b.dataset.theme; renderSettings(); if (window.DossierMap) window.DossierMap.setTheme(currentTheme()); });
-  document.querySelectorAll('[data-fx]').forEach((b) => b.onclick = () => { FX.setPref(b.dataset.fx); const y = window.scrollY; renderSettings(); window.scrollTo(0, y); });
+  /* Every lookup below stays inside the Settings screen (15 Nov 2026). `[data-theme]` and `[data-fx]` are also attributes of
+     <html> itself, so once a theme or an animation choice was made the whole page carried a click handler that redrew
+     Settings on every tap anywhere in the app. */
+  const root = $('#screen-settings'), redraw = () => { const y = window.scrollY; renderSettings(); window.scrollTo(0, y); };
+  root.querySelectorAll('[data-theme]').forEach((b) => b.onclick = () => { settings.theme = b.dataset.theme; redraw(); if (window.DossierMap) window.DossierMap.setTheme(currentTheme()); });
+  root.querySelectorAll('[data-fx]').forEach((b) => b.onclick = () => { FX.setPref(b.dataset.fx); redraw(); });
   const fd = $('#opt-fx-demo'); if (fd) fd.onclick = () => FX.demo();          // absent on Grandma and Grandpa's phone
   const oi = $('#opt-install'); if (oi) oi.onclick = promptInstall;            // only while the browser is offering an install
-  document.querySelectorAll('[data-switch]').forEach((b) => b.onclick = () => {
+  root.querySelectorAll('[data-switch]').forEach((b) => b.onclick = () => {
     const opt = b.dataset.switch; settings[opt] = !settings[opt];
     if (opt === 'readerMode') { renderBook(); if (settings.readerMode) lockVault(); }
-    const y = window.scrollY; renderSettings(); window.scrollTo(0, y);
+    redraw();
   });
-  const fg = $('#opt-forget'); if (fg) fg.onclick = () => { if (confirm('Forget this device? You will need the passphrase again.')) forgetDevice(); };
+  const fg = $('#opt-forget'); if (fg) fg.onclick = () => { if (confirm(forgetQuestion())) forgetDevice(); };
   const su = $('#opt-setup');
   if (su) su.onclick = async () => {                   // the grandparents' gate: the device PIN opens the role, PIN-less opening and Forget until Settings is left
-    const pin = prompt('Device PIN to open set-up:'); if (pin === null) return;
-    if (!(await verifyPin(pin))) { alert('That is not the PIN.'); return; }
-    S.setupOpen = true; const y = window.scrollY; renderSettings(); window.scrollTo(0, y);
+    if (!(await askPin('Device PIN to open set-up'))) return;
+    S.setupOpen = true; redraw();
   };
   $('#opt-update').onclick = () => checkForUpdate(true);
-  const setPreview = (v) => { S.preview = v || null; if (v) localStorage.setItem('previewDate', v); else localStorage.removeItem('previewDate'); rerender(); Quests.refreshTop(); const y = window.scrollY; renderSettings(); window.scrollTo(0, y); Quests.checkNewBadges(currentContext()); };
+  const setPreview = (v) => { S.preview = v || null; if (v) localStorage.setItem('previewDate', v); else localStorage.removeItem('previewDate'); S.today = currentContext().date; rerender(); Quests.refreshTop(); redraw(); Quests.checkNewBadges(currentContext()); };
   const dates = S.family.days.map((d) => d.date), pi = dates.indexOf(S.preview || '');
-  document.querySelectorAll('[data-pv]').forEach((b) => b.onclick = () => setPreview(b.dataset.pv));
+  root.querySelectorAll('[data-pv]').forEach((b) => b.onclick = () => setPreview(b.dataset.pv));
   const pvp = $('#pv-prev'), pvn = $('#pv-next'), pvc = $('#opt-preview-clear');          // absent on Grandma and Grandpa's phone
   if (pvp) pvp.onclick = () => setPreview(pi < 0 ? dates[dates.length - 1] : pi === 0 ? '' : dates[pi - 1]);
   if (pvn) pvn.onclick = () => setPreview(pi < 0 ? dates[0] : pi >= dates.length - 1 ? '' : dates[pi + 1]);
@@ -918,18 +1044,19 @@ function renderSettings() {
   const cur = $('#pv-strip .day.today'); if (cur) cur.scrollIntoView({ inline: 'center', block: 'nearest' });
   Quests.wireSettings($('#screen-settings'));
   const mm = $('#media-msg');
+  const usage = Media.enabled ? Media.usage().catch(() => null) : Promise.resolve(null);   // read once for the line here and the readout below
   if (!Media.enabled) mm.textContent = 'This build has no picture key: pages and photos need a full rebuild of the app.';
-  else Media.usage().then((u) => { mm.textContent = `${u.count} picture${u.count === 1 ? '' : 's'} on this device · ${u.bytes < 1048576 ? Math.round(u.bytes / 1024) + ' KB' : (u.bytes / 1048576).toFixed(1) + ' MB'}${u.pending ? ` · ${u.pending} waiting to upload` : ''}`; });
+  else usage.then((u) => { if (u && mm.isConnected !== false) mm.textContent = `${u.count} picture${u.count === 1 ? '' : 's'} on this device · ${u.bytes < 1048576 ? Math.round(u.bytes / 1024) + ' KB' : (u.bytes / 1048576).toFixed(1) + ' MB'}${u.pending ? ` · ${u.pending} waiting to upload` : ''}`; });
   const dl = $('#opt-media-dl'); if (dl) dl.onclick = () => { dl.disabled = true; Journal.downloadAll((done, total) => { mm.textContent = `Downloading ${done} of ${total}…`; }).then(() => { dl.disabled = false; renderSettings(); }); };
   const om = $('#orig-msg');
-  if (om) { const o = Media.originalsSummary(), mb = (n) => (n / 1048576).toFixed(1) + ' MB'; om.textContent = `${o.waiting} full-size original${o.waiting === 1 ? '' : 's'} not yet in Photos (${mb(o.waitingBytes)})${o.saved ? ` · ${o.saved} already saved (${mb(o.savedBytes)}) can be cleared` : ''}`; }
+  if (om) { const o = Media.originalsSummary(), mb = (n) => (n / 1048576).toFixed(1) + ' MB'; om.textContent = `${o.waiting} full-size original${o.waiting === 1 ? '' : 's'} not yet in Photos (${mb(o.waitingBytes)})${o.saved ? ` · ${o.saved} already saved (${mb(o.savedBytes)}) can be cleared` : ''}`; if (o.waiting) Media.prepareOriginals(); }   // made ready now, so the button's tap can open the share sheet itself (iOS refuses it after a wait)
   const osv = $('#opt-orig-save'); if (osv) osv.onclick = () => { osv.disabled = true; Media.saveOriginals().then(() => renderSettings()).catch((e) => { osv.disabled = false; if (e && e.name !== 'AbortError') alert(e.message || 'Could not hand the photos over.'); }); };
   const ocl = $('#opt-orig-clear'); if (ocl) ocl.onclick = () => { if (confirm('Remove the full-size originals that are already in Photos from the app?')) Media.clearSavedOriginals().then(() => renderSettings()); };
   const sw = $('#opt-stories-wipe');
   if (sw) sw.onclick = () => {
     if (!confirm('Delete every story, reply, page and picture for the whole family, on every device? This cannot be undone.')) return;
     sw.disabled = true; Quests.wipeStories();
-    Media.wipe().then(() => { try { localStorage.removeItem('storyDraft'); } catch (e) { /* blocked */ } Journal.warm(); renderSettings(); });
+    Media.wipe().then(() => { try { localStorage.removeItem('storyDraft'); localStorage.removeItem('replyDraft'); } catch (e) { /* blocked */ } Journal.warm(); renderSettings(); });   // full-size originals still waiting for Photos are kept
   };
   const mc = $('#opt-media-clear'); if (mc) mc.onclick = () => { if (confirm("Remove downloaded pictures from this device? Cloud copies stay, and so do this device's own pictures that are still waiting to upload.")) Media.clearDownloaded().then(() => renderSettings()); };
   const dg = $('#diag');
@@ -937,7 +1064,7 @@ function renderSettings() {
     const sy = Sync.status ? Sync.status() : {}, md = Media.diag ? Media.diag() : {};
     let log = []; try { log = JSON.parse(localStorage.getItem('errlog') || '[]'); } catch (e) { /* none */ }
     const when = (t) => (t ? new Date(t).toTimeString().slice(0, 8) : 'never');
-    Media.usage().catch(() => null).then((u) => {
+    usage.then((u) => {
       dg.textContent = [
         `${VERSION} · built ${BUILT} · ${navigator.onLine ? 'online' : 'offline'} · ${navigator.serviceWorker && navigator.serviceWorker.controller ? 'sw on' : 'no sw'} · ${Quests.role() || 'no role'}`,
         `picture key: ${Media.enabled ? 'yes' : 'NO'} · mode ${md.mode || '?'} · pictures here ${u ? u.count : '?'} · waiting to upload ${u ? u.pending : '?'}`,
@@ -965,10 +1092,21 @@ async function checkForUpdate(manual) {
     if (v.label !== VERSION) {
       $('#banner').innerHTML = `<span>New build ${esc(v.label)} (${esc(v.built)}) is available.</span><button id="banner-update">Update</button>`;
       $('#banner').classList.remove('hidden');
+      /* Reload when the new build has taken over, not a moment after asking for it (15 Nov 2026): the download of a new build
+         takes a while, and a reload 0.6 s later came back on the old one, PIN, banner and all. */
       $('#banner-update').onclick = async () => {
-        const reg = await navigator.serviceWorker.getRegistration();
-        if (reg) { await reg.update(); if (reg.waiting) reg.waiting.postMessage('skipWaiting'); }
-        setTimeout(() => location.reload(), 600);
+        const b = $('#banner-update'); b.disabled = true; b.textContent = 'Updating…';
+        let gone = false; const go = () => { if (gone) return; gone = true; location.reload(); };
+        if (!('serviceWorker' in navigator)) return go();
+        navigator.serviceWorker.addEventListener('controllerchange', go);
+        try {
+          const reg = await navigator.serviceWorker.getRegistration();
+          if (!reg) return go();
+          try { await reg.update(); } catch (e) { /* offline again: the reload below shows what there is */ }
+          if (reg.waiting) reg.waiting.postMessage('skipWaiting');
+          if (!reg.installing && !reg.waiting) return go();        // nothing newer on its way: a plain reload
+        } catch (e) { return go(); }
+        setTimeout(go, 90000);                                      // a very slow connection: after a minute and a half, reload whatever is there
       };
     } else if (manual && msg) msg.textContent = 'You have the latest build.';
   } catch (e) { if (msg) msg.textContent = 'Could not reach the host.'; }

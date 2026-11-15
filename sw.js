@@ -1,7 +1,7 @@
 /* Travel Dossier service worker. Caches the app shell and both encrypted blobs so the app opens in airplane mode.
    The cache name carries the build version; a new build installs a new cache and the old one is deleted.
    Network policy: this worker only ever talks to its own origin. */
-const VERSION = 'v47';
+const VERSION = 'v48';
 const CACHE = 'dossier-' + VERSION;
 // Every site file except the tile packs (those are downloaded on demand into OPFS / Cache Storage by map.js).
 const SHELL = ['./'].concat(["./app.js", "./check.html", "./compat.js", "./family.enc", "./fx.js", "./globe.js", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon-maskable-192.png", "./icons/icon-maskable-512.png", "./icons/icon.svg", "./index.html", "./journal.js", "./manifest.json", "./map.js", "./media.js", "./postcard.js", "./quests.js", "./style/dark.json", "./style/fonts/Noto Sans Italic/0-255.pbf", "./style/fonts/Noto Sans Italic/256-511.pbf", "./style/fonts/Noto Sans Italic/512-767.pbf", "./style/fonts/Noto Sans Italic/768-1023.pbf", "./style/fonts/Noto Sans Italic/7680-7935.pbf", "./style/fonts/Noto Sans Medium/0-255.pbf", "./style/fonts/Noto Sans Medium/256-511.pbf", "./style/fonts/Noto Sans Medium/512-767.pbf", "./style/fonts/Noto Sans Medium/768-1023.pbf", "./style/fonts/Noto Sans Medium/7680-7935.pbf", "./style/fonts/Noto Sans Regular/0-255.pbf", "./style/fonts/Noto Sans Regular/256-511.pbf", "./style/fonts/Noto Sans Regular/512-767.pbf", "./style/fonts/Noto Sans Regular/768-1023.pbf", "./style/fonts/Noto Sans Regular/7680-7935.pbf", "./style/light.json", "./style/sprites/dark.json", "./style/sprites/dark.png", "./style/sprites/dark@2x.json", "./style/sprites/dark@2x.png", "./style/sprites/light.json", "./style/sprites/light.png", "./style/sprites/light@2x.json", "./style/sprites/light@2x.png", "./styles.css", "./sync.js", "./tiles/manifest.json", "./vault.enc", "./vendor/maplibre-gl-shared.mjs", "./vendor/maplibre-gl-worker.mjs", "./vendor/maplibre-gl.css", "./vendor/maplibre-gl.mjs", "./vendor/pmtiles.js", "./version.json", "./world.tiles"]);
@@ -12,34 +12,50 @@ self.addEventListener('install', (event) => {
   // next to a brand-new worker.
   // The versioned query also sidesteps the host's edge cache (GitHub Pages may still serve the previous copy of a
   // plain URL for a few minutes after a deploy). The response is stored under the plain URL the page asks for.
+  // 15 Nov 2026: a file already in this build's cache is not fetched again. One failed file still fails the install
+  // (the old build keeps running), but the next try picks up where this one stopped: on hotel Wi-Fi or roaming an
+  // update used to start again from nothing every time one of the fifty-odd files dropped.
   event.waitUntil(
     caches.open(CACHE).then((c) => Promise.all(SHELL.map((u) =>
-      fetch(u + (u.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(VERSION), { cache: 'reload' })
-        .then((r) => { if (!r.ok) throw new Error('precache ' + u + ' ' + r.status); return c.put(u, r); })
+      c.match(u).then((have) => have || fetch(u + (u.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(VERSION), { cache: 'reload' })
+        .then((r) => { if (!r.ok) throw new Error('precache ' + u + ' ' + r.status); return c.put(u, r); }))
     ))).then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    // keep 'dossier-tiles': Safari's downloaded map packs live there (map.js), and a new build must not wipe them
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== 'dossier-tiles').map((k) => caches.delete(k))))
+    // Older builds' caches go. 'dossier-tiles' stays: Safari's downloaded map packs live there (map.js), and a new
+    // build must not wipe them. Only this app's own caches are touched (15 Nov 2026: it used to delete every cache
+    // on the origin, whoever made it).
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k.indexOf('dossier-') === 0 && k !== CACHE && k !== 'dossier-tiles').map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
+
+const cached = (request) => caches.open(CACHE).then((c) => c.match(request, { ignoreSearch: true }));
+/* The network first, so an online check can discover a newer build; the cached copy when the network fails, answers
+   with an error, or says nothing for `ms` (15 Nov 2026: on Wi-Fi with no internet behind it the request hung until
+   the connection timed out, and the offline map sat on "Loading map…" all that time). */
+function networkFirst(request, ms) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (r) => { if (!done && r) { done = true; resolve(r); } };
+    const timer = setTimeout(() => cached(request).then(finish), ms);
+    fetch(request).then(
+      (r) => { clearTimeout(timer); if (r.ok) finish(r); else cached(request).then((hit) => finish(hit || r)); },
+      () => { clearTimeout(timer); cached(request).then((hit) => finish(hit || Response.error())); }
+    );
+  });
+}
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;          // never proxy anything off-origin
   if (url.pathname.endsWith('.pmtiles')) return;            // tile packs: straight to the network (range requests) or OPFS
-  if (url.pathname.endsWith('/version.json') || url.pathname.endsWith('/tiles/manifest.json')) {
-    // network first, so an online check can discover a newer build; fall back to the cached copy offline
-    event.respondWith(fetch(event.request).catch(() => caches.match(event.request, { ignoreSearch: true })));
-    return;
-  }
-  event.respondWith(
-    caches.match(event.request, { ignoreSearch: true }).then((hit) => hit || fetch(event.request))
-  );
+  if (url.pathname.endsWith('/version.json')) { event.respondWith(networkFirst(event.request, 8000)); return; }
+  if (url.pathname.endsWith('/tiles/manifest.json')) { event.respondWith(networkFirst(event.request, 3000)); return; }
+  event.respondWith(cached(event.request).then((hit) => hit || fetch(event.request)));
 });
 
 self.addEventListener('message', (event) => {

@@ -22,16 +22,18 @@ const AIRPORT = { TSV: 'Townsville', BNE: 'Brisbane', CNS: 'Cairns', YVR: 'Vanco
 const EMOJI_EXTRA = { Calgary: '🛬' };
 const HOME = 'Townsville';
 const R = Math.PI / 180, D = 180 / Math.PI;
-const G = { map: null, archive: null, markers: {}, plane: null, popup: null, raf: 0, timers: [], playing: false, idle: false, touched: false, route: null, ctx: null, family: null, doneSegs: [], clock: null };
+const G = { map: null, archive: null, markers: {}, plane: null, popup: null, raf: 0, timers: [], ticks: [], playing: false, idle: false, touched: false, route: null, ctx: null, family: null, doneSegs: [], clock: null };
 const REFRESH_MS = 15 * 60 * 1000;                                     // the vehicle, lines and caption re-place themselves this often while the globe is open
-const glyphOf = (mode) => (/train|rail|shinkansen/i.test(mode || '') ? '🚆' : /coach|bus/i.test(mode || '') ? '🚌' : '✈️');
+const glyphOf = (mode) => moveGlyph(mode);                              // app.js: the one table of 🚆 🚌 ✈️
 const wordOf = (mode) => (/train|rail|shinkansen/i.test(mode || '') ? 'On the train' : /coach|bus/i.test(mode || '') ? 'On the bus' : 'In the air');
 const landWord = (mode) => (glyphOf(mode) === '✈️' ? 'lands' : 'arrives');
 const isPlane = (mode) => glyphOf(mode) === '✈️';
 
 /* ---------------------------------------------------------------- the clock: local wall times in each end's zone → instants */
+const FMT = {};                                                        // one formatter per use and time zone: the replay asks for the time on every frame (15 Nov 2026)
+function fmtOf(use, tz, locale, opts) { const k = use + '|' + tz; return FMT[k] || (FMT[k] = new Intl.DateTimeFormat(locale, Object.assign({ timeZone: tz }, opts))); }
 function tzShift(tz, ms) {                                             // minutes the zone is ahead of UTC at that instant
-  const p = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' }).formatToParts(new Date(ms));
+  const p = fmtOf('shift', tz, 'en-US', { hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' }).formatToParts(new Date(ms));
   const g = (t) => +p.find((x) => x.type === t).value;
   return (Date.UTC(g('year'), g('month') - 1, g('day'), g('hour') % 24, g('minute'), g('second')) - ms) / 60000;
 }
@@ -43,7 +45,7 @@ function instant(date, hhmm, tz, dayOffset) {                          // "2026-
   for (let i = 0; i < 2; i++) guess = wall - tzShift(tz, guess) * 60000;   // two passes settle a DST edge
   return guess;
 }
-function timeIn(ms, tz) { try { return new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' }).format(new Date(ms)); } catch (e) { return ''; } }
+function timeIn(ms, tz) { try { return fmtOf('time', tz, 'en-GB', { hour: '2-digit', minute: '2-digit' }).format(new Date(ms)); } catch (e) { return ''; } }
 function nowMs(ctx) {                                                  // the real clock, a test clock, or noon of the previewed day
   if (G.clock) return G.clock;
   if (typeof S !== 'undefined' && S.preview) return instant(S.preview, '12:00', ctx.tz) || Date.now();
@@ -192,7 +194,7 @@ function styleOf(r) {
 
 /* ---------------------------------------------------------------- the calendar and clock over the globe (3 Nov 2026: "a calendar and clock tick over while it runs through up to the current time") */
 const CLK = { el: null, day: null };
-function dateIn(ms, tz) { try { const p = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(ms)); const g = (t) => p.find((x) => x.type === t).value; return `${g('year')}-${g('month')}-${g('day')}`; } catch (e) { return ''; } }
+function dateIn(ms, tz) { try { const p = fmtOf('date', tz, 'en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(ms)); const g = (t) => p.find((x) => x.type === t).value; return `${g('year')}-${g('month')}-${g('day')}`; } catch (e) { return ''; } }
 function clockEl() {
   if (CLK.el && document.body.contains(CLK.el)) return CLK.el;
   const wrap = document.getElementById('globe-wrap'); if (!wrap) return null;
@@ -203,7 +205,7 @@ function clockEl() {
 }
 function showClock(ms, tz, label) {                                    // a page-a-day calendar (flips when the day changes) and the time, in tz
   const el = clockEl(); if (!el || ms == null) return;
-  let p; try { p = new Intl.DateTimeFormat('en-GB', { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(ms)); } catch (e) { return; }
+  let p; try { p = fmtOf('clock', tz, 'en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(ms)); } catch (e) { return; }
   const g = (t) => (p.find((x) => x.type === t) || {}).value || '', day = `${g('day')}|${g('month')}`;
   el.querySelector('.gcal i').textContent = g('month').toUpperCase(); el.querySelector('.gcal b').textContent = g('day'); el.querySelector('.gcal u').textContent = g('weekday');
   el.querySelector('.gtime b').textContent = `${g('hour')}:${g('minute')}`; el.querySelector('.gtime i').textContent = label || '';
@@ -307,7 +309,7 @@ function refresh() {                                                   // the cl
   const todo = map.getSource('todo'); if (todo) todo.setData(lines(legFeatures(r.todo, { done: false })));
   placeVehicle(r); showNow(r);
 }
-function stopPlaying() {
+function stopPlaying() {                                               // the replay's own timers only (G.timers); the screen's clock and refresh (G.ticks) run until leave()
   G.playing = false; if (G.raf) { cancelAnimationFrame(G.raf); G.raf = 0; }
   for (const t of G.timers) clearTimeout(t); G.timers.length = 0;
   const b = document.getElementById('globe-play'); if (b) b.textContent = '▶ Replay the journey';
@@ -338,7 +340,7 @@ function playJourney(map, r) {
   if (!flown.length) {                                                 // not yet departed: a quick tour of the whole route, then home
     setDone(map, []);
     let i = 0;
-    const hop = () => { if (!G.playing || G.map !== map) return; if (i >= r.L.length) { settle(map, r, false); stopPlaying(); return; } const lg = r.L[i++]; showLegClock(lg, 1); map.easeTo({ center: lg.to[1], zoom: 1.6, duration: 420, easing: (t) => t }); G.timers.push(setTimeout(hop, 440)); };
+    const hop = () => { if (!G.playing || G.map !== map) return; if (i >= r.L.length) { stopPlaying(); settle(map, r, false); return; } const lg = r.L[i++]; showLegClock(lg, 1); map.easeTo({ center: lg.to[1], zoom: 1.6, duration: 420, easing: (t) => t }); G.timers.push(setTimeout(hop, 440)); };
     map.easeTo({ center: CITY_LL[HOME], zoom: 1.6, duration: 600 }); G.timers.push(setTimeout(hop, 650));
     return;
   }
@@ -346,7 +348,7 @@ function playJourney(map, r) {
   pl.setLngLat(flown[0].from[1]);
   const flyLeg = () => {
     if (!G.playing || G.map !== map) return;
-    if (i >= flown.length) { G.playing = false; settle(map, r, false); stopPlaying(); return; }
+    if (i >= flown.length) { stopPlaying(); settle(map, r, false); return; }   // stop first: settle starts the slow spin on a timer of its own, which stopPlaying would clear
     const lg = flown[i++], pts = arc(lg.from[1], lg.to[1], 64), cap = lg.upTo == null ? 1 : lg.upTo, kEnd = Math.round(cap * (pts.length - 1));
     const dur = (420 + 95 * lg.km / 1000) * cap, t0 = performance.now(), col = colOf(lg.to[0]), plane = isPlane(lg.mode);
     pl.getElement().textContent = glyphOf(lg.mode);
@@ -385,12 +387,14 @@ function build(ctx, family) {
     addBadges(map, r);
     vehicle(map);
     if (G.plane && !r.planeAt) G.plane.getElement().style.display = 'none';
-    G.timers.push(setInterval(() => {
+    /* kept apart from the replay's timers (15 Nov 2026): the replay starts by clearing its own, and these two went with
+       them, so the night side, the clock and the 15-minute re-placing never ran after the first second */
+    G.ticks.push(setInterval(() => {
       if (G.map !== map) return;
       const a = map.getSource('night'), b = map.getSource('night2'); if (a) a.setData(lines([night(new Date(), 0)])); if (b) b.setData(lines([night(new Date(), 7)]));
       if (!G.playing && G.route) showNow(Object.assign({}, G.route, { now: nowMs(G.ctx) }));   // the clock keeps time between refreshes
     }, 60000));
-    G.timers.push(setInterval(refresh, REFRESH_MS));
+    G.ticks.push(setInterval(refresh, REFRESH_MS));
     showNow(r);
     playJourney(map, r);
   });
@@ -411,13 +415,14 @@ function enter(ctx, family) {
 }
 function leave() {
   stopPlaying(); G.idle = false; CLK.el = null; CLK.day = null;
-  for (const t of G.timers) { clearTimeout(t); clearInterval(t); } G.timers.length = 0;
+  for (const t of G.ticks) clearInterval(t); G.ticks.length = 0;
   if (G.popup) { G.popup.remove(); G.popup = null; }
   for (const m of Object.values(G.markers)) { try { m.remove(); } catch (e) { /* gone */ } } G.markers = {};
   if (G.plane) { try { G.plane.remove(); } catch (e) { /* gone */ } G.plane = null; }
   if (G.map) { const m = G.map; G.map = null; try { m.remove(); } catch (e) { /* already gone */ } }
 }
 
+document.addEventListener('visibilitychange', () => { if (!document.hidden && G.map) refresh(); });   // back from the background: timers were asleep, so place everything by the clock now
 window.Globe = { enter, leave, refresh, routeData, whereNow, legs, arc, split, night, sunPos, isNight, instant, glyphOf, wordOf,
   setClock: (ms) => { G.clock = ms || null; },                         // tests: pin the clock (ms since the epoch); null for the real one
   get map() { return G.map; }, get playing() { return G.playing; }, get idle() { return G.idle; } };

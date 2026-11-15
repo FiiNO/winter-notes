@@ -28,22 +28,34 @@ window.Sync = (() => {
     C.dirty = true;                                 // first run: make sure our facts are up there
     await sync();
   }
+  /* a request that gives up after 25 s (15 Nov 2026): one that hung, on hotel Wi-Fi with no internet behind it, held the
+     "busy" flag and every later sync was dropped until the app was restarted */
+  function request(url, opts) {
+    if (typeof AbortController === 'undefined') return fetch(url, opts);
+    const ac = new AbortController(), timer = setTimeout(() => ac.abort(), 25000);
+    return fetch(url, Object.assign({ signal: ac.signal }, opts)).then(
+      (r) => { clearTimeout(timer); return r; },
+      (e) => { clearTimeout(timer); throw (e && e.name === 'AbortError' ? new Error('no answer (timed out)') : e); });
+  }
   async function pull() {
-    const r = await fetch(`${C.url}/r/${C.room}${C.stamp ? '?v=' + encodeURIComponent(C.stamp) : ''}`, { cache: 'no-store' });
+    const r = await request(`${C.url}/r/${C.room}${C.stamp ? '?v=' + encodeURIComponent(C.stamp) : ''}`, { cache: 'no-store' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const j = await r.json();
     if (j.same) return;                             // the Worker saw our stamp: nothing changed
-    C.stamp = j.v || '';
     const devices = j.devices || {};
     C.devices = Object.keys(devices).length;
     if (C.device && !devices[C.device]) C.dirty = true;   // the room does not list us (new room, or a lost index entry): push again
     C.apply(devices);
+    C.stamp = j.v || '';                            // remembered only once the merge is done: a merge that failed is asked for again, not answered "same"
   }
   async function push() {
-    const body = JSON.stringify({ facts: C.mine(), ...C.meta() });
-    const r = await fetch(`${C.url}/r/${C.room}/${C.device}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    C.dirty = false; C.stamp = '';                  // our own write changes the stamp: the next pull fetches everything
+    C.dirty = false;                                // cleared before the facts are read: a change made while the request is on its way sets it again and goes with the next push (it used to be cleared afterwards, and that change sat unsent)
+    try {
+      const body = JSON.stringify({ facts: C.mine(), ...C.meta() });
+      const r = await request(`${C.url}/r/${C.room}/${C.device}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      C.stamp = '';                                 // our own write changes the stamp: the next pull fetches everything
+    } catch (e) { C.dirty = true; throw e; }
   }
   async function sync() {
     if (!C.enabled || C.busy) return;

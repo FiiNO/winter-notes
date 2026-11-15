@@ -24,7 +24,16 @@ async function packFile(name) {
   try { const c = await caches.open(TILE_CACHE); const r = await c.match('tiles/' + name + '.pmtiles'); if (r) return new File([await r.blob()], name + '.pmtiles'); } catch (e) { /* no cache */ }
   return null;
 }
-async function packDownloaded(name) { return !!(await packFile(name)); }
+/* Is a pack on the device, and how big, without reading it (15 Nov 2026). The panel used to open every pack to ask: where
+   packs live in Cache Storage (Safari) that pulled each one, tens of megabytes, into memory just to list them. A pack in
+   Cache Storage was checked against the manifest when it was stored, so its size is not asked for again (null). */
+async function packState(name) {
+  const root = await opfsRoot();
+  if (root) { try { const f = await (await root.getFileHandle(name + '.pmtiles')).getFile(); if (f.size > 0) return { have: true, size: f.size }; } catch (e) { /* not in OPFS */ } }
+  try { const c = await caches.open(TILE_CACHE); if (await c.match('tiles/' + name + '.pmtiles')) return { have: true, size: null }; } catch (e) { /* no cache */ }
+  return { have: false, size: 0 };
+}
+async function packDownloaded(name) { return (await packState(name)).have; }
 async function downloadPack(pack, onProgress) {
   const url = pack.file;
   const resp = await fetch(url, { cache: 'no-store' });
@@ -121,20 +130,9 @@ async function buildStyle(theme) {
   );
   return st;
 }
-function overlayData() {
-  const feats = [...((S.family && S.family.overlay && S.family.overlay.features) || []), ...S.vaultFeatures];
-  if (S.filter !== 'today' || !S.today) return { type: 'FeatureCollection', features: feats };
-  const t0 = S.today, t1 = addDays(S.today, 1);
-  const pack = S.activePack;
-  return { type: 'FeatureCollection', features: feats.filter((f) => {
-    const p = f.properties;
-    if (p.layer === 'vault') return true;
-    if (p.date_from && p.date_to) return p.date_from <= t1 && p.date_to >= t0;
-    if (pack && (p.layer === 'emergency' || p.layer === 'moves' || p.layer === 'rally')) { const [lon, lat] = f.geometry.coordinates; return inBbox(pack.bbox, lon, lat); }
-    return false;
-  }) };
+function overlayData() {                          // every place, always (the "today and tomorrow" filter went on 3 Nov 2026; its code on 15 Nov)
+  return { type: 'FeatureCollection', features: [...((S.family && S.family.overlay && S.family.overlay.features) || []), ...S.vaultFeatures] };
 }
-function addDays(iso, n) { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
 
 /* ------------------------------------------------------------------ map lifecycle */
 async function ensureMap() {
@@ -176,14 +174,20 @@ async function onMoveEnd() {
     S.switching = true;
     if (want) S.activePack = want;
     if (ov) S.overview = ov;
-    try { S.map.setStyle(await buildStyle(S.theme), { diff: false }); } finally { setTimeout(() => { S.switching = false; }, 300); }
+    try { await restyle(); } finally { setTimeout(() => { S.switching = false; }, 300); }
     renderPackBar();
   }
 }
+/* A new style (another pack, the theme, a pack just downloaded) starts with an empty "me" source: the blue dot is put back
+   as soon as the style is in (15 Nov 2026; it used to vanish until the next GPS fix). */
+async function restyle() {
+  if (!S.map) return;
+  S.map.setStyle(await buildStyle(S.theme), { diff: false });
+  S.map.once('styledata', drawMe);
+}
 function refreshOverlay() { if (S.map && S.map.getSource('places')) S.map.getSource('places').setData(overlayData()); }
 
-/* ------------------------------------------------------------------ marker card */
-function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+/* ------------------------------------------------------------------ marker card (esc, dial and mapButtons are app.js's) */
 function openCard(f) {
   const p = f.properties, [lon, lat] = f.geometry.coordinates;
   const name = p.name_en || p.name_ja || '';
@@ -196,9 +200,8 @@ function openCard(f) {
     ${p.dates ? `<div class="small muted">${esc(p.dates)}</div>` : ''}${p.notes ? `<div class="tiny muted">${esc(p.notes)}</div>` : ''}
     <div class="row">
       ${p.taxi_card_id ? `<button class="btn" data-taxi="${esc(p.taxi_card_id)}">Taxi card</button>` : ''}
-      ${typeof mapButtons === 'function' ? mapButtons(lat, lon, name)   /* app.js: Google Maps first while online, Organic Maps when not (6 Nov 2026) */
-        : btn(`https://www.google.com/maps/search/?api=1&query=${lat},${lon}`, 'Google Maps') + btn(`om://map?v=1&ll=${lat},${lon}&n=${encodeURIComponent(name)}`, 'Organic Maps')}
-      ${p.phone ? btn('tel:' + String(p.phone).replace(/[^\d+]/g, ''), 'Call') : ''}
+      ${mapButtons(lat, lon, name)   /* app.js: Google Maps first while online, Organic Maps when not (6 Nov 2026) */}
+      ${p.phone ? btn('tel:' + dial(p.phone), 'Call') : ''}
     </div>`;
   card.classList.remove('hidden');
   card.querySelector('#map-card-close').onclick = () => card.classList.add('hidden');
@@ -256,9 +259,9 @@ async function renderPacks() {
   if (!S.manifest) { el.innerHTML = '<div class="small muted">No tile packs in this build yet.</div>'; return; }
   const rows = [];
   for (const p of S.manifest.packs) {
-    const f = await packFile(p.name);
-    const have = !!f, whole = !f || !p.size || f.size === p.size;
-    const status = !have ? '<span class="chip">online only</span>' : whole ? `<span class="chip">offline ✓</span>` : `<span class="chip red">incomplete</span><br><span class="tiny muted">${fmtMB(f.size)} stored</span>`;
+    const st = await packState(p.name);
+    const have = st.have, whole = !have || !p.size || st.size == null || st.size === p.size;
+    const status = !have ? '<span class="chip">online only</span>' : whole ? `<span class="chip">offline ✓</span>` : `<span class="chip red">incomplete</span><br><span class="tiny muted">${fmtMB(st.size)} stored</span>`;
     const action = have && whole ? `<button class="btn" data-del="${esc(p.name)}">Delete</button>` : `<button class="btn" data-get="${esc(p.name)}">${have ? 'Download again' : 'Download'}</button>`;
     rows.push(`<tr data-pack="${esc(p.name)}"><td><b>${esc(p.title)}</b><br><span class="tiny muted">z${p.maxzoom} · ${p.dates && p.dates.length ? esc(p.dates.join(' to ')) : 'always'}</span></td><td>${fmtMB(p.size)}</td><td class="pack-status">${status}</td><td>${action}</td></tr>`);
   }
@@ -270,19 +273,24 @@ async function renderPacks() {
     ${S.lastError ? `<div class="tiny" style="color:var(--red)">Last map error: ${esc(S.lastError)}</div>` : ''}`;
   el.querySelectorAll('[data-get]').forEach((b) => b.onclick = () => getPack(b.dataset.get));
   el.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => { await deletePack(b.dataset.del); S.loadedSources.delete(localKey(b.dataset.del)); renderPacks(); });
-  el.querySelector('#packs-all').onclick = async () => { for (const p of S.manifest.packs) if (!(await packDownloaded(p.name))) await getPack(p.name); };
+  el.querySelector('#packs-all').onclick = async (e) => {
+    const b = e.currentTarget; b.disabled = true;                    // one run at a time: a second tap used to start every download again alongside the first
+    for (const p of S.manifest.packs) if (!(await packDownloaded(p.name))) await getPack(p.name);
+  };
 }
 async function getPack(name) {
   const p = S.manifest.packs.find((x) => x.name === name); if (!p) return;
-  const row = S.container.querySelector(`tr[data-pack="${name}"] .pack-status`);
+  let cell = null;                                 // found again whenever the table has been redrawn (15 Nov 2026: "Download all" wrote its percentages into a row that was no longer on the screen)
+  const show = (text) => { if (!cell || !cell.isConnected) cell = S.container.querySelector(`tr[data-pack="${name}"] .pack-status`); if (cell) cell.textContent = text; };
   try {
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
-    await downloadPack(p, (got, total) => { if (row) row.textContent = total ? Math.round(100 * got / total) + '%' : fmtMB(got); });
+    show('0%');
+    await downloadPack(p, (got, total) => show(total ? Math.round(100 * got / total) + '%' : fmtMB(got)));
     S.loadedSources.delete(localKey(name));
     S.lastError = null;
-    if (S.activePack && S.activePack.name === name || S.overview && S.overview.name === name) { S.map && S.map.setStyle(await buildStyle(S.theme), { diff: false }); renderPackBar(); }
+    if (S.activePack && S.activePack.name === name || S.overview && S.overview.name === name) { await restyle(); renderPackBar(); }
   } catch (e) { S.lastError = `${p.title} download failed: ${e.message || e}`; }   // renderPacks shows it under the table (the row's own text is redrawn at once)
-  renderPacks();
+  await renderPacks();                             // the table is whole again before the next pack starts
 }
 function renderPackBar() {
   const el = S.container.querySelector('#map-packbar'); if (!el) return;
@@ -300,7 +308,6 @@ window.DossierMap = {
     S.firstStopName = first ? first.name : null; S.preTrip = !!(first && !packForToday(S.today) && S.today < first.dates[0]);
     S.activePack = S.activePack || packForToday(S.today) || first;
     S.overview = S.activePack ? overviewFor((S.activePack.bbox[0] + S.activePack.bbox[2]) / 2) : overviewFor(139);
-    S.container.querySelector('#map-filter').onclick = (e) => { const b = e.target.closest('[data-filter]'); if (!b) return; S.filter = b.dataset.filter; S.container.querySelectorAll('#map-filter .pill').forEach((p) => p.classList.toggle('active', p === b)); refreshOverlay(); };
     S.container.querySelector('#map-me').onclick = centreOnMe;
     S.container.querySelector('#map-packs-toggle').onclick = () => { const p = S.container.querySelector('#map-packs'); p.classList.toggle('hidden'); if (!p.classList.contains('hidden')) renderPacks(); };
     await ensureMap();
@@ -318,10 +325,10 @@ window.DossierMap = {
     }
     if (S.gpsExplained) { S.autoCentre = true; startGps(); }         // each opening centres once on the first fresh fix, where a trip map covers it
   },
-  async setTheme(theme) { const t = theme === 'dark' ? 'dark' : 'light'; if (t === S.theme) return; S.theme = t; if (S.map) S.map.setStyle(await buildStyle(t), { diff: false }); },
+  async setTheme(theme) { const t = theme === 'dark' ? 'dark' : 'light'; if (t === S.theme) return; S.theme = t; await restyle(); },
   setVaultFeatures(features) { S.vaultFeatures = features || []; refreshOverlay(); },
   async focus(lat, lon, zoom = 15) {
-    const want = packAt(lon, lat); if (want && (!S.activePack || want.name !== S.activePack.name)) { S.activePack = want; S.overview = overviewFor(lon); if (S.map) S.map.setStyle(await buildStyle(S.theme), { diff: false }); renderPackBar(); }
+    const want = packAt(lon, lat); if (want && (!S.activePack || want.name !== S.activePack.name)) { S.activePack = want; S.overview = overviewFor(lon); await restyle(); renderPackBar(); }
     if (S.map) S.map.jumpTo({ center: [lon, lat], zoom });
   },
   focusPlace(id) { const f = ((S.family.overlay || {}).features || []).find((x) => x.properties.id === id); if (f) { const [lon, lat] = f.geometry.coordinates; this.focus(lat, lon); openCard(f); } },

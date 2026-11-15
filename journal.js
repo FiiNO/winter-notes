@@ -60,9 +60,12 @@ window.Journal = (() => {
           const parts = k.split('|'), pk = pkey(parts[1], parts[2]);
           (pages[pk] = pages[pk] || {})[parts[3]] = v.v;
         }));
+        const gone = new Set();                                               // pictures deleted for everyone: no stub brings them back (15 Nov 2026)
         await Promise.all(Object.entries(mf).map(async ([k, f]) => {
-          const v = await openCached(k, f); if (!v || !v.on) return;
-          const id = k.slice(6); media[id] = Object.assign({ id }, v);
+          const v = await openCached(k, f); if (!v) return;
+          const id = k.slice(6);
+          if (!v.on) { gone.add(id); return; }
+          media[id] = Object.assign({ id }, v);
         }));
         await Promise.all(Object.entries(sf).map(async ([k, f]) => {
           const v = await openCached(k, f); if (!v || !v.on) return;
@@ -81,9 +84,9 @@ window.Journal = (() => {
           const list = []; if (pg.photo) list.push({ id: pg.photo, k: 'photo' }); if (pg.draw) list.push({ id: pg.draw, k: 'drawing' });
           posts[id] = { id, p, d, t: (tf && tf.t) || Date.parse(d + 'T12:00:00Z'), text: pg.text || '', mood: pg.mood || '', q: pg.q || '', media: list, legacy: true, _t: 0, _d: '' };
         }
-        for (const r of await Media.pendingList()) if (!media[r.id]) media[r.id] = { id: r.id, k: r.k, p: r.p, d: r.d, tag: r.tag || '', n: r.n, w: r.w, h: r.h, t: r.at, local: true };
+        for (const r of await Media.pendingList()) if (!media[r.id] && !gone.has(r.id)) media[r.id] = { id: r.id, k: r.k, p: r.p, d: r.d, tag: r.tag || '', n: r.n, w: r.w, h: r.h, t: r.at, local: true };
         // a story can arrive before its pictures are uploaded: a stub lets the thumbnail and the viewer try to fetch them
-        const stub = (m, p, d) => { if (m && m.id && !media[m.id]) media[m.id] = { id: m.id, k: m.k || 'photo', p, d, tag: 'story', stub: true }; };
+        const stub = (m, p, d) => { if (m && m.id && !media[m.id] && !gone.has(m.id)) media[m.id] = { id: m.id, k: m.k || 'photo', p, d, tag: 'story', stub: true }; };
         for (const po of Object.values(posts)) for (const m of po.media || []) stub(m, po.p, po.d);
         for (const list of Object.values(cmts)) for (const c of list) stub(c.media, c.p, posts[c.postId] ? posts[c.postId].d : '');
         J.pages = pages; J.media = media; J.posts = posts; J.cmts = cmts; J.warmed = true; J.error = null;
@@ -123,7 +126,7 @@ window.Journal = (() => {
     const days = Object.values(J.posts).map((p) => p.d).filter(Boolean).sort(), last = days[days.length - 1];
     if (!last) return;
     const ms = index().filter((m) => m.d === last);
-    (async () => { for (const m of ms) { try { if (m.k === 'photo') await Media.ensure(m.id + 't', 'thumb'); await Media.ensure(m.id, m.k === 'drawing' ? 'drawing' : 'photo'); } catch (e) { /* next sync */ } } })();
+    (async () => { for (const m of ms) { try { if (m.k === 'photo') await Media.ensure(m.id + 't', 'thumb'); await Media.ensure(m.id, kindOf(m)); } catch (e) { /* next sync */ } } })();
   }
   function prefetchMorning() {           // parent phones: today's morning photos at full size, so the lost-kid card works offline
     if (!Quests.isParentDevice()) return;
@@ -141,10 +144,17 @@ window.Journal = (() => {
     return s;
   }
   function looseOn(date, used) { used = used || usedMediaIds(); return mediaOn(date, (m) => m.k === 'photo' && m.tag !== 'story' && !used.has(m.id)); }   // the morning photos and the like
+  /* built at run time, not written as literals (15 Nov 2026): an engine that does not know these Unicode properties rejects a literal
+     while reading the file, and the whole of Stories would be gone; here it falls back to the emoji this app itself offers */
+  let RE_PICTO = null, RE_EMOJI_ONLY = null;
+  try { RE_PICTO = new RegExp('\\p{Extended_Pictographic}', 'u'); RE_EMOJI_ONLY = new RegExp('^[\\p{Extended_Pictographic}\\p{Emoji_Component}\\u200d\\ufe0f\\s]+$', 'u'); } catch (e) { RE_PICTO = RE_EMOJI_ONLY = null; }
   function isEmojiOnly(s) {
     s = String(s || '').trim();
-    try { return !!s && /\p{Extended_Pictographic}/u.test(s) && /^[\p{Extended_Pictographic}\p{Emoji_Component}‍️\s]+$/u.test(s); } catch (e) { return false; }
+    if (!s) return false;
+    if (RE_PICTO) return RE_PICTO.test(s) && RE_EMOJI_ONLY.test(s);
+    return QUICK.includes(s) || EMOJI.includes(s);
   }
+  const kindOf = (m) => (m && m.k === 'drawing' ? 'drawing' : 'photo');
   const canDelete = (x, st) => !x.legacy && !Quests.isGrandDevice() && (x._d === st.device || Quests.isParentDevice());   // no bin on Grandma and Grandpa's phone (3 Nov 2026); a second tap on ❤️ still takes their ❤️ back
   function unseenCount(st) {             // stories and replies from another device since this device last looked at the feed
     const seen = +(localStorage.getItem('storiesSeen') || 0); let n = 0;
@@ -216,7 +226,14 @@ window.Journal = (() => {
     if (!ms.length) return `<div class="card red"><b>This morning's photo</b>: none in the app yet. Open Photos and have it ready to show.</div>`;
     return `<div class="card"><div class="h3">This morning's photos</div><div class="morning-strip">${ms.map((m) => `<button data-view="${esc(m.id)}" data-group="${esc(date)}"><img class="ph" data-oid="${esc(m.id)}t" data-kind="thumb" alt="${esc(Quests.label(m.p))}"></button>`).join('')}</div><div class="tiny muted">Tap one for full size.</div></div>`;
   }
-  function fillMedia(root) { root.querySelectorAll('img[data-oid]').forEach((img) => { if (!img.src) Media.url(img.dataset.oid, img.dataset.kind).then((u) => { if (u) img.src = u; else img.classList.add('missing'); }); }); }
+  function loadImg(img) {                 // one picture into its <img>: decrypted (or fetched) on demand; "missing" comes off again once it arrives
+    return Media.url(img.dataset.oid, img.dataset.kind).then((u) => {
+      if (!u) { img.classList.add('missing'); return; }
+      img.classList.remove('missing');
+      if (!img.src) img.src = u;
+    });
+  }
+  function fillMedia(root) { root.querySelectorAll('img[data-oid]').forEach((img) => { if (!img.src) loadImg(img); }); }
   function wireViews(root) {
     root.querySelectorAll('[data-view]').forEach((b) => b.onclick = () => {
       const group = b.dataset.group; let ids;
@@ -230,10 +247,14 @@ window.Journal = (() => {
   function fill(root) { fillMedia(root); wireViews(root); }
 
   /* ---------------------------------------------------------------- photos in */
-  async function addPhotos(p, d, tag, camera, max) {  // Media.pick runs synchronously up to the input click: keep this first
+  /* onFiles runs once the picker has handed pictures over. A caller that shows "busy" starts it there, not at the tap (15 Nov 2026):
+     browsers before Chrome 113 and Safari 16.4 say nothing when the picker is closed without a choice, so this promise then never
+     settles, and a composer that counted from the tap sat on "…" with Post greyed out until the story was thrown away. */
+  async function addPhotos(p, d, tag, camera, max, onFiles) {  // Media.pick runs synchronously up to the input click: keep this first
     const meta = { p, d, tag, id: Media.newId() };
     const files = await Media.pick({ camera, keep: camera ? (f) => Media.keepOriginal(f, meta) : null });   // Snap: the full-size original too
     const out = [];
+    if (files.length && onFiles) onFiles(files.length);
     for (const file of files.slice(0, Math.max(1, max || 1))) {
       const m = out.length ? { p, d, tag, id: Media.newId() } : meta;
       try {
@@ -269,7 +290,7 @@ window.Journal = (() => {
       ov.querySelectorAll('[data-s]').forEach((b) => b.onclick = () => { size = +b.dataset.s; ov.querySelectorAll('[data-s]').forEach((x) => x.classList.toggle('on', x === b)); });
       ov.querySelector('#pad-undo').onclick = () => { strokes.pop(); paint(); };
       ov.querySelector('#pad-clear').onclick = () => { if (!strokes.length || confirm('Clear the drawing?')) { strokes.length = 0; paint(); } };
-      const close = (id) => { ov.classList.add('hidden'); ov.innerHTML = ''; J.overlay = null; resolve(id || null); };
+      const close = (id) => { cv.width = cv.height = 0; ov.classList.add('hidden'); ov.innerHTML = ''; J.overlay = null; resolve(id || null); };   // the pad's pixels are handed back at once (a detached canvas keeps them until the next collection)
       const cancel = () => { if (strokes.length && !confirm('Leave without saving the drawing?')) return false; close(null); return true; };
       J.overlay = { back: cancel, kind: 'pad' };
       ov.querySelector('#pad-cancel').onclick = cancel;
@@ -303,8 +324,8 @@ window.Journal = (() => {
       img.removeAttribute('src');
       if (!m) { info.textContent = 'That picture is gone.'; return; }
       info.textContent = `${Quests.label(m.p)}${m.d ? ' · ' + fmtDate(m.d) : ''}${m.tag === 'morning' ? ' · morning photo' : m.k === 'drawing' ? ' · drawing' : ''}${m.local ? ' · not backed up yet' : ''}${ids.length > 1 ? ` · ${J.viewer.i + 1} of ${ids.length}` : ''}`;
-      const u = await Media.url(m.id, m.k === 'drawing' ? 'drawing' : 'photo');
-      if (!J.viewer || J.media[ids[J.viewer.i]] !== m) return;
+      const u = await Media.url(m.id, kindOf(m));
+      if (!J.viewer || J.viewer.ids !== ids || ids[J.viewer.i] !== m.id) return;   // by id: a sync in the meantime rebuilds J.media with new objects (15 Nov 2026; comparing the objects left the picture blank)
       if (u) img.src = u; else info.textContent += ' · not downloaded yet (needs internet)';
     };
     ov.querySelector('#v-prev').onclick = () => showAt(J.viewer.i - 1);
@@ -314,7 +335,7 @@ window.Journal = (() => {
     if (sv) sv.onclick = async () => {
       const m = J.media[ids[J.viewer.i]]; if (!m) return;
       sv.disabled = true;
-      try { await Media.saveCopy(m.id, m.k === 'drawing' ? 'drawing' : 'photo', m); sv.textContent = '✓'; setTimeout(() => { sv.textContent = '⬇️'; sv.disabled = false; }, 1500); }
+      try { await Media.saveCopy(m.id, kindOf(m), m); sv.textContent = '✓'; setTimeout(() => { sv.textContent = '⬇️'; sv.disabled = false; }, 1500); }
       catch (e) { sv.disabled = false; if (e && e.name !== 'AbortError') alert((e && e.message) || 'Could not save the picture.'); }
     };
     const del = ov.querySelector('#v-del');
@@ -347,19 +368,31 @@ window.Journal = (() => {
     const sc = ov.querySelector('#cv-card');
     if (sc) sc.onclick = async () => { sc.disabled = true; try { const f = await Postcard.prepare(id, pick); if (!f) throw new Error('Could not draw the postcard.'); await Media.saveFile(f); tick(sc, '⬇️ Card'); } catch (e) { sc.disabled = false; if (e && e.name !== 'AbortError') alert((e && e.message) || 'Could not save the postcard.'); } };
     const sp = ov.querySelector('#cv-photo');
-    if (sp) sp.onclick = async () => { sp.disabled = true; try { await Media.saveCopy(pic.id, pic.k === 'drawing' ? 'drawing' : 'photo', J.media[pic.id]); tick(sp, '⬇️ Photo'); } catch (e) { sp.disabled = false; if (e && e.name !== 'AbortError') alert((e && e.message) || 'Could not save the picture.'); } };
-    try { const r = await Postcard.cardUrl(id, pick, 1); const im = $('#cv-img'); if (im && r && r.url) im.src = r.url; } catch (e) { const im = $('#cv-img'); if (im) im.alt = 'Could not draw the postcard.'; }
+    if (sp) sp.onclick = async () => { sp.disabled = true; try { await Media.saveCopy(pic.id, kindOf(pic), J.media[pic.id]); tick(sp, '⬇️ Photo'); } catch (e) { sp.disabled = false; if (e && e.name !== 'AbortError') alert((e && e.message) || 'Could not save the picture.'); } };
+    /* drawn for this screen, not at print size (15 Nov 2026): the full 2400 × 1600 card is 15 MB of pixels, a lot for a 2 GB phone to
+       hold for a picture shown 400 px wide. "⬇️ Card" still saves the full-size one. */
+    const scale = Math.max(0.5, Math.min(1, (Math.min(window.innerWidth, 900) * Math.min(3, window.devicePixelRatio || 1)) / 2400));
+    try { const r = await Postcard.cardUrl(id, pick, Math.round(scale * 4) / 4); const im = $('#cv-img'); if (im && r && r.url) im.src = r.url; } catch (e) { const im = $('#cv-img'); if (im) im.alt = 'Could not draw the postcard.'; }
   }
 
   /* ---------------------------------------------------------------- the composer: a new story, or a reply (same overlay, state in J.draft) */
-  function loadDraft() { try { return JSON.parse(localStorage.getItem('storyDraft') || 'null'); } catch (e) { return null; } }
-  function saveDraft() { try { if (J.draft) localStorage.setItem('storyDraft', JSON.stringify(J.draft)); else localStorage.removeItem('storyDraft'); } catch (e) { /* blocked */ } }
-  function clearDraft() { J.draft = null; try { localStorage.removeItem('storyDraft'); } catch (e) { /* blocked */ } }
+  /* A story being written and a reply being written are kept apart (15 Nov 2026): they shared one slot, so opening a reply
+     threw away a half-written story and left its pictures belonging to nothing. */
+  const slot = (mode) => (mode === 'reply' ? 'replyDraft' : 'storyDraft');
+  const hasWork = (dr) => !!(dr && (String(dr.text || '').trim() || (dr.media || []).length));
+  function loadDraft(mode) { try { const dr = JSON.parse(localStorage.getItem(slot(mode)) || 'null'); return dr && dr.mode === mode ? dr : null; } catch (e) { return null; } }
+  function saveDraft() { try { if (J.draft) localStorage.setItem(slot(J.draft.mode), JSON.stringify(J.draft)); } catch (e) { /* blocked */ } }
+  function clearDraft() { const mode = J.draft ? J.draft.mode : null; J.draft = null; try { if (mode) localStorage.removeItem(slot(mode)); } catch (e) { /* blocked */ } }
   function openComposer(opts) {
     opts = opts || {};
     const st = Quests.state(), ctx = currentContext(), mode = opts.mode === 'reply' ? 'reply' : 'post', d = opts.d || ctx.date;
     let dr = J.draft && J.draft.mode === mode ? J.draft : null;
-    if (!dr) { const saved = loadDraft(); if (saved && saved.mode === mode && (mode === 'post' ? saved.d === d : saved.postId === opts.postId)) dr = saved; }
+    if (!dr) {
+      const saved = loadDraft(mode);
+      if (saved && mode === 'post' && (saved.d === d || hasWork(saved))) dr = saved;           // a story left half-written comes back, whichever day it was for, until it is posted or thrown away
+      else if (saved && mode === 'reply' && saved.postId === opts.postId) dr = saved;
+      else if (saved && mode === 'reply') for (const m of saved.media || []) deleteMedia(m.id);   // a reply to another story that was never sent: its picture goes with it
+    }
     if (!dr) dr = { mode, p: opts.p || st.active, d, postId: opts.postId || null, text: '', mood: '', q: '', media: [] };
     if (!Array.isArray(dr.media)) dr.media = [];
     if (!Quests.visiblePlayers().includes(dr.p)) dr.p = st.active;
@@ -368,7 +401,7 @@ window.Journal = (() => {
   }
   const firstLine = (po) => (po.text || '').split('\n')[0].slice(0, 60) || (po.media && po.media.length ? '📷 a picture' : '');
   function mediaThumbs(dr) {
-    return dr.media.map((m) => `<div class="th"><img class="${m.k === 'drawing' ? 'dr' : 'ph'}" data-oid="${esc(m.k === 'drawing' ? m.id : m.id + 't')}" data-kind="${m.k === 'drawing' ? 'drawing' : 'thumb'}" alt=""><button class="rm" data-rm="${esc(m.id)}" aria-label="Remove">✕</button></div>`).join('');
+    return dr.media.map((m) => `<div class="th">${pic(m)}<button class="rm" data-rm="${esc(m.id)}" aria-label="Remove">✕</button></div>`).join('');
   }
   function renderComposer() {
     const ov = $('#overlay'), st = Quests.state(), ctx = currentContext(), dr = J.draft, reply = dr.mode === 'reply';
@@ -417,11 +450,11 @@ window.Journal = (() => {
     const full = () => { alert(max === 1 ? 'A reply carries one picture.' : `Up to ${max} pictures in one story.`); };
     ov.querySelectorAll('[data-snap]').forEach((b) => b.onclick = () => {
       const left = max - dr.media.length; if (left <= 0) return full();
-      busy++; refresh();
-      addPhotos(dr.p, dr.d, 'story', b.dataset.snap === 'camera', left).then((ids) => {
+      let counted = false;                                               // busy only from the moment pictures actually arrive (see addPhotos)
+      addPhotos(dr.p, dr.d, 'story', b.dataset.snap === 'camera', left, () => { counted = true; busy++; refresh(); }).then((ids) => {
         for (const id of ids) dr.media.push({ id, k: 'photo' });
         saveDraft(); const cm = ov.querySelector('#c-media'); if (cm) { cm.innerHTML = mediaThumbs(dr); wireThumbs(ov); fillMedia(ov); }
-      }).finally(() => { busy--; refresh(); });
+      }).catch((e) => { if (window.logErr) logErr('add photos: ' + ((e && e.message) || e)); }).then(() => { if (counted) busy--; refresh(); });
     });
     ov.querySelector('#c-draw').onclick = () => {
       if (dr.media.length >= max) return full();
@@ -518,7 +551,7 @@ window.Journal = (() => {
       const empty = !photos.length && !posts.length;
       if (!empty) any = true;
       html += `<div class="card story-day${empty ? ' story-empty' : ''}" data-date="${esc(date)}" style="--city:var(--c-${key})"><div class="story-head"><span class="se">${Quests.CITY_EMOJI[city] || '📍'}</span><div><b>${esc(fmtDate(date))}</b>${date === ctx.date ? '<span class="chip red">today</span>' : ''}<div class="small muted">${esc(day ? day.where : (city === 'Home' ? 'At home' : city))}</div></div></div>`;
-      if (moves.length) html += moves.map((m) => `<div class="small">${/train/i.test(m.mode || '') ? '🚆' : /coach|bus/i.test(m.mode || '') ? '🚌' : '✈️'} ${esc(m.frm)} → ${esc(m.to)} · ${esc(m.depart)}</div>`).join('');
+      if (moves.length) html += moves.map((m) => `<div class="small">${moveGlyph(m.mode)} ${esc(m.frm)} → ${esc(m.to)} · ${esc(m.depart)}</div>`).join('');
       if (stamps.length) html += `<div class="stickers">${stamps.map((b) => `<span class="sticker">${b.e} ${esc(b.t)}</span>`).join('')}</div>`;
       if (photos.length) html += `<div class="story-grid">${photos.map((m) => `<button data-view="${esc(m.id)}" data-group="${esc(date)}"><img class="ph" data-oid="${esc(m.id)}t" data-kind="thumb" alt=""></button>`).join('')}</div>`;
       for (const po of posts) html += postHtml(po, st, ctx, av, cards, ro);
@@ -551,12 +584,12 @@ window.Journal = (() => {
       for (const en of entries) {
         const img = en.target;
         if (img.dataset.pc) { if (en.isIntersecting) loadCard(img); continue; }       // a drawn postcard stays (postcard.js caches it); data-pc, not data-card, which is the family's 📮 button (3 Nov 2026)
-        if (en.isIntersecting) { if (!img.src) Media.url(img.dataset.oid, img.dataset.kind).then((u) => { if (u) img.src = u; else img.classList.add('missing'); }); }
+        if (en.isIntersecting) { if (!img.src) loadImg(img); }
         else if (img.src) img.removeAttribute('src');
       }
     }, { rootMargin: '600px 0px' });
     root.querySelectorAll('img[data-oid]').forEach((img, i) => {
-      if (i < 12) Media.url(img.dataset.oid, img.dataset.kind).then((u) => { if (u && !img.src) img.src = u; });   // the first screenful at once; the observer handles the rest
+      if (i < 12) loadImg(img);                                          // the first screenful at once; the observer handles the rest
       J.observer.observe(img);
     });
     root.querySelectorAll('img[data-pc]').forEach((img, i) => { if (i < 3) loadCard(img); J.observer.observe(img); });
@@ -587,11 +620,11 @@ window.Journal = (() => {
     const ms = index(), total = ms.length * 2; let done = 0;
     for (const m of ms) {
       if (m.k === 'photo') await Media.ensure(m.id + 't', 'thumb');
-      await Media.ensure(m.id, m.k === 'drawing' ? 'drawing' : 'photo');
+      await Media.ensure(m.id, kindOf(m));
       done += 2; if (onProgress) onProgress(Math.min(done, total), total);
     }
   }
 
-  return { init, warm, page, promptFor, index, storiesTileHtml, morningHtml, fill, renderStory, openComposer, openDraw, openViewer, onLeave, addPhoto, addPhotos, downloadAll, refreshBadge, post, cityOf,
+  return { init, warm, page, promptFor, index, storiesTileHtml, morningHtml, fill, thumb: pic, renderStory, openComposer, openDraw, openViewer, onLeave, addPhoto, addPhotos, downloadAll, refreshBadge, post, cityOf,
     overlayOpen: () => !!J.overlay, overlayBack: () => (J.overlay ? J.overlay.back() : true), diag, scrollToDate, cityStats };
 })();

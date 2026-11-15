@@ -38,10 +38,31 @@ window.Quests = (() => {
       emojiW = { cache: {} };
       try { const g = document.createElement('canvas').getContext('2d'); g.font = '32px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'; emojiW.g = g; emojiW.ref = g.measureText('🙂').width; } catch (err) { emojiW.g = null; }
     }
-    if (!emojiW.g || !emojiW.ref) return true;
-    if (!(e in emojiW.cache)) emojiW.cache[e] = emojiW.g.measureText(e).width <= emojiW.ref * 1.35;
+    if (!emojiW.g || !emojiW.ref) return drawable(e);
+    if (!(e in emojiW.cache)) emojiW.cache[e] = emojiW.g.measureText(e).width <= emojiW.ref * 1.35 && drawable(e);
     return emojiW.cache[e];
   }
+  /* 15 Nov 2026: an emoji newer than the device's font (the kids' tablet has Android 8's, from 2017) is drawn as an empty box,
+     which the width test cannot see: a box is as wide as a face. A colour emoji ignores the ink it is drawn with and a box
+     does not, so a newer glyph is drawn once in pure red and looked at: ink that is all red means there is no picture.
+     Only glyphs from the newer blocks are tested; the older ones are on every device the family has. */
+  const newer = (e) => { const cp = String(e).codePointAt(0); return cp >= 0x1F900 || (cp >= 0x1F6D0 && cp <= 0x1F6FF) || (cp >= 0x1F7E0 && cp <= 0x1F7FF); };
+  const drawn = {}; let probe = null;
+  function drawable(e) {
+    if (!newer(e)) return true;
+    if (e in drawn) return drawn[e];
+    let ok = true;
+    try {
+      if (!probe) { const c = document.createElement('canvas'); c.width = c.height = 24; probe = c.getContext('2d'); probe.font = '18px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'; probe.textBaseline = 'top'; probe.fillStyle = '#f00'; }
+      probe.clearRect(0, 0, 24, 24); probe.fillText(e, 0, 2);
+      const px = probe.getImageData(0, 0, 24, 24).data; let ink = 0, colour = 0;
+      for (let i = 0; i < px.length; i += 4) if (px[i + 3] > 40) { ink++; if (px[i + 1] > 60 || px[i + 2] > 60) colour++; }
+      ok = ink === 0 || colour > 0;                              // nothing drawn at all: cannot tell, so leave it be
+    } catch (err) { ok = true; }
+    return (drawn[e] = ok);
+  }
+  const STAND_IN = { '🧳': '💼', '🪟': '🏠', '🫣': '🙈', '🦝': '🐻', '🦫': '🐹', '🥯': '🍩', '🥿': '👟', '🧱': '🏯', '🫕': '🧀', '🪧': '📣', '🛝': '🎠', '🧮': '🔢', '🥭': '🍍', '🪜': '⛰️', '🥾': '👟', '🧭': '⚓', '🦸': '💪' };
+  const glyph = (e) => (drawable(e) ? e : (STAND_IN[e] || '⭐'));   // the quest, level, badge and stamp pictures go through this once, at load
   const avatarsOk = () => AVATARS.filter(emojiOk);
   const DEFAULT_AVATAR = { Andrew: '🕵️', Sarah: '🌟', Vince: '🦖', Drew: '🦄', Grandma: '👵', Grandpa: '👴' };
   const GRAND = ['Grandma', 'Grandpa'];                       // the two faces on Grandma and Grandpa's phone (2 Nov 2026); never points
@@ -206,6 +227,9 @@ window.Quests = (() => {
     { id: 'carry-bag', e: '🪜', t: 'Carry a bag up the stairs for someone', pts: 10, where: 'any', kind: 'helper' },
     { id: 'new-friend', e: '🤝', t: 'Make a friend who speaks another language', pts: 25, where: 'any', kind: 'words' },
   ];
+  for (const q of QUESTS) q.e = glyph(q.e);
+  for (const l of LEVELS) l[2] = glyph(l[2]);
+  for (const k of Object.keys(CITY_EMOJI)) CITY_EMOJI[k] = glyph(CITY_EMOJI[k]);
   const byId = Object.fromEntries(QUESTS.map((q) => [q.id, q]));
   const needsVerify = (q) => !!(q && !q.auto);               // a kid's tick waits for a parent unless the quest is auto
 
@@ -226,19 +250,36 @@ window.Quests = (() => {
     const st = state(); if (!visiblePlayers().includes(st.active)) { st.active = visiblePlayers()[0]; save(st); }
     Sync.touch();
   }
-  function deviceName() { return isParentDevice() ? `${label(owner() || 'Dad')}'s phone` : isGrandDevice() ? "Grandma and Grandpa's phone" : "Kids' device"; }
+  function deviceName() { return isParentDevice() ? `${parentName()}'s phone` : isGrandDevice() ? "Grandma and Grandpa's phone" : "Kids' device"; }
 
-  /* ---------------------------------------------------------------- state: facts, newest per key wins */
-  function load() { try { return JSON.parse(localStorage.getItem(KEY) || '') || null; } catch (e) { return null; } }
-  function save(st) { localStorage.setItem(KEY, JSON.stringify(st)); faceMemo = {}; }
+  /* ---------------------------------------------------------------- state: facts, newest per key wins
+     The parsed state is kept in memory (15 Nov 2026). It used to be read and parsed from localStorage on every call, some
+     25 times for one tick on a parent phone, and the blob grows with every story and picture: on the kids' tablet that
+     was the wait after each tap. Every change still goes to localStorage at once (save), so nothing is held back, and a
+     second tab of the app writing the same store drops the copy here. `rev` counts changes, for the memos further down
+     (effective, view, points): they are rebuilt on the first read after any change. */
+  let cached = null, rev = 0, saveFailed = false;
+  function load() {
+    let raw = null;
+    try { raw = localStorage.getItem(KEY); return JSON.parse(raw || '') || null; }
+    catch (e) { if (raw) { try { localStorage.setItem(KEY + ':bad', raw); } catch (err) { /* no room for the copy */ } } return null; }   // unreadable: kept aside, never silently replaced
+  }
+  function save(st) {
+    cached = st; rev++; faceMemo = {};
+    try { localStorage.setItem(KEY, JSON.stringify(st)); saveFailed = false; }
+    catch (e) { if (!saveFailed && window.logErr) logErr('scores not saved on this device: ' + ((e && e.message) || e)); saveFailed = true; }   // storage full or blocked: the session carries on from memory, and sync still sends
+  }
+  window.addEventListener('storage', (e) => { if (!e.key || e.key === KEY) { cached = null; rev++; } });
+  const reload = () => { cached = null; rev++; faceMemo = {}; };            // for a test page that edits localStorage itself
   function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
   function state() {
-    let st = load();
+    let st = cached || load();
     if (!st) { st = migrate(); save(st); }
     st.facts = st.facts || {}; st.seen = st.seen || {}; st.okSeen = st.okSeen || {}; st.devices = st.devices || {};
     if (!st.device) { st.device = newId(); save(st); }
     const vis = visiblePlayers();
     if (!st.active || !vis.includes(st.active)) st.active = vis[0] || people()[0];
+    cached = st;
     return st;
   }
   function migrate() {
@@ -263,23 +304,45 @@ window.Quests = (() => {
     return st;
   }
   const tickKey = (p, id, date) => `tick|${p}|${id}|${date || '-'}`;
-  function put(st, key, v) { st.facts[key] = { v, t: Date.now(), d: st.device }; }
+  /* A fact's time is this device's clock, but never earlier than what it answers (15 Nov 2026). "Newest wins" and "a ✓
+     counts if it is not older than the tick" both compare clocks of different devices: with the kids' tablet three minutes
+     fast, Dad's ✓ was older than the tick it approved and the row came straight back; with it slow, an Undo lost to the
+     fact it undid. So a new fact is stamped after the one it replaces, after the tick or the answer it belongs to, and
+     after the last reset. */
+  function stampAfter(st, key) {
+    let t = Date.now();
+    const story = STORY_KEY.test(key);
+    const older = [st.facts[key], st.facts['ok|' + key], key.startsWith('ok|') ? st.facts[key.slice(3)] : null, story ? st.facts.swipe : st.facts.wipe];
+    for (const f of older) if (f && f.t >= t) t = f.t + 1;
+    return t;
+  }
+  function put(st, key, v) { st.facts[key] = { v, t: stampAfter(st, key), d: st.device }; rev++; }
+  function putWipe(st, name, covers) {  // a reset is stamped after every fact it resets, whichever clock wrote them
+    let t = Date.now();
+    for (const [k, f] of Object.entries(st.facts)) if (f && f.t >= t && covers(k)) t = f.t + 1;
+    st.facts[name] = { v: 1, t, d: st.device }; rev++;
+  }
+  function commit(st) { save(st); Sync.touch(); }   // every change: kept on this device, then sent
   /* facts for the other modules (journal.js, media.js): write one, read one, read a prefix, hear about changes */
   const factsListeners = [];
   function onFacts(fn) { factsListeners.push(fn); }
   function notifyFacts(why) { for (const fn of factsListeners) { try { fn(why); } catch (e) { /* a listener's own problem */ } } }
-  function setFact(key, v) { const st = state(); put(st, key, v); save(st); Sync.touch(); notifyFacts('local'); }
+  function setFact(key, v) { const st = state(); put(st, key, v); commit(st); notifyFacts('local'); }
   function getFact(key) { const f = effective(state())[key]; return f ? f.v : null; }
   function factsByPrefix(prefix) { const out = {}; for (const [k, f] of Object.entries(effective(state()))) if (k.startsWith(prefix)) out[k] = f; return out; }
   const wipeT = (st) => (st.facts.wipe ? st.facts.wipe.t : 0);
   const swipeT = (st) => (st.facts.swipe ? st.facts.swipe.t : 0);   // the stories wipe (1 Nov 2026): stories, replies, pages and pictures older than it are gone everywhere
-  const STORY_KEY = /^(page|media|post|cmt|card)\|/;
-  function effective(st) {               // facts that survive the last quest reset and the last stories wipe
+  const STORY_KEY = /^(page|media|post|cmt|card|ok\|card)\|/;       // a sent postcard's mark belongs to its story (15 Nov 2026: a quest reset used to put sent cards back to "waiting for a parent")
+  let effMemo = null;
+  function effective(st) {               // facts that survive the last quest reset and the last stories wipe; read-only, shared until the next change
+    if (effMemo && effMemo.st === st && effMemo.rev === rev) return effMemo.out;
     const w = wipeT(st), sw = swipeT(st), out = {};
     for (const [k, f] of Object.entries(st.facts)) {
       if (k === 'wipe' || k === 'swipe') continue;
-      if (STORY_KEY.test(k) ? f.t >= sw : f.t >= w) out[k] = f;     // stories outlive a quest reset; only the stories wipe takes them
+      /* stories outlive a quest reset (only the stories wipe takes them), and so do the faces people chose (15 Nov 2026) */
+      if (STORY_KEY.test(k) ? f.t >= sw : (f.t >= w || k.startsWith('avatar|'))) out[k] = f;
     }
+    effMemo = { st, rev, out };
     return out;
   }
   function gcStories(st) {               // drop the story facts a wipe made invisible, so this device's blob shrinks (a device that has not seen the wipe re-sends them; the others ignore and drop them again)
@@ -289,12 +352,18 @@ window.Quests = (() => {
   function wipeStories() {               // a parent: every story, reply, page and picture, for the whole family, on every device
     if (!isParentDevice()) return;
     const st = state();
-    st.facts.swipe = { v: 1, t: Date.now(), d: st.device };
+    putWipe(st, 'swipe', (k) => STORY_KEY.test(k));
     gcStories(st);
-    save(st); Sync.touch(); notifyFacts('local'); afterChange();
+    commit(st); notifyFacts('local'); afterChange();
   }
   function liveOn(st, key) { const f = effective(st)[key]; return !!(f && f.v && f.v.on); }
 
+  /* a parent's answer to a fact (a tick, a food, a stamp, a postcard request): it counts if it is not older than the fact,
+     so a re-tick after a ✗ asks again; a postcard a parent shared directly has an answer and no request */
+  function answer(eff, key, f) {
+    const ok = eff['ok|' + key];
+    return ok && ok.v && (!f || ok.t >= f.t) ? { a: ok.v.a, who: ok.v.who || '', t: ok.t } : { a: null, who: '', t: 0 };
+  }
   /* every tick and food note of one player, with its approval state */
   function items(st, p, eff) {
     eff = eff || effective(st);
@@ -309,9 +378,8 @@ window.Quests = (() => {
       if (!it) continue;
       it.key = k; it.player = p; it.by = f.v.by || 'kid'; it.t = f.t;
       it.needs = it.verify && it.by !== 'parent';
-      const ok = eff['ok|' + k];
-      const okValid = ok && ok.t >= f.t;             // a re-tick after a ✗ asks again
-      it.ok = okValid ? ok.v.a : null; it.okBy = okValid ? ok.v.who || '' : '';
+      const ans = answer(eff, k, f);
+      it.ok = ans.a; it.okBy = ans.who; it.okT = ans.t;
       it.pending = it.needs && !it.ok;
       it.rejected = it.needs && it.ok === 'no';
       it.counted = !it.needs || it.ok === 'yes';
@@ -320,15 +388,20 @@ window.Quests = (() => {
     return out.sort((a, b) => b.t - a.t);
   }
   /* a player as the views see them: counted ticks by quest, counted foods, avatar, pending and rejected items */
+  let viewMemo = { rev: -1, by: {} };   // one walk of the facts per player per change; the result is shared and read-only
   function view(st, p, eff) {
     eff = eff || effective(st);
+    const keep = !!effMemo && eff === effMemo.out;
+    if (keep) { if (viewMemo.rev !== rev) viewMemo = { rev, by: {} }; if (viewMemo.by[p]) return viewMemo.by[p]; }
     const its = items(st, p, eff), done = {}, foods = [];
     for (const it of its) {
       if (!it.counted) continue;
       if (it.kind === 'tick') (done[it.id] = done[it.id] || []).push(it.date); else foods.push({ date: it.date, what: it.what, key: it.key });
     }
     const av = eff['avatar|' + p];
-    return { name: p, avatar: av ? av.v : (DEFAULT_AVATAR[p] || '🙂'), done, foods, items: its, pending: its.filter((i) => i.pending), rejected: its.filter((i) => i.rejected) };
+    const out = { name: p, avatar: av ? av.v : (DEFAULT_AVATAR[p] || '🙂'), done, foods, items: its, pending: its.filter((i) => i.pending), rejected: its.filter((i) => i.rejected) };
+    if (keep) viewMemo.by[p] = out;
+    return out;
   }
   function pendingAll(st) { const eff = effective(st); return people().flatMap((p) => items(st, p, eff).filter((i) => i.pending)).concat(pendingStamps(st, eff), pendingCards(st, eff)); }
 
@@ -339,9 +412,13 @@ window.Quests = (() => {
     for (const [id, dates] of Object.entries(pl.done)) pts += (byId[id] ? byId[id].pts : 0) * dates.length;
     return pts + (pl.foods || []).length * FOOD_PTS;
   }
+  const ptsMemo = new WeakMap();        // a player's view → its points on a given day (a view lives until the next change, so this cannot go stale)
   function points(pl) {
+    const ctx = currentContext(), m = ptsMemo.get(pl);
+    if (m && m.date === ctx.date && m.rev === rev) return m.pts;
     let pts = rawPoints(pl);
-    for (const b of badges(pl)) if (b.earned) pts += b.pts;
+    for (const b of badges(pl, ctx)) if (b.earned) pts += b.pts;
+    ptsMemo.set(pl, { date: ctx.date, rev, pts });
     return pts;
   }
   function level(pts) {
@@ -350,7 +427,6 @@ window.Quests = (() => {
     return { name: cur[1], emoji: cur[2], colour: cur[3], idx, from: cur[0], next: next ? next[0] : null, nextName: next ? next[1] : null,
       pct: next ? Math.round(((pts - cur[0]) / (next[0] - cur[0])) * 100) : 100 };
   }
-  const levelOf = (p) => level(points(view(state(), p)));
   /* a face (3 Nov 2026): the avatar in a .face span, so every draw site sizes it the same way. The mini level badge that sat
      in its corner lasted a day (too busy, and it covered the face; Andy): the level now shows only in the level cards and
      the level-up show. The grandparents' joint author shows both their faces. Memoised per player until the next state
@@ -372,7 +448,7 @@ window.Quests = (() => {
     if (liveOn(st, key)) return;
     const who = by();
     put(st, key, { on: true, by: who, date });
-    save(st); Sync.touch();
+    commit(st);
     const waits = needsVerify(q) && who !== 'parent';
     fx = waits ? { key, cls: 'just-sent', float: '📨 sent', fcls: 'send' } : { key, cls: 'just-done', float: `+${q.pts}` };
     if (waits) celebrate('⏳', 'Sent to Mum and Dad', `${q.t} · ${q.pts} points when they say yes`, player, 'wait');
@@ -385,12 +461,12 @@ window.Quests = (() => {
     if (!liveOn(st, key)) return;
     put(st, key, { on: false, by: by(), date });
     fx = { key, cls: 'just-undone', float: `−${q.pts}`, fcls: 'minus' };
-    save(st); Sync.touch(); afterChange();
+    commit(st); afterChange();
   }
   function addFood(player, what, date) {
     const st = state(), who = by();
     put(st, 'food|' + player + '|' + newId(), { on: true, by: who, date, what: String(what || '').slice(0, 60) });
-    save(st); Sync.touch();
+    commit(st);
     const waits = who !== 'parent';
     fx = waits ? { key: 'food', cls: 'just-done', float: '📨 sent', fcls: 'send' } : { key: 'food', cls: 'just-done', float: `+${FOOD_PTS}` };
     const small = (what ? `Tried: ${what}` : 'Tried something new') + (waits ? ` · ${FOOD_PTS} points when they say yes` : '');
@@ -423,26 +499,29 @@ window.Quests = (() => {
   function removeFood(player, key) {
     const st = state(), f = st.facts[key]; if (!f) return;
     put(st, key, Object.assign({}, f.v, { on: false, by: by() }));
-    save(st); Sync.touch(); afterChange();
+    commit(st); afterChange();
   }
+  const parentName = () => label(owner() || 'Dad');   // whose ✓ this phone's is
   function approve(key, yes) {
     if (!isParentDevice()) return;
     const st = state();
-    put(st, 'ok|' + key, { a: yes ? 'yes' : 'no', who: label(owner() || 'Dad') });
-    save(st); Sync.touch(); afterChange();
+    put(st, 'ok|' + key, { a: yes ? 'yes' : 'no', who: parentName() });
+    commit(st); afterChange();
   }
   function approveAll() {               // every pending item, one fact each, one sync
     if (!isParentDevice()) return;
-    const st = state(), who = label(owner() || 'Dad');
+    const st = state(), who = parentName();
     for (const it of pendingAll(st)) if (it.kind !== 'card') put(st, 'ok|' + it.key, { a: 'yes', who });   // a postcard needs the share sheet: one at a time
-    save(st); Sync.touch(); afterChange();
+    commit(st); afterChange();
   }
   function setActive(p) { const st = state(); st.active = p; save(st); }
-  function setAvatar(p, a) { const st = state(); put(st, 'avatar|' + p, a); save(st); Sync.touch(); }
-  function reset() {                     // every device: facts older than this moment stop counting
+  function setAvatar(p, a) { const st = state(); put(st, 'avatar|' + p, a); commit(st); }
+  const forgetSeen = (st) => { st.seen = {}; st.okSeen = {}; st.revealed = {}; st.lastLevel = {}; st.lastPts = {}; };   // after a reset every badge, ✓ and level is new again, on every device
+  function reset() {                     // every device: quest facts older than this moment stop counting (stories and faces stay)
     const st = state();
-    st.facts.wipe = { v: 1, t: Date.now(), d: st.device }; st.seen = {}; st.okSeen = {};
-    save(st); Sync.touch();
+    putWipe(st, 'wipe', (k) => !STORY_KEY.test(k) && k !== 'swipe');
+    forgetSeen(st);
+    commit(st);
   }
   function afterChange() {
     refreshTop();
@@ -452,39 +531,58 @@ window.Quests = (() => {
     if (S.screen === 'settings') renderSettings();
     if (S.screen === 'story' && window.Journal) Journal.renderStory();
     fx = null;
+    checkNewBadges(currentContext());   // a badge earned by this very tick or ✓ (15 Nov 2026: it used to wait for the next unlock)
     checkLevelUp(state());
   }
 
   /* ---------------------------------------------------------------- sync: what we send, how we merge */
   function mine() { const st = state(), out = {}; for (const [k, f] of Object.entries(st.facts)) if (f.d === st.device) out[k] = f; return out; }
+  /* Every fact this device already holds stays unless a newer one for the same key arrives (15 Nov 2026). The merge used
+     to keep only this device's own facts plus whatever the answer contained, so a device missing from one answer (it was
+     mid-write on the Worker) took its points, ✓s and stories off the screen until the next pull, and a level-up played
+     twice. And an answer that changes nothing is now recognised: no save, no redraw (the pull that follows every push used
+     to redraw the screen three seconds after each tick, shutting any open list). */
   function mergeRemote(devices) {
-    const st = state(), sw0 = swipeT(st);
-    const merged = {};
-    for (const [k, f] of Object.entries(st.facts)) if (f.d === st.device) merged[k] = f;       // ours always travel with us
+    const st = state(), sw0 = swipeT(st), w0 = wipeT(st);
+    const merged = Object.assign({}, st.facts);
+    let changed = false;
     for (const [id, blob] of Object.entries(devices || {})) {
       if (id === st.device) continue;
       for (const [k, f] of Object.entries((blob && blob.facts) || {})) {
         if (!f || typeof f.t !== 'number' || !/^(tick|food|ok|avatar|wipe|swipe|page|media|stamp|post|cmt|card)\|?/.test(k)) continue;
         const cur = merged[k];
-        if (!cur || f.t > cur.t || (f.t === cur.t && String(f.d) > String(cur.d))) merged[k] = Object.assign({}, f, { d: f.d || id });
+        if (!cur || f.t > cur.t || (f.t === cur.t && String(f.d || id) > String(cur.d))) { merged[k] = Object.assign({}, f, { d: f.d || id }); changed = true; }
       }
+    }
+    const seenDevices = Object.fromEntries(Object.entries(devices || {}).map(([id, b]) => [id, { role: b && b.role, name: b && b.name, at: b && b.at }]));
+    if (!changed) {
+      if (JSON.stringify(seenDevices) !== JSON.stringify(st.devices || {})) { st.devices = seenDevices; save(st); }
+      return;
     }
     st.facts = merged;
     gcStories(st);
-    st.devices = Object.fromEntries(Object.entries(devices || {}).map(([id, b]) => [id, { role: b && b.role, name: b && b.name, at: b && b.at }]));
+    st.devices = seenDevices;
+    if (wipeT(st) > w0) forgetSeen(st);                                       // a reset made on another device
     save(st);
     celebrateApprovals(st);
     notifyFacts('remote');
     afterChange();
-    if (swipeT(st) > sw0 && window.Media) {                                  // a stories wipe arrived: this device's pictures belong to the wiped stories
-      Media.wipe().then(() => { try { localStorage.removeItem('storyDraft'); } catch (e) { /* blocked */ } notifyFacts('remote'); });
+    if (swipeT(st) > sw0 && window.Media) {                                  // a stories wipe arrived: the pictures of the wiped stories go; anything newer, and every full-size original, stays
+      Media.wipe(swipeT(st)).then(() => { try { localStorage.removeItem('storyDraft'); localStorage.removeItem('replyDraft'); } catch (e) { /* blocked */ } notifyFacts('remote'); });
     }
   }
   function celebrateApprovals(st) {      // on a kids' device: a ✓ arriving from a parent pops the points
     if (isParentDevice()) return;
     const eff = effective(st), fresh = [];
-    for (const p of visiblePlayers()) for (const it of items(st, p, eff)) if (it.needs && it.ok && !st.okSeen[it.key]) { st.okSeen[it.key] = it.ok; if (it.ok === 'yes') fresh.push(it); }
-    save(st);
+    let marked = false;
+    for (const p of visiblePlayers()) for (const it of items(st, p, eff)) {
+      if (!it.needs || !it.ok) continue;
+      const seen = st.okSeen[it.key];
+      if (seen === it.okT || seen === it.ok) continue;                        // this very answer (by its time; an entry from before 15 Nov 2026 holds the answer itself)
+      st.okSeen[it.key] = it.okT; marked = true;                              // a later ✓ after a ✗ and a re-tick is a new answer, and gets its party
+      if (it.ok === 'yes') fresh.push(it);
+    }
+    if (marked) save(st);
     if (!fresh.length) return;
     const it = fresh[0], total = fresh.reduce((n, i) => n + i.pts, 0);
     celebrate(it.e, `+${total} points`, `${it.okBy || 'A parent'} said yes${fresh.length > 1 ? ' to ' + fresh.length + ' things' : ': ' + it.title}`, it.player, 'ok', total);
@@ -492,7 +590,7 @@ window.Quests = (() => {
   function startSync() {
     const sy = (S.family && S.family.trip && S.family.trip.sync) || {};
     const st = state();
-    Sync.onStatus(() => { const el = $('#sync-line'); if (el) el.textContent = syncText(); refreshTop(); });
+    Sync.onStatus(() => { const el = $('#sync-line'); if (el) el.textContent = syncText(); });   // the line only: the header and the screens are redrawn by afterChange when facts actually change
     Sync.start({ url: sy.url, token: sy.token, device: st.device, mine, apply: mergeRemote, meta: () => ({ role: role() || 'kids', name: deviceName() }), work: () => (window.Media ? Media.flush() : null) });
   }
   function syncText() {
@@ -528,24 +626,21 @@ window.Quests = (() => {
     for (const m of S.family.moves || []) { const c = AIRPORTS[airportCode(m.to)]; if (!c) continue; const date = addDays(m.date, /\+1/.test(String(m.arrive || '')) ? 1 : 0); (out[date] = out[date] || []).push(c); }
     return out;
   }
-  function firstDates() {
-    /* first date we are in each city: the days list (so Nagoya, a day trip, counts) plus the airport stops from the moves */
-    const out = {};
-    for (const d of S.family.days) { const c = dayCity(d); if (!(c in out) && c !== 'Home' && c !== 'Air') out[c] = d.date; }
-    for (const [date, cities] of Object.entries(arrivalsOn())) for (const c of cities) if (!(c in out) || date < out[c]) out[c] = date;
-    return Object.fromEntries(Object.entries(out).sort((a, b) => a[1].localeCompare(b[1])));
-  }
+  const wallFmt = {};                    // one formatter per time zone: building one is the slow part, and the old tablet builds them slowly
   function wallToEpoch(iso, hhmm, tz) {   // a wall-clock time in a city → epoch ms (no DST change touches the trip)
     const [y, mo, d] = iso.split('-').map(Number), [h, mi] = hhmm.split(':').map(Number);
     const guess = Date.UTC(y, mo - 1, d, h, mi);
-    const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' }).formatToParts(new Date(guess));
+    const fmt = wallFmt[tz] || (wallFmt[tz] = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' }));
+    const parts = fmt.formatToParts(new Date(guess));
     const g = (t) => +parts.find((x) => x.type === t).value;
     return guess - (Date.UTC(g('year'), g('month') - 1, g('day'), g('hour') % 24, g('minute')) - guess);
   }
   function nowEpoch(ctx) { return S.preview ? wallToEpoch(S.preview, '12:00', ctx.tz || TZ.Home) : Date.now(); }   // a preview day is noon there
+  let arrMemo = null;                   // the arrivals come from the itinerary alone: worked out once per unlock, read-only
   function arrivals() {
     /* city → { date, time, at } of the scheduled arrival: the first move that ends there (airport code for the
        Australian stops, the city name otherwise); a city with no move into it opens at noon on its first day */
+    if (arrMemo && arrMemo.F === S.family) return arrMemo.out;
     const out = {};
     for (const m of S.family.moves || []) {
       const to = String(m.to || ''), c = AIRPORTS[airportCode(to)] || CITIES.find((x) => to.toLowerCase().includes(x.toLowerCase()));
@@ -554,28 +649,28 @@ window.Quests = (() => {
       out[c] = { date, time, at: wallToEpoch(date, time, TZ[c] || TZ.Home) };
     }
     for (const d of S.family.days) { const c = dayCity(d); if (c === 'Home' || c === 'Air' || out[c]) continue; out[c] = { date: d.date, time: '12:00', at: wallToEpoch(d.date, '12:00', TZ[c] || TZ.Home) }; }
-    return Object.fromEntries(Object.entries(out).sort((a, b) => a[1].at - b[1].at));
+    arrMemo = { F: S.family, out: Object.fromEntries(Object.entries(out).sort((a, b) => a[1].at - b[1].at)) };
+    return arrMemo.out;
   }
   function stampItem(st, eff, c) {     // the family's tap for a city stamp, with its approval state (like items())
     const key = 'stamp|' + CITY_KEY[c], f = eff[key];
     if (!f || !f.v || !f.v.on) return null;
-    const by = f.v.by || 'kid', needs = by !== 'parent', ok = eff['ok|' + key], okValid = ok && ok.t >= f.t, a = okValid ? ok.v.a : null;
+    const by = f.v.by || 'kid', needs = by !== 'parent', ans = answer(eff, key, f), a = ans.a;
     return { kind: 'stamp', key, id: 'stamp-' + CITY_KEY[c], city: c, title: `${c} stamp (everyone)`, e: CITY_EMOJI[c], pts: 25, date: f.v.date, by, t: f.t,
-      player: f.v.player || st.active, verify: needs, needs, ok: a, okBy: okValid ? ok.v.who || '' : '', pending: needs && !a, rejected: needs && a === 'no', counted: !needs || a === 'yes' };
+      player: f.v.player || st.active, verify: needs, needs, ok: a, okBy: ans.who, okT: ans.t, pending: needs && !a, rejected: needs && a === 'no', counted: !needs || a === 'yes' };
   }
   function pendingStamps(st, eff) { return Object.keys(arrivals()).map((c) => stampItem(st, eff, c)).filter((it) => it && it.pending); }
   /* postcards (1 Nov 2026): the kids' "ask Mum and Dad to send it" is the fact card|<postId>; the parent's ✓ shares
      from the parent's phone (postcard.js sendApproved) and then writes ok|card|<postId>; a parent's direct Share writes
      the ok alone. Either way the story's author gets the postcard quest for that day. */
   function cardItem(st, eff, postId) {
-    const key = 'card|' + postId, f = eff[key], ok = eff['ok|' + key];
-    const okValid = ok && (!f || ok.t >= f.t), a = okValid ? ok.v.a : null;
+    const key = 'card|' + postId, f = eff[key], ans = answer(eff, key, f), a = ans.a, okValid = ans.t > 0;
     if (!(f && f.v && f.v.on) && !okValid) return null;
     const po = window.Journal && Journal.post ? Journal.post(postId) : null;
     const line = po && window.Postcard ? Postcard.firstLine(po) : '';
     const by = f ? (f.v.by || 'kid') : 'parent', needs = by !== 'parent';
     return { kind: 'card', key, id: postId, pic: (f && f.v && f.v.pic) || null, title: `Postcard to the grandparents${line ? ': “' + line + '”' : ''}`, e: '📮', pts: 15, date: (f && f.v.date) || (po && po.d) || '', by, t: f ? f.t : 0,
-      player: (f && f.v.p) || (po && po.p) || st.active, verify: needs, needs, ok: a, okBy: okValid ? ok.v.who || '' : '', pending: !!f && needs && !a, rejected: !!f && needs && a === 'no', counted: a === 'yes' || (!!f && !needs) };
+      player: (f && f.v.p) || (po && po.p) || st.active, verify: needs, needs, ok: a, okBy: ans.who, okT: ans.t, pending: !!f && needs && !a, rejected: !!f && needs && a === 'no', counted: a === 'yes' || (!!f && !needs) };
   }
   function pendingCards(st, eff) { const out = []; for (const k of Object.keys(eff)) if (k.startsWith('card|')) { const it = cardItem(st, eff, k.slice(5)); if (it && it.pending) out.push(it); } return out; }
   function cardStatuses(st) {            // postId → {pending, rejected, sent} for every story that has a request or a sent mark
@@ -590,14 +685,14 @@ window.Quests = (() => {
     if (cur && cur.pending) return;
     if (cur && cur.counted) { celebrate('📮', 'Already sent', 'That postcard has gone to the grandparents', po.p, 'ok'); return; }
     put(st, key, { on: true, by: by(), p: po.p, date: po.d, pic: pickId || null });
-    save(st); Sync.touch();
+    commit(st);
     if (by() !== 'parent') celebrate('⏳', 'Sent to Mum and Dad', 'Postcard · 15 points when they send it', po.p, 'wait');
     afterChange();
   }
   function approveCard(postId) {         // a parent's phone, after the share sheet closed: mark it sent and pay the author
     const st = state(), po = window.Journal && Journal.post ? Journal.post(postId) : null;
-    put(st, 'ok|card|' + postId, { a: 'yes', who: label(owner() || 'Dad') });
-    save(st); Sync.touch();
+    put(st, 'ok|card|' + postId, { a: 'yes', who: parentName() });
+    commit(st);
     if (po && !liveOn(st, tickKey(po.p, 'postcard', po.d))) complete(po.p, 'postcard', po.d);   // its own "+15 points" party and afterChange
     else afterChange();
   }
@@ -607,9 +702,9 @@ window.Quests = (() => {
     const who = by(), ctx = currentContext();
     put(st, key, { on: true, by: who, date: ctx.date, player: st.active, city: c });
     if (who === 'parent') { st.seen = st.seen || {}; for (const p of people()) st.seen[p + '|stamp-' + CITY_KEY[c]] = ctx.date; }   // the party is here, not a second "New stamp!"
-    save(st); Sync.touch();
+    commit(st);
     if (who !== 'parent') celebrate('⏳', 'Sent to Mum and Dad', `${c} stamp · 25 points for everyone when they say yes`, st.active, 'wait');
-    else celebrate(CITY_EMOJI[c], 'Stamped!', `${c} · +25 points for everyone`, st.active, 'stamp', 25, { winter: /Whistler|Vancouver|Montréal|Toronto/.test(c) });
+    else celebrate(CITY_EMOJI[c], 'Stamped!', `${c} · +25 points for everyone`, st.active, 'stamp', 25, { winter: WINTER.test(c) });
     afterChange();
   }
   function stampsReady(ctx) {          // cities we have landed in whose stamp nobody has tapped yet
@@ -658,7 +753,7 @@ window.Quests = (() => {
       out.push({ id: 'food-' + n, e, t, kind: 'skill', pts: 30, earned: foods >= n, hint: `${Math.min(foods, n)} of ${n} new foods` });
     const kindCount = (k) => Object.keys(pl.done).filter((id) => byId[id] && byId[id].kind === k).length;
     for (const [k, n, t, e] of [['words', 5, 'Chatterbox', '🗣️'], ['explore', 10, 'Explorer', '🧭'], ['helper', 5, 'Helper', '🦸'], ['travel', 4, 'Frequent flyer', '✈️']])
-      out.push({ id: 'skill-' + k, e, t, kind: 'skill', pts: 30, earned: kindCount(k) >= n, hint: `${Math.min(kindCount(k), n)} of ${n} ${k} quests` });
+      out.push({ id: 'skill-' + k, e: glyph(e), t, kind: 'skill', pts: 30, earned: kindCount(k) >= n, hint: `${Math.min(kindCount(k), n)} of ${n} ${k} quests` });
     const photos = (pl.done.photo || []).length;
     out.push({ id: 'photo-7', e: '📸', t: 'Photo streak', kind: 'skill', pts: 30, earned: photos >= 7, hint: `${Math.min(photos, 7)} of 7 morning photos` });
     // 31 Oct additions: three more milestones, dailies badges, a champion per city, and two big counters
@@ -689,25 +784,40 @@ window.Quests = (() => {
     out.push({ id: 'thousand', e: '💰', t: 'Thousand club', kind: 'skill', pts: 30, earned: raw >= 1000, hint: `${Math.min(raw, 1000)} of 1,000 quest points` });
     return out;
   }
+  /* Celebrate the badges earned since this device last looked. It runs at unlock and, since 15 Nov 2026, after every change
+     (a badge earned by a tick or a ✓ used to wait for the next unlock) and for every player the device shows, not just the
+     active one. A stamp or a milestone comes with the date and is everyone's, so it gets one card; a badge someone earned by
+     doing things gets a card with their name. While another day is being previewed the "seen" marks stay in memory, so
+     stepping through the trip does not use up the real parties. */
+  const WINTER = /Whistler|Vancouver|Montréal|Toronto/;
+  const previewSeen = {};
   function checkNewBadges(ctx) {
-    /* celebrate badges the active player has earned since this device last looked */
-    const st = state(), p = st.active, pl = view(st, p);
-    const fresh = badges(pl, ctx).filter((b) => b.earned && !st.seen[p + '|' + b.id]);
-    if (!fresh.length) return;
-    for (const b of fresh) st.seen[p + '|' + b.id] = ctx.date;
-    save(st);
-    const b = fresh[0], total = fresh.reduce((n, x) => n + x.pts, 0);
-    celebrate(b.e, fresh.length > 1 ? `${fresh.length} new badges` : (b.kind === 'stamp' ? 'New stamp!' : 'New badge!'), b.t + (fresh.length > 1 ? ' and more' : '') + ` · +${total} points`, p, b.kind === 'stamp' ? 'stamp' : 'badge', 0, { winter: /Whistler|Vancouver|Montréal|Toronto/.test(b.t) });
+    if (!S.family) return;
+    const st = state(), seen = S.preview ? previewSeen : st.seen, grand = isGrandDevice();
+    const players = grand ? [st.active] : visiblePlayers();
+    const first = !grand && !st.seenAll;  // the first run of this rule on a device: what the other players already have is not news
+    const shared = [], own = {};
+    let marked = false;
+    for (const p of players) {
+      const quiet = first && p !== st.active;
+      for (const b of badges(view(st, p), ctx)) {
+        if (!b.earned || seen[p + '|' + b.id]) continue;
+        seen[p + '|' + b.id] = ctx.date; marked = true;
+        if (quiet) continue;
+        if (b.kind === 'skill') (own[p] = own[p] || []).push(b);
+        else if (!shared.some((x) => x.id === b.id)) shared.push(b);
+      }
+    }
+    if (!S.preview && (marked || first)) { if (!grand) st.seenAll = 1; save(st); }
+    const party = (list, p, extra) => {
+      const b = list[0], total = list.reduce((n, x) => n + x.pts, 0);
+      celebrate(b.e, list.length > 1 ? `${list.length} new badges` : (b.kind === 'stamp' ? 'New stamp!' : 'New badge!'), b.t + (list.length > 1 ? ' and more' : '') + ` · +${total} points`, p, b.kind === 'stamp' ? 'stamp' : 'badge', 0, Object.assign({ winter: WINTER.test(b.t) }, extra || {}));
+    };
+    if (shared.length) party(shared, st.active, players.length > 1 ? { who: 'Everyone' } : null);
+    for (const p of Object.keys(own)) party(own[p], p);
   }
 
   /* ---------------------------------------------------------------- views */
-  function summary(ctx) {
-    const st = state(), pl = view(st, st.active), pts = points(pl), lv = level(pts);
-    const todays = available(ctx, pl).filter((q) => !q.done);
-    return { player: st.active, name: label(st.active), avatar: pl.avatar, points: pts, level: lv, todayLeft: todays.length,
-      stamps: badges(pl, ctx).filter((b) => b.kind === 'stamp' && b.earned).length, stampsTotal: Object.keys(arrivals()).length,
-      pending: isParentDevice() ? pendingAll(st).length : pl.pending.length, role: role() };
-  }
   function available(ctx, pl) {
     const here = citiesForDay(ctx);
     return QUESTS.filter((q) => (q.where === 'any' || here.has(q.where) || (ctx.before && q.where === 'home')) && !(q.parents && !isParentDevice()))
@@ -755,7 +865,7 @@ window.Quests = (() => {
     if (!role()) html += roleCard();
     html += approvalsCard(st);
     html += playerChips(st, ctx);
-    html += `<div class="levelcard"><div class="lv-top">${face(player, 'lv-av')}<div><div class="lv-name">${esc(label(player))} · ${lv.emoji} ${esc(lv.name)}</div><div class="lv-pts">${pts} points${lv.next ? ` · ${lv.next - pts} to ${esc(lv.nextName)}` : ' · top level!'}${pl.pending.length ? ` · ⏳ ${pl.pending.length} waiting` : ''}</div></div></div><div class="bar"><i style="width:${lv.pct}%"></i></div></div>`;
+    html += levelCard(player, lv, `${pts} points${lv.next ? ` · ${lv.next - pts} to ${esc(lv.nextName)}` : ' · top level!'}${pl.pending.length ? ` · ⏳ ${pl.pending.length} waiting` : ''}`);
     if (!isParentDevice()) html += `<p class="small muted kidnote">📨 Every tick on this device goes to Mum and Dad for a ✓ before the points count.</p>`;
     html += `<div class="row"><button class="btn block" data-go-passport>📘 Passport and badges</button></div>`;
     html += `<div class="foodcard" data-key="food"><span class="qe">🍽️</span><div class="qt"><div class="qn">Tried a new food?</div><div class="qp">${FOOD_PTS} pts each · ${pl.foods.length} so far</div></div><button class="qbtn go" id="food-add">+1</button></div>`;
@@ -763,13 +873,19 @@ window.Quests = (() => {
     html += `<h2 class="h2">Every day</h2>` + dailies.map((q) => questCard(q, ctx, player, pl)).join('');
     if (helpers.length) html += `<h2 class="h2">Any time</h2>` + helpers.map((q) => questCard(q, ctx, player, pl)).join('');
     const others = CITIES.filter((c) => !citiesForDay(ctx).has(c));
-    html += `<h2 class="h2">Coming up</h2>` + others.map((c) => { const qs = QUESTS.filter((q) => q.where === c); return qs.length ? `<details><summary>${CITY_EMOJI[c]} ${esc(c)} <span class="chip">${qs.filter((q) => doneCount(pl, q.id)).length} / ${qs.length}</span></summary>${qs.map((q) => questCard(q, ctx, player, pl)).join('')}</details>` : ''; }).join('');
+    html += `<h2 class="h2">Coming up</h2>` + others.map((c) => { const qs = QUESTS.filter((q) => q.where === c); return qs.length ? `<details data-d="${CITY_KEY[c]}"><summary>${CITY_EMOJI[c]} ${esc(c)} <span class="chip">${qs.filter((q) => doneCount(pl, q.id)).length} / ${qs.length}</span></summary>${qs.map((q) => questCard(q, ctx, player, pl)).join('')}</details>` : ''; }).join('');
     const foodItems = pl.items.filter((it) => it.kind === 'food');
-    if (foodItems.length) html += `<details><summary>🍽️ New foods tried <span class="chip">${pl.foods.length}</span></summary><ul class="list">${foodItems.map((it) => `<li>${esc(it.what || 'Something new')} <span class="muted small">· ${esc(fmtDate(it.date))}${it.pending ? ' · ⏳ waiting' : it.rejected ? ' · ✗ not this time' : ''}</span> <button class="qbtn undo small-undo" data-food-undo="${esc(it.key)}">Undo</button></li>`).join('')}</ul></details>`;
+    if (foodItems.length) html += `<details data-d="foods"><summary>🍽️ New foods tried <span class="chip">${pl.foods.length}</span></summary><ul class="list">${foodItems.map((it) => `<li>${esc(it.what || 'Something new')} <span class="muted small">· ${esc(fmtDate(it.date))}${it.pending ? ' · ⏳ waiting' : it.rejected ? ' · ✗ not this time' : ''}</span> <button class="qbtn undo small-undo" data-food-undo="${esc(it.key)}">Undo</button></li>`).join('')}</ul></details>`;
     html += `<p class="tiny muted" id="sync-line">${esc(syncText())}</p>`;
-    const el = $('#screen-quests'); el.innerHTML = html;
+    const el = $('#screen-quests');
+    const open = [...el.querySelectorAll('details[open]')].map((d) => d.dataset.d);   // a list the reader opened stays open across the redraw (a tick inside "Coming up" used to shut it)
+    el.innerHTML = html;
+    if (open.length) el.querySelectorAll('details').forEach((d) => { if (open.includes(d.dataset.d)) d.open = true; });
     wire(el, ctx, player);
     applyFx(el);
+  }
+  function levelCard(player, lv, line) {   // the face, the level and a line of numbers over the progress bar (Quests and Passport)
+    return `<div class="levelcard"><div class="lv-top">${face(player, 'lv-av')}<div><div class="lv-name">${esc(label(player))} · ${lv.emoji} ${esc(lv.name)}</div><div class="lv-pts">${line}</div></div></div><div class="bar"><i style="width:${lv.pct}%"></i></div></div>`;
   }
   function wire(el, ctx, player) {
     el.querySelectorAll('[data-player]').forEach((b) => b.onclick = () => { setActive(b.dataset.player); afterChange(); FX.pulse(el.querySelector('.player.active'), 'just', 700); FX.pulse(el.querySelector('.lv-av'), 'bump', 700); });
@@ -790,15 +906,14 @@ window.Quests = (() => {
       } else approveAll();
     };
     el.querySelectorAll('[data-role]').forEach((b) => b.onclick = () => chooseRole(b.dataset.role, b.dataset.who));
-    const fa = el.querySelector('#food-add'); if (fa) fa.onclick = () => { const what = prompt('What did you try?'); if (what !== null) addFood(player, what.trim(), ctx.date); };
+    const fa = el.querySelector('#food-add'); if (fa) fa.onclick = () => askText('What did you try?', { placeholder: 'Sushi, poutine, a new fruit…', ok: 'Add it' }).then((what) => { if (what !== null) addFood(player, what.trim(), ctx.date); });   // app.js: asked in the app's own modal (some app views show no prompt)
     const gp = el.querySelector('[data-go-passport]'); if (gp) gp.onclick = () => show('passport');
   }
   function wireRole(root) { root.querySelectorAll('[data-role]').forEach((b) => b.onclick = () => chooseRole(b.dataset.role, b.dataset.who)); }
   async function chooseRole(r, who) {
-    if (r === 'parent') {
-      const pin = prompt(`Device PIN to make this ${label(who)}'s phone:`);
-      if (pin === null) return;
-      if (!(await verifyPin(pin))) { alert('That is not the PIN.'); return; }
+    if (r === 'parent' && !(await askPin(`Device PIN to make this ${label(who)}'s phone`))) {   // app.js: asked in the app's own modal; it only compares, and shuts for five minutes after five wrong tries
+      if (!role()) { openModal(roleCard()); wireRole($('#modal-inner')); }                          // the first-unlock question comes back
+      return;
     }
     setRole(r, who);
     if (typeof closeModal === 'function' && document.querySelector('#modal:not(.hidden) .rolecard')) closeModal();   // the first-unlock question
@@ -812,7 +927,7 @@ window.Quests = (() => {
     const all = badges(pl, ctx), pts = points(pl), lv = level(pts);
     const stamps = all.filter((b) => b.kind === 'stamp'), rest = all.filter((b) => b.kind !== 'stamp');
     let html = `<h1 class="h1">📘 Passport</h1>` + playerChips(st, ctx);
-    html += `<div class="levelcard"><div class="lv-top">${face(player, 'lv-av')}<div><div class="lv-name">${esc(label(player))} · ${lv.emoji} ${esc(lv.name)}</div><div class="lv-pts">${pts} points · ${stamps.filter((b) => b.earned).length} of ${stamps.length} stamps · ${rest.filter((b) => b.earned).length} of ${rest.length} badges</div></div></div><div class="bar"><i style="width:${lv.pct}%"></i></div></div>`;
+    html += levelCard(player, lv, `${pts} points · ${stamps.filter((b) => b.earned).length} of ${stamps.length} stamps · ${rest.filter((b) => b.earned).length} of ${rest.length} badges`);
     const stampCard = (b, k, extraCls, sub, attr) => `<div class="stampc${extraCls}${b.earned ? ' earned' : ''}" style="--i:${k}" data-badge="${esc(b.id)}"${attr || ''}><span class="se">${b.e}</span><span class="st">${esc(b.t)}</span><span class="sh">${sub}</span>${b.earned ? '<i class="glint"></i>' : ''}</div>`;
     html += `<h2 class="h2">Stamps</h2><p class="small muted">A stamp opens when we land. Tap it to stamp the passport${isParentDevice() ? '' : ' (Mum or Dad say yes)'}; if nobody does, it stamps itself the next morning.</p><div class="stamps">` + stamps.map((b, k) => stampCard(b, k, ' ' + (CITY_KEY[b.t] || '') + (b.ready ? ' ready' : b.pending ? ' pending' : ''), b.earned ? '✓ ' + esc(fmtDate(b.on || b.opens)) : esc(b.hint), b.ready ? ` data-stamp="${esc(b.t)}" role="button" tabindex="0"` : '')).join('') + `</div>`;
     html += `<h2 class="h2">Badges</h2><div class="stamps">` + rest.map((b, k) => stampCard(b, k, ' badge', b.earned ? '✓ earned · ' + b.pts + ' pts' : esc(b.hint))).join('') + `</div>`;
@@ -851,12 +966,18 @@ window.Quests = (() => {
     const pick = (a) => `<button class="avpick${a === cur ? ' active' : ''}" data-pick="${a}" aria-label="${a}">${a}</button>`;
     openModal(`<h2 class="h2">${esc(label(p))}: pick a face</h2><div class="row avtop"><span class="avnow">${cur}</span><button class="btn" id="av-random">🎲 Surprise me</button><span class="muted small">${avatarsOk().length} to choose from</span></div>` +
       AVATAR_GROUPS.map(([name, list]) => [name, list.filter(emojiOk)]).filter((g) => g[1].length).map(([name, list]) => `<h3 class="h3 avhead">${esc(name)}</h3><div class="avgrid">${list.map(pick).join('')}</div>`).join(''));
-    const choose = (a) => { setAvatar(p, a); closeModal(); refreshTop(); renderSettings(); FX.haptic(15); };
+    let spin = null;                      // the "Surprise me" shuffle: stopped by a pick or by closing the picker (it used to finish anyway, replace the face just picked and close whatever was open)
+    const choose = (a) => { clearInterval(spin); spin = null; setAvatar(p, a); closeModal(); refreshTop(); renderSettings(); FX.haptic(15); };
     const inner = $('#modal-inner');
     inner.querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => choose(b.dataset.pick));
     inner.querySelector('#av-random').onclick = () => {   // a short shuffle on the big face, then that one sticks
+      if (spin) return;
       const now = inner.querySelector('.avnow'), ok = avatarsOk(), rnd = () => ok[Math.floor(Math.random() * ok.length)];
-      let n = 0; const spin = setInterval(() => { now.textContent = rnd(); if (++n >= 12) { clearInterval(spin); choose(now.textContent); } }, 70);
+      let n = 0;
+      spin = setInterval(() => {
+        if (!document.body.contains(now)) { clearInterval(spin); spin = null; return; }   // the picker was closed mid-shuffle
+        now.textContent = rnd(); if (++n >= 12) choose(now.textContent);
+      }, 70);
     };
   }
   let lastTop = null;                   // [player, points] the header pill last showed, for the count-up
@@ -877,8 +998,8 @@ window.Quests = (() => {
     FX.celebrate(Object.assign({ emoji, big, small, who: label(player), kind: kind || 'quest', points: points || 0 }, extra || {}));
   }
 
-  return { QUESTS, CITY_EMOJI, CITY_KEY, CITIES, dayCity, daysBetween, state, label, setActive, complete, undo, addFood, approve, approveAll, summary, badges,
+  return { QUESTS, CITY_EMOJI, CITY_KEY, CITIES, dayCity, daysBetween, state, reload, label, setActive, complete, undo, addFood, approve, approveAll, badges,
     checkNewBadges, checkLevelUp, renderQuests, renderPassport, settingsCard, wireSettings, refreshTop, celebrate, reset, startSync, mergeRemote, mine,
-    role, setRole, isParentDevice, isGrandDevice, roleCard, wireRole, pendingAll, view, points, LEVELS, level, levelOf, face, setFact, getFact, factsByPrefix, onFacts, visiblePlayers, addDays, syncText,
-    arrivals, stampCity, stampsReady, wipeStories, cardStatus, cardStatuses, requestCard, approveCard };
+    role, setRole, isParentDevice, isGrandDevice, roleCard, wireRole, pendingAll, view, points, LEVELS, level, face, glyph, setFact, getFact, factsByPrefix, onFacts, visiblePlayers, addDays, syncText,
+    arrivals, stampCity, stampsReady, wipeStories, storiesWipedAt: () => swipeT(state()), cardStatus, cardStatuses, requestCard, approveCard };
 })();

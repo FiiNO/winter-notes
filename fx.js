@@ -110,14 +110,20 @@ window.FX = (() => {
   const soundOn = () => localStorage.getItem('sfx') !== '0';
   function setSound(on) { if (on) localStorage.removeItem('sfx'); else localStorage.setItem('sfx', '0'); }
   function unlock() {
-    if (ac || acTried) return; acTried = true;
-    try {
-      ac = new (window.AudioContext || window.webkitAudioContext)();
-      master = ac.createGain(); master.gain.value = 0.35; master.connect(ac.destination);
-      lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1900; lp.connect(master);
-    } catch (e) { ac = null; }
+    if (!ac && !acTried) {
+      acTried = true;
+      try {
+        ac = new (window.AudioContext || window.webkitAudioContext)();
+        master = ac.createGain(); master.gain.value = 0.35; master.connect(ac.destination);
+        lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1900; lp.connect(master);
+      } catch (e) { ac = null; }
+    }
+    wake();
   }
-  ['pointerdown', 'keydown', 'touchstart'].forEach((ev) => window.addEventListener(ev, unlock, { once: true, passive: true, capture: true }));
+  /* iOS only starts the audio clock inside the end of a tap (touchend, click), and stops it again whenever the app goes to the
+     background (15 Nov 2026). So every tap asks for the clock while it is not running, not just the first one. */
+  function wake() { if (ac && ac.state !== 'running') { try { const r = ac.resume(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* stays quiet */ } } }
+  ['pointerdown', 'keydown', 'touchstart', 'touchend', 'pointerup', 'click'].forEach((ev) => window.addEventListener(ev, unlock, { passive: true, capture: true }));
   function tone(t0, f0, f1, dur, type, vol, o) {
     const osc = ac.createOscillator(), g = ac.createGain(); osc.type = type || 'sine';
     osc.frequency.setValueAtTime(f0, t0); if (f1 && f1 !== f0) osc.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
@@ -148,7 +154,13 @@ window.FX = (() => {
   };
   function sound(name, arg) {
     if (!soundOn() || document.hidden || !ac || !SOUNDS[name]) return false;
-    try { if (ac.state !== 'running') ac.resume(); SOUNDS[name](ac.currentTime + 0.01, arg); return true; } catch (e) { return false; }
+    const play = () => { try { SOUNDS[name](ac.currentTime + 0.01, arg); } catch (e) { /* no sound this time */ } };
+    if (ac.state === 'running') { play(); return true; }
+    /* The clock is stopped (an iPad before a real tap, or just back from the background). Notes scheduled now would sit on the
+       frozen clock and all play at once on the next tap (15 Nov 2026), so ask for the clock and play only if it comes back at once. */
+    const asked = Date.now();
+    try { const r = ac.resume(); if (r && r.then) r.then(() => { if (Date.now() - asked < 250 && ac.state === 'running') play(); }, () => {}); } catch (e) { /* stays quiet */ }
+    return false;
   }
   const sfxState = () => ({ on: soundOn(), ctx: ac ? ac.state : (acTried ? 'failed' : 'not yet (needs a tap)'), played });
   const KIND_SOUND = { quest: 'pop', food: 'pop', wait: 'send', ok: 'yes', badge: 'badge', stamp: 'stamp', level: 'fanfare' };
@@ -175,9 +187,12 @@ window.FX = (() => {
   function centreOf(el) { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }
 
   /* ---------------------------------------------------------------- the party card (queued, one at a time) */
-  const queue = []; let showing = false, showingKind = null;
+  const queue = []; let showing = false, showingKind = null, hiding = false;
   const big = (kind) => /^(level|badge|stamp)$/.test(kind || 'quest');
   function celebrate(o) {
+    /* the card on screen is already fading out: this one waits the 0.2 s for it. Shown at once, the end of that fade wiped it
+       (15 Nov 2026: a parent's ✓ landing just as "Sent to Mum and Dad" left showed "+20 points" for an instant, then nothing). */
+    if (hiding) { queue.push(o); return; }
     if (showing && !big(showingKind)) {    // a quick tick on screen gives way to the newcomer; badges, stamps and the level-up show finish first
       const p = document.getElementById('party'); if (p) clearTimeout(p._t);
       queue.unshift(o); showing = false; next(); return;
@@ -206,18 +221,21 @@ window.FX = (() => {
     p.onclick = () => hide(p);
   }
   function hide(p) {
+    if (hiding) return;                   // a second tap during the fade
+    hiding = true;
     clearTimeout(p._t);
     p.classList.add('out');
-    setTimeout(() => { p.classList.add('hidden'); p.classList.remove('out', 'show'); p.innerHTML = ''; showing = false; showingKind = null; next(); }, 220);
+    setTimeout(() => { hiding = false; p.classList.add('hidden'); p.classList.remove('out', 'show'); p.innerHTML = ''; showing = false; showingKind = null; next(); }, 220);
   }
 
   /* ---------------------------------------------------------------- the level-up show (3 Nov 2026)
      o = { who, avatar, from: {idx,name,emoji,colour}, to: {…}, ptsFrom, ptsTo, pctTo, ladder: [[pts,name,emoji,colour]…], next: {name,pts}|null }
      Stages are classes s1…s5 on .lu-card (styles.css animates each); with reduced motion every stage is on at once and
      the show is a still card for 3.5 s. A tap anywhere ends it. Party cards that arrive meanwhile wait their turn. */
-  let luOn = false, luTimers = [], luPending = [], luEl = null;
+  let luOn = false, luEnding = false, luTimers = [], luPending = [], luEl = null;
   function levelUp(o) {
     luPending.push(o);
+    if (hiding) return;                    // the fading card's own end starts the show
     if (showing && !big(showingKind)) { const p = document.getElementById('party'); if (p) { clearTimeout(p._t); p._t = setTimeout(() => hide(p), 700); } }   // the "+20 points" card flashes, then the show
     else if (!showing && !luOn) next();
   }
@@ -262,7 +280,8 @@ window.FX = (() => {
     at(legend ? 8500 : 7000, endLevelUp);
   }
   function endLevelUp() {
-    if (!luOn) return;
+    if (!luOn || luEnding) return;        // a double tap must not end the next player's show as well
+    luEnding = true;
     luTimers.forEach(clearTimeout); luTimers = [];
     const el = luEl, av = el && el.querySelector('.lu-av .face'), pill = document.getElementById('btn-points');
     if (av && pill && !reduce() && pill.offsetParent) {     // the face flies up to the header pill, which bumps (the badge stays in the show: everyday faces carry none, 3 Nov 2026)
@@ -273,7 +292,7 @@ window.FX = (() => {
       setTimeout(() => { fly.remove(); pulse(pill, 'bump', 700); }, 470);
     }
     el.classList.add('out');
-    setTimeout(() => { el.classList.add('hidden'); el.classList.remove('out', 'show', 'legend', 'still'); el.innerHTML = ''; luOn = false; luEl = null; next(); }, 300);
+    setTimeout(() => { el.classList.add('hidden'); el.classList.remove('out', 'show', 'legend', 'still'); el.innerHTML = ''; luOn = false; luEnding = false; luEl = null; next(); }, 300);
   }
 
   /* ---------------------------------------------------------------- element animations (class helpers) */
@@ -288,7 +307,7 @@ window.FX = (() => {
   function setPref(v) { if (v === 'on' || v === 'off') localStorage.setItem('fx', v); else localStorage.removeItem('fx'); applyPref(); }
   const pref = () => localStorage.getItem('fx') || 'auto';
   function demo() {                    // Settings → Show me: the level-up show for the active player's face (Navigator → Globetrotter)
-    const L = (window.Quests && Quests.LEVELS) || [[0, 'Rookie', '🥾', '#8D99AE'], [100, 'Explorer', '🗺️', '#2A9D8F'], [250, 'Adventurer', '🎒', '#FF7A00'], [500, 'Navigator', '🧭', '#3A86FF'], [900, 'Globetrotter', '🌏', '#06D6A0'], [1500, 'Legend', '👑', '#FFB703']];
+    const L = Quests.LEVELS;           // the one table (quests.js); Settings only exists once that has loaded
     const lv = (i) => ({ idx: i, name: L[i][1], emoji: L[i][2], colour: L[i][3] });
     let avatar = '🙂', who = 'Everyone';
     try { const st = Quests.state(); avatar = Quests.view(st, st.active).avatar; who = Quests.label(st.active); } catch (e) { /* before unlock */ }

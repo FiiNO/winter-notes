@@ -9,7 +9,8 @@
 window.Media = (() => {
   const LIMITS = { full: 1280, thumb: 320, draw: 1024, qFull: 0.8, qThumb: 0.72, maxBytes: 1.5 * 1024 * 1024, lru: 80, shareBatch: 12 };
   const M = { key: null, enabled: false, urls: new Map(), order: [], inflight: new Map(), flushing: false, backoffUntil: 0,
-    pending: 0, queue: Promise.resolve(), active: 0, waiters: [], onChange: null, last: { up: '', down: '', open: '', add: '' } };
+    pending: 0, queue: Promise.resolve(), active: 0, waiters: [], onChange: null, last: { up: '', down: '', open: '', add: '' },
+    split: (() => { try { return localStorage.getItem('mediaSplit') === '1'; } catch (e) { return false; } })(), preparing: null };
   const enc = (s) => new TextEncoder().encode(String(s));
 
   /* base64 in chunks: a photo-sized buffer would overflow a spread into String.fromCharCode */
@@ -50,16 +51,66 @@ window.Media = (() => {
   }
 
   /* ---------------------------------------------------------------- IndexedDB store "media" (app.js idb(), database version 2)
-     record: {id, k: 'photo'|'thumb'|'drawing', ct: ArrayBuffer, n, up: 0|1, bad, at, p, d, tag, w, h} */
-  async function store(mode, fn) {
-    const db = await idb();
-    return new Promise((res, rej) => { const t = db.transaction('media', mode); const r = fn(t.objectStore('media')); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+     A picture is two records since 15 Nov 2026: its facts under its id ({id, k: 'photo'|'thumb'|'drawing'|'orig', n,
+     up: 0|1|2, bad, at, p, d, tag, w, h, and for an original x, name, type}) and its bytes under '~' + id ({id,
+     k: 'blob', up: 2, ct}). '~' sorts after every id (ids are base 36), so one bounded getAll() lists every picture's
+     facts without touching a byte. Before this the lists that run on every sync and at start-up loaded every
+     ciphertext on the device into memory: a phone holding a hundred full-size originals could not have opened the
+     app. Records written earlier keep their bytes inline until migrate() moves them, and every reader takes either
+     form. up: 2 on a bytes record keeps the previous build's "pending" and "clear downloaded" filters off it, should
+     an old page ever meet the new layout. Writes resolve when the transaction commits, not when a request succeeds. */
+  const BLOB = '~';
+  const factsRange = () => IDBKeyRange.upperBound(BLOB, true);
+  const lean = (rec) => { if (!rec || rec.ct === undefined) return rec || null; const o = Object.assign({}, rec); delete o.ct; return o; };
+  function tx(mode, fn) {
+    return idbRun('media', mode, (t) => new Promise((res, rej) => {     // app.js: one transaction, reopened once if the system dropped the connection
+      let out;
+      t.oncomplete = () => res(out);
+      t.onabort = t.onerror = () => rej(t.error || new Error('The pictures could not be saved on this device. Is its storage full?'));
+      fn(t.objectStore('media'), (v) => { out = v; });
+    }));
   }
-  const dbGet = (id) => store('readonly', (s) => s.get(id));
-  const dbPut = (rec) => store('readwrite', (s) => s.put(rec));
-  const dbDel = (id) => store('readwrite', (s) => s.delete(id));
-  const dbAll = () => store('readonly', (s) => s.getAll());
-  const dbClear = () => store('readwrite', (s) => s.clear());
+  const req = (r, fn) => { r.onsuccess = () => fn(r.result); };
+  const dbFacts = () => tx('readonly', (s, done) => req(s.getAll(factsRange()), (all) => done(all.map(lean))));     // every picture's facts, no bytes
+  const dbFact = (id) => tx('readonly', (s, done) => req(s.get(id), (rec) => done(lean(rec))));
+  const dbHas = (id) => tx('readonly', (s, done) => req(s.count(id), (n) => done(n > 0)));
+  const dbGet = (id) => tx('readonly', (s, done) => req(s.get(id), (rec) => {                                       // facts and bytes together; null when either is missing
+    if (!rec || rec.ct) { done(rec || null); return; }
+    req(s.get(BLOB + id), (b) => done(b && b.ct ? Object.assign({}, rec, { ct: b.ct }) : null));
+  }));
+  const dbPut = (rec) => tx('readwrite', (s) => { s.put({ id: BLOB + rec.id, k: 'blob', up: 2, ct: rec.ct }); s.put(lean(rec)); });   // both or neither
+  const dbPatch = (id, change) => tx('readwrite', (s, done) => req(s.get(id), (rec) => {                            // change: fields to merge, or a function of the record returning them (null leaves it alone); the bytes are not rewritten
+    if (!rec) { done(null); return; }
+    const c = typeof change === 'function' ? change(rec) : change;
+    if (c) s.put(Object.assign(rec, c));
+    done(lean(rec));
+  }));
+  const dbDelMany = (ids) => tx('readwrite', (s) => { for (const id of ids) { s.delete(id); s.delete(BLOB + id); } });
+  const dbDel = (id) => dbDelMany([id]);
+  const dbClear = () => tx('readwrite', (s) => { s.clear(); });
+  async function migrate() {                         // once per device: inline bytes move beside their record, a few megabytes per transaction
+    if (M.split) return 0;
+    let from = null, moved = 0;
+    for (;;) {
+      const next = await tx('readwrite', (s, done) => {
+        let bytes = 0;
+        const c = s.openCursor(from === null ? factsRange() : IDBKeyRange.bound(from, BLOB, true, true));
+        c.onsuccess = () => {
+          const cur = c.result;
+          if (!cur) { done(null); return; }
+          const rec = cur.value;
+          if (rec.ct) { s.put({ id: BLOB + rec.id, k: 'blob', up: 2, ct: rec.ct }); bytes += rec.ct.byteLength || 0; cur.update(lean(rec)); moved++; }
+          if (bytes > 8 * 1024 * 1024) { done(cur.key); return; }       // commit this batch; the loop carries on after this key
+          cur.continue();
+        };
+      });
+      if (next === null || next === undefined) break;
+      from = next;
+    }
+    M.split = true;
+    try { localStorage.setItem('mediaSplit', '1'); } catch (e) { /* blocked: it runs again next time and finds nothing to move */ }
+    return moved;
+  }
 
   /* ---------------------------------------------------------------- pictures in: decode, shrink, seal, store */
   function loadImage(file) {                         // through <img>: iOS and Chrome apply the EXIF orientation there
@@ -175,9 +226,7 @@ window.Media = (() => {
     const u = await url(id, kind); if (!u) throw new Error('That picture is not on this device yet (needs internet).');
     const blob = await (await fetch(u)).blob();
     const name = kind === 'drawing' ? origName(meta || {}, id).replace(/\.jpg$/, '.png') : origName(meta || {}, id);
-    const file = new File([blob], name, { type: kind === 'drawing' ? 'image/png' : 'image/jpeg', lastModified: Date.now() });
-    if (M.origMode === 'share' && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'World Adventure' }); return 'shared'; }
-    saveDownload(file, name); return 'downloaded';
+    return saveFile(new File([blob], name, { type: kind === 'drawing' ? 'image/png' : 'image/jpeg', lastModified: Date.now() }));
   }
   async function saveFile(file) {                   // any picture file out to the phone the same way (3 Nov 2026: the grandparents' postcard)
     if (M.origMode === 'share' && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'World Adventure' }); return 'shared'; }
@@ -200,7 +249,7 @@ window.Media = (() => {
       await countPending();
     });
   }
-  async function originals() { return (await dbAll()).filter((r) => r.k === 'orig'); }
+  async function originals() { return (await dbFacts()).filter((r) => r.k === 'orig'); }   // their facts only; the bytes are read one at a time when they are handed over
   function originalsSummary() { return M.orig; }
   function canSaveOriginals() { return M.origMode === 'share' && !!(navigator.share && navigator.canShare); }
   function origHint() {
@@ -208,28 +257,35 @@ window.Media = (() => {
     if (canSaveOriginals()) return 'Snap keeps the full-size photo here too; save them all to Photos in one tap from Our story.';
     return '';
   }
-  async function prepareOriginals() {              // decrypt the next batch ahead of the tap, so the share sheet opens inside the tap
-    if (M.prepared) return M.prepared;
-    const wait = (await originals()).filter((r) => !r.x).sort((a, b) => a.at - b.at).slice(0, LIMITS.shareBatch);
-    const files = [], recs = [];
-    for (const r of wait) {
-      try { const pt = await openBytes(r.ct, r.id); files.push(new File([pt], r.name, { type: r.type || 'image/jpeg', lastModified: r.at })); recs.push(r); }
-      catch (e) { r.x = -1; await dbPut(r); }
-    }
-    M.prepared = { files, recs };
-    return M.prepared;
+  function prepareOriginals() {                    // decrypt the next batch ahead of the tap, so the share sheet opens inside the tap; one preparation at a time
+    if (M.prepared) return Promise.resolve(M.prepared);
+    if (M.preparing) return M.preparing;
+    const p = (async () => {
+      const wait = (await originals()).filter((r) => !r.x).sort((a, b) => a.at - b.at).slice(0, LIMITS.shareBatch);
+      const files = [], recs = [];
+      for (const r of wait) {
+        try { const full = await dbGet(r.id); const pt = await openBytes(full.ct, r.id); files.push(new File([pt], r.name, { type: r.type || 'image/jpeg', lastModified: r.at })); recs.push(r); }
+        catch (e) { await dbPatch(r.id, { x: -1 }); }
+      }
+      M.prepared = { files, recs };
+      return M.prepared;
+    })();
+    M.preparing = p;
+    const clear = () => { if (M.preparing === p) M.preparing = null; };
+    p.then(clear, clear);
+    return p;
   }
   async function saveOriginals() {                 // one share sheet per batch; iOS shows "Save N Images"
     const batch = M.prepared || await prepareOriginals();
-    M.prepared = null;
-    if (!batch.files.length) { await countPending(); return { saved: 0, left: 0 }; }
+    if (!batch.files.length) { M.prepared = null; await countPending(); return { saved: 0, left: 0 }; }
     if (navigator.canShare && !navigator.canShare({ files: batch.files })) throw new Error('This phone cannot hand photos to its gallery from the app.');
-    await navigator.share({ files: batch.files, title: 'World Adventure photos' });   // resolves when the sheet is done; AbortError on cancel
-    for (const r of batch.recs) { const cur = await dbGet(r.id); if (cur && cur.x !== -1) { cur.x = 1; await dbPut(cur); } }
-    const left = await countPending();
+    await navigator.share({ files: batch.files, title: 'World Adventure photos' });   // resolves when the sheet is done; AbortError on cancel leaves the batch prepared, so the next tap still shares inside the tap (15 Nov 2026)
+    for (const r of batch.recs) await dbPatch(r.id, (cur) => (cur.x === -1 ? null : { x: 1 }));
+    M.prepared = null;
+    await countPending();
     return { saved: batch.files.length, left: M.orig.waiting };
   }
-  async function clearSavedOriginals() { for (const r of await originals()) if (r.x === 1) await dbDel(r.id); M.prepared = null; await countPending(); }
+  async function clearSavedOriginals() { await dbDelMany((await originals()).filter((r) => r.x === 1).map((r) => r.id)); M.prepared = null; await countPending(); }
 
   /* ---------------------------------------------------------------- pictures out: local or fetched ciphertext → object URL (capped, revoked on release) */
   function remember(oid, u) {
@@ -250,7 +306,7 @@ window.Media = (() => {
       const ct = await r.arrayBuffer();
       if (ct.byteLength < 29) return null;
       const rec = { id: oid, ct, n: ct.byteLength, up: 1, bad: 0, k: kind || 'photo', at: Date.now() };
-      await dbPut(rec);
+      try { await dbPut(rec); } catch (e) { M.last.down = 'not kept (storage): ' + oid.slice(-6); }   // a full device still shows the picture; it is fetched again next time
       return rec;
     } catch (e) { M.last.down = 'network: ' + ((e && e.message) || e); return null; } finally { ungate(); }
   }
@@ -272,8 +328,8 @@ window.Media = (() => {
     M.inflight.set(oid, p);
     return p.finally(() => M.inflight.delete(oid));
   }
-  async function has(oid) { return !!(await dbGet(oid)); }
-  async function ensure(oid, kind) { if (await dbGet(oid)) return true; return !!(await download(oid, kind)); }
+  const has = (oid) => dbHas(oid);
+  async function ensure(oid, kind) { if (await dbHas(oid)) return true; return !!(await download(oid, kind)); }
 
   /* ---------------------------------------------------------------- upload: after each sync (Sync's work hook), thumbs first
      The index fact media|<id> is written once a photo's two parts are up (a drawing's at once), so other devices
@@ -284,47 +340,64 @@ window.Media = (() => {
     if (!ep.enabled) return;
     M.flushing = true;
     try {
-      const all = await dbAll();
+      const all = await dbFacts();
       const pend = all.filter((r) => !r.up && (r.bad || 0) < 3).sort((a, b) => ((a.k === 'thumb' ? 0 : 1) - (b.k === 'thumb' ? 0 : 1)) || (a.at - b.at));
       M.pending = pend.length; changed();
       for (const rec of pend) {
+        const full = await dbGet(rec.id);                                                      // the bytes, one picture at a time
+        if (!full || !full.ct) { await dbPatch(rec.id, { bad: 3 }); continue; }               // facts with no bytes behind them: nothing to send
         let r;
-        try { r = await fetch(`${ep.url}/m/${ep.room}/${rec.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: rec.ct }); M.last.up = `${rec.id.slice(-6)} → ${r.status}`; }
+        try { r = await fetch(`${ep.url}/m/${ep.room}/${rec.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: full.ct }); M.last.up = `${rec.id.slice(-6)} → ${r.status}`; }
         catch (e) { M.last.up = 'network: ' + ((e && e.message) || e); M.backoffUntil = Date.now() + 60000; break; }                      // the connection dropped: a minute, then again
-        if (r.status === 503 || r.status === 429) { M.backoffUntil = Date.now() + 600000; break; }   // KV quota: ten minutes
-        if (!r.ok) { rec.bad = (rec.bad || 0) + 1; await dbPut(rec); continue; }
-        rec.up = 1; await dbPut(rec); M.pending = Math.max(0, M.pending - 1); changed();
+        if (r.status === 413 || r.status === 400) { await dbPatch(rec.id, { bad: 3 }); continue; }   // the Worker will never take this one (too big, or malformed); the rest go on
+        /* anything else that is not a yes is the Worker's trouble, not the picture's (15 Nov 2026: three such answers used to shelve a
+           picture for good, so a few minutes of outage could strand every waiting photo): wait and try them all again. KV quota: ten minutes. */
+        if (!r.ok) { M.backoffUntil = Date.now() + (r.status === 503 || r.status === 429 ? 600000 : 120000); break; }
+        await dbPatch(rec.id, { up: 1, bad: 0 }); rec.up = 1; M.pending = Math.max(0, M.pending - 1); changed();
         await indexFact(rec);
       }
+      /* an uploaded picture of this device's with no index fact (the page closed between the upload and the fact): index it now.
+         Never one from before the last stories wipe: its fact is gone on purpose, and its record is about to follow. */
+      const indexed = Quests.factsByPrefix('media|'), wiped = Quests.storiesWipedAt();
+      for (const r of all) if (r.up === 1 && r.p && r.at > wiped && (r.k === 'photo' || r.k === 'drawing') && !indexed['media|' + r.id]) await indexFact(r);
     } finally { M.flushing = false; changed(); }
   }
   async function indexFact(rec) {
     const base = rec.k === 'thumb' ? rec.id.slice(0, -1) : rec.id;
     let main = rec;
-    if (rec.k !== 'drawing') { const a = await dbGet(base), b = await dbGet(base + 't'); if (!(a && a.up && b && b.up)) return; main = a; }
+    if (rec.k !== 'drawing') { const a = await dbFact(base), b = await dbFact(base + 't'); if (!(a && a.up && b && b.up)) return; main = a; }
     const key = 'media|' + base;
     if (Quests.getFact(key)) return;
     Quests.setFact(key, await seal({ on: true, k: main.k, p: main.p, d: main.d, tag: main.tag || '', n: main.n, w: main.w, h: main.h, t: main.at }, key));
   }
-  async function pendingList() { return (await dbAll()).filter((r) => !r.up && r.k !== 'thumb' && r.p); }
+  async function pendingList() { return (await dbFacts()).filter((r) => !r.up && r.k !== 'thumb' && r.p); }
   function pendingCount() { return M.pending; }
   async function countPending() {
     try {
-      const all = await dbAll(), o = all.filter((r) => r.k === 'orig');
+      try { await migrate(); } catch (e) { M.last.open = 'migrate: ' + ((e && e.message) || e); }   // a failed move leaves the old layout, which still reads
+      const all = await dbFacts(), o = all.filter((r) => r.k === 'orig');
       M.pending = all.filter((r) => !r.up).length;
       M.orig = { waiting: o.filter((r) => !r.x).length, waitingBytes: o.filter((r) => !r.x).reduce((n, r) => n + (r.n || 0), 0), saved: o.filter((r) => r.x === 1).length, savedBytes: o.filter((r) => r.x === 1).reduce((n, r) => n + (r.n || 0), 0) };
     } catch (e) { M.pending = 0; }
     changed(); return M.pending;
   }
-  async function usage() { const all = await dbAll().then((a) => a.filter((r) => r.k !== 'orig')); return { count: all.filter((r) => r.k !== 'thumb').length, bytes: all.reduce((n, r) => n + (r.n || 0), 0), pending: all.filter((r) => !r.up).length }; }
-  async function remove(id) { for (const u of [id, id + 't']) { const v = M.urls.get(u); if (v) { URL.revokeObjectURL(v); M.urls.delete(u); } await dbDel(u); } }
-  async function wipe() { release(); M.prepared = null; try { await dbClear(); } catch (e) { /* no store yet */ } M.pending = 0; await countPending(); }
-  async function clearDownloaded() { release(); for (const r of await dbAll()) if (r.up === 1) await dbDel(r.id); }
+  async function usage() { const all = await dbFacts().then((a) => a.filter((r) => r.k !== 'orig')); return { count: all.filter((r) => r.k !== 'thumb').length, bytes: all.reduce((n, r) => n + (r.n || 0), 0), pending: all.filter((r) => !r.up).length }; }
+  async function remove(id) { for (const u of [id, id + 't']) { const v = M.urls.get(u); if (v) { URL.revokeObjectURL(v); M.urls.delete(u); } } await dbDelMany([id, id + 't']); }
+  /* A stories wipe (15 Nov 2026): the pictures of the wiped stories go. Anything stored since `before` (the wipe's own time, when
+     it arrives by sync) stays, and so does every full-size original still waiting for Photos: on an iPhone that original exists
+     nowhere else. The wipe used to clear the whole store, pictures taken since and originals included. */
+  async function wipe(before) {
+    release(); M.prepared = null;
+    try { await dbDelMany((await dbFacts()).filter((r) => r.k !== 'orig' && !(before && r.at >= before)).map((r) => r.id)); } catch (e) { /* no store yet */ }
+    await countPending();
+  }
+  async function wipeAll() { release(); M.prepared = null; try { await dbClear(); } catch (e) { /* no store yet */ } M.pending = 0; await countPending(); }   // "Forget this device": everything, originals too (their key goes with the device)
+  async function clearDownloaded() { release(); await dbDelMany((await dbFacts()).filter((r) => r.up === 1).map((r) => r.id)); }
   function changed() { if (M.onChange) { try { M.onChange(); } catch (e) { /* UI not ready */ } } }
 
   return { init, get enabled() { return M.enabled; }, seal, open, pick, addImage, addCanvas, url, has, ensure, release, flush, pendingList, pendingCount,
-    countPending, usage, remove, wipe, clearDownloaded, onChange: (fn) => { M.onChange = fn; }, LIMITS,
+    countPending, usage, remove, wipe, wipeAll, clearDownloaded, onChange: (fn) => { M.onChange = fn; }, LIMITS,
     newId, keepOriginal, originals, originalsSummary, canSaveOriginals, origHint, prepareOriginals, saveOriginals, clearSavedOriginals, saveCopy, saveDownload, saveFile,
-    get origMode() { return M.origMode; }, setOrigMode: (m) => { M.origMode = m; M.prepared = null; },
-    diag: () => ({ up: M.last.up, down: M.last.down, open: M.last.open, add: M.last.add, mode: M.origMode, enabled: M.enabled, pending: M.pending }) };
+    get ios() { return IOS; }, get origMode() { return M.origMode; }, setOrigMode: (m) => { M.origMode = m; M.prepared = null; },
+    diag: () => ({ up: M.last.up, down: M.last.down, open: M.last.open, add: M.last.add, mode: M.origMode, enabled: M.enabled, pending: M.pending, split: M.split }) };
 })();

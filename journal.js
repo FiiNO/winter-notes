@@ -1,6 +1,6 @@
 /* World Adventure postcards (journal.js; the Postcards tab. It began as the Stories tab, 1 Nov 2026 evening): the family's
    board. Anyone writes a postcard any time (the words, a mood, the question of the day, up to six photos or drawings
-   glued on), replies to one (text, emoji, one picture) or taps a quick emoji on it. Also the morning photos for the
+   glued on), replies to one (text, emoji, one picture; text and emoji only from Grandma and Grandpa's phone) or taps a quick emoji on it. Also the morning photos for the
    lost-kid card.
    17 Nov 2026 (Andy: "lets actually call it postcards… a mini simple social page with postcards, the family creates them,
    the grandparents read, view photos and react… incredibly simple for the oldies"): every post shows as a postcard
@@ -468,14 +468,14 @@ window.Journal = (() => {
     if (reply) {
       html += `<div class="quote"><b>${esc(Quests.label(post ? post.p : ''))}</b>: ${esc(post ? firstLine(post) : '')}</div>`;
       html += `<textarea class="page-text ctext" id="c-text" maxlength="${MAX_TEXT}" rows="4" placeholder="Say something…">${esc(dr.text || '')}</textarea>${emoji}`;
-      html += `<div class="cmedia" id="c-media"></div><div class="row pc-addrow">${snaps}</div>`;
+      html += `<div class="cmedia" id="c-media"></div>${grand ? '' : `<div class="row pc-addrow">${snaps}</div>`}`;   // Grandma and Grandpa write back with words and emoji only: no Snap, Photos or Draw (18 Nov 2026)
     } else {
       html += `<div class="pc-edit">${Postcard.cardHtml(dr, { ctx, edit: true, media: dr.media, max: MAX_TEXT })}</div>`;
       html += `<div class="row pc-addrow">${snaps}<span class="pc-count" id="c-count"></span></div>`;
       html += `<div class="moods">` + MOODS.map(([id, e, t]) => `<button class="mood${dr.mood === id ? ' on' : ''}" data-mood="${id}"><span class="me">${e}</span><span class="mt">${t}</span></button>`).join('') + `</div>`;
       html += `<button class="chip prompt${dr.q ? ' on' : ''}" id="c-prompt">💭 ${esc(prompt.q)}${dr.q ? ' ✓' : ''}</button>${emoji}`;
     }
-    html += `${Media.origHint() ? `<p class="tiny muted">${esc(Media.origHint())}</p>` : ''}</div></div>`;
+    html += `${Media.origHint() && !(reply && grand) ? `<p class="tiny muted">${esc(Media.origHint())}</p>` : ''}</div></div>`;
     ov.innerHTML = html; ov.classList.remove('hidden');
     J.overlay = { back: cancelComposer, kind: 'composer' };
     wireComposer(ov, prompt, max);
@@ -533,7 +533,8 @@ window.Journal = (() => {
         saveDraft(); if (J.draft === dr && ov.querySelector('#c-post') === postBtn) redraw();
       }).catch((e) => { if (window.logErr) logErr('add photos: ' + ((e && e.message) || e)); }).then(() => { if (counted) busy--; refresh(); });
     });
-    ov.querySelector('#c-draw').onclick = () => {
+    const drawBtn = ov.querySelector('#c-draw');                        // not there on Grandma and Grandpa's reply
+    if (drawBtn) drawBtn.onclick = () => {
       if (dr.media.length >= max) return full();
       openDraw(dr.p, dr.d, 'story').then((id) => { if (id) { dr.media.push({ id, k: 'drawing' }); saveDraft(); } if (J.draft) renderComposer(); });   // the pad borrows the overlay; the composer comes back from J.draft
     };

@@ -672,7 +672,7 @@ window.Quests = (() => {
     const po = window.Journal && Journal.post ? Journal.post(postId) : null;
     const line = po && window.Postcard ? Postcard.firstLine(po) : '';
     const by = f ? (f.v.by || 'kid') : 'parent', needs = by !== 'parent';
-    return { kind: 'card', key, id: postId, pic: (f && f.v && f.v.pic) || null, title: `Send this postcard${line ? ': “' + line + '”' : ''}`, e: '📮', pts: 0, date: (f && f.v.date) || (po && po.d) || '', by, t: f ? f.t : 0,
+    return { kind: 'card', key, id: postId, pic: (f && f.v && f.v.pic) || null, title: `Send this postcard${po && window.Postcard && Postcard.toOf ? ' to ' + Postcard.toOf(po) : ''}${line ? ': “' + line + '”' : ''}`, e: '📮', pts: 0, date: (f && f.v.date) || (po && po.d) || '', by, t: f ? f.t : 0,
       player: (f && f.v.p) || (po && po.p) || st.active, verify: needs, needs, ok: a, okBy: ans.who, okT: ans.t, pending: !!f && needs && !a, rejected: !!f && needs && a === 'no', counted: a === 'yes' || (!!f && !needs) };
   }
   function pendingCards(st, eff) { const out = []; for (const k of Object.keys(eff)) if (k.startsWith('card|')) { const it = cardItem(st, eff, k.slice(5)); if (it && it.pending) out.push(it); } return out; }

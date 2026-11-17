@@ -7,7 +7,8 @@
    (postcard.js draws the card), with a small panel under it for the reactions and the replies. The names inside this
    file (post, story, renderStory, the `storiesSeen` key) are the old ones on purpose: they are what the stored facts and
    the other files call these things.
-   A post is one sealed fact `post|<id>` {on,p,d,t,text,mood,q,media:[{id,k}]}; a reply is `cmt|<postId>|<id>`
+   A post is one sealed fact `post|<id>` {on,p,d,t,text,mood,q,media:[{id,k}],to} (to: who the card is to, only when it is
+   not Grandma and Grandpa); a reply is `cmt|<postId>|<id>`
    {on,p,t,text,media}; a reply that is only emoji shows as a reaction. The pages written before this (facts
    `page|<p>|<date>|<field>`) show as read-only posts. Pictures are Media objects indexed by sealed `media|<id>` facts.
    Everything rides the ordinary facts sync and survives "Reset all quest progress". Nothing on a kids' device waits
@@ -186,6 +187,7 @@ window.Journal = (() => {
   async function addPost(dr) {
     const st = Quests.state(), id = dr.id || Media.newId(), key = 'post|' + id;   // the id it was written under: its pictures sit on the card where the composer showed them
     const v = { on: true, p: dr.p, d: dr.d, t: Date.now(), text: String(dr.text || '').trim().slice(0, MAX_TEXT), mood: dr.mood || '', q: dr.q || '', media: (dr.media || []).slice(0, MAX_MEDIA) };
+    const to = Postcard.cleanTo(dr.to); if (to && to !== Postcard.TO) v.to = to;   // a card to someone else says so; the usual one stays as small as before
     J.posts[id] = Object.assign({ id, _t: v.t, _d: st.device }, v);
     for (const m of v.media) if (!J.media[m.id]) J.media[m.id] = { id: m.id, k: m.k, p: v.p, d: v.d, tag: 'story', stub: true };
     await putSealed(key, v);
@@ -505,6 +507,14 @@ window.Journal = (() => {
     if (pr) pr.onclick = () => { dr.q = dr.q ? '' : prompt.q; pr.classList.toggle('on', !!dr.q); pr.textContent = '💭 ' + prompt.q + (dr.q ? ' ✓' : ''); const q = ov.querySelector('#c-q'); q.textContent = dr.q; q.classList.toggle('hidden', !dr.q); saveDraft(); ta.focus(); };
     let timer = null;
     ta.oninput = () => { dr.text = ta.value.slice(0, MAX_TEXT); grow(); refresh(); clearTimeout(timer); timer = setTimeout(saveDraft, 300); };
+    const to = ov.querySelector('#c-to');                               // "Dear ____,": Grandma and Grandpa unless another name is typed (17 Nov 2026)
+    if (to) {
+      const sz = ov.querySelector('#c-to-sz'), fitTo = () => { sz.textContent = to.value || to.placeholder; };   // the box is as wide as the name in it
+      to.oninput = () => { dr.to = to.value; fitTo(); clearTimeout(timer); timer = setTimeout(saveDraft, 300); };
+      to.onfocus = () => setTimeout(() => { try { to.select(); } catch (e) { /* typing still works */ } }, 0);   // the first key replaces the name that is there
+      to.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); ta.focus(); } };
+      to.onblur = () => { const c = Postcard.cleanTo(to.value); dr.to = c === Postcard.TO ? '' : c; to.value = c || Postcard.TO; fitTo(); saveDraft(); };   // tidied; left empty, it is the usual name again
+    }
     ov.querySelectorAll('[data-e]').forEach((b) => {
       b.onpointerdown = (e) => e.preventDefault();                       // keep the keyboard and the caret where they are
       b.onclick = () => {

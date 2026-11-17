@@ -9,7 +9,7 @@
    share sheet, so Mail or WhatsApp carries it and nothing leaves the device any other way. On a parent phone "Share" is
    direct; on the kids' device "Ask Mum and Dad to send it" writes a `card|<postId>` fact that waits in the parents'
    approvals card, and the parent's ✓ opens the share sheet on the parent's phone (quests.js hands that ✓ to
-   sendApproved). A sent card ticks the `postcard` quest for its author.
+   sendApproved). Sending pays no points: the `postcard` quest is ticked when the card is written (journal.js addPost).
    Loaded after journal.js and before app.js; uses Journal.post/cityOf/media/timeOf, Media.url/ensure, Quests.*, and app.js
    helpers at call time only. Nothing here may name a venue the kids must not read about: the pictures are of skylines,
    mountains and towers only. The lettering comes from fonts/ (open licences, fonts/LICENSE.txt), never from the network. */

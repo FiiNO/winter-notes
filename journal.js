@@ -189,8 +189,11 @@ window.Journal = (() => {
     J.posts[id] = Object.assign({ id, _t: v.t, _d: st.device }, v);
     for (const m of v.media) if (!J.media[m.id]) J.media[m.id] = { id: m.id, k: m.k, p: v.p, d: v.d, tag: 'story', stub: true };
     await putSealed(key, v);
-    const pl = Quests.view(st, v.p);
-    if (!(pl.done.diary || []).includes(v.d)) Quests.complete(v.p, 'diary', v.d);          // the first postcard of the day is the diary tick (its own party)
+    /* the first postcard of the day ticks two quests for its author: the diary, and the postcard quest (17 Nov 2026, Andy: "ticked by
+       writing it not sending it"). Both count at once, on the kids' device too, and share one party. */
+    let pts = 0; const ticked = [];
+    for (const q of ['diary', 'postcard']) if (Quests.complete(v.p, q, v.d, true)) { ticked.push(q); pts += (Quests.QUESTS.find((x) => x.id === q) || {}).pts || 0; }
+    if (pts) Quests.celebrate('💌', `+${pts} points`, ticked.length > 1 ? "Postcard written, and that is today's diary too" : 'Postcard written', v.p, 'quest', pts);
     else Quests.celebrate('💌', 'Posted!', 'Everyone sees your postcard after the next sync', v.p, 'quest');
     return id;
   }

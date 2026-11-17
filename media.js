@@ -254,7 +254,7 @@ window.Media = (() => {
   function canSaveOriginals() { return M.origMode === 'share' && !!(navigator.share && navigator.canShare); }
   function origHint() {
     if (M.origMode === 'download') return "Snap keeps the full-size photo in this phone's Downloads (Gallery shows it) and a small copy here.";
-    if (canSaveOriginals()) return 'Snap keeps the full-size photo here too; save them all to Photos in one tap from Our story.';
+    if (canSaveOriginals()) return 'Snap keeps the full-size photo here too; save them all to Photos in one tap from Postcards.';
     return '';
   }
   function prepareOriginals() {                    // decrypt the next batch ahead of the tap, so the share sheet opens inside the tap; one preparation at a time

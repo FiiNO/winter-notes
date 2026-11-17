@@ -74,7 +74,8 @@ window.Quests = (() => {
 
   /* kind: food · explore · helper · words · travel · daily. where: a city, 'any' (whole trip), 'home' (before we go).
      A kid's tick on any quest waits for a parent's ✓ (Andy, 1 Nov: "parent approval for most of the kids' challenges");
-     auto: true lets a quest count at once on the kids' device (the diary: a story post never waits). Parent ticks never wait. */
+     auto: true lets a quest count at once on the kids' device (the diary and the postcard: a post never waits). Parent ticks never wait.
+     write: true marks a quest that is ticked by writing a postcard (journal.js addPost): its row offers "Write" in place of "Done!". */
   const QUESTS = [
     // before we go
     { id: 'pack-case', e: '🧳', t: 'Help pack your own suitcase', pts: 20, where: 'home', kind: 'helper' },
@@ -222,7 +223,7 @@ window.Quests = (() => {
     { id: 'unpack', e: '🧳', t: 'Unpack your own suitcase', pts: 20, where: 'Townsville', kind: 'helper' },
     { id: 'own-bed', e: '🛏️', t: 'Sleep in your own bed again', pts: 10, where: 'Townsville', kind: 'explore' },
     { id: 'tell-grandparents', e: '📖', t: 'Tell Grandma or Grandpa three things about the trip', pts: 20, where: 'Townsville', kind: 'words' },
-    { id: 'postcard', e: '📮', t: 'Send a postcard to the grandparents', pts: 15, where: 'any', kind: 'helper', daily: true },   // 1 Nov: ticked when a story goes out as a postcard
+    { id: 'postcard', e: '💌', t: 'Write a postcard to the grandparents', pts: 15, where: 'any', kind: 'helper', daily: true, auto: true, write: true },   // 17 Nov 2026 (Andy: "ticked by writing it not sending it"): ticked when its author posts a postcard that day; before that, when a parent sent one out
     { id: 'flags', e: '🏳️', t: 'Spot five different flags in one day', pts: 10, where: 'any', kind: 'explore' },
     { id: 'carry-bag', e: '🪜', t: 'Carry a bag up the stairs for someone', pts: 10, where: 'any', kind: 'helper' },
     { id: 'new-friend', e: '🤝', t: 'Make a friend who speaks another language', pts: 25, where: 'any', kind: 'words' },
@@ -442,18 +443,20 @@ window.Quests = (() => {
   /* ---------------------------------------------------------------- changes (every one is a fact) */
   const by = () => (isParentDevice() ? 'parent' : 'kid');
   let fx = null;                        // the card to animate after the next render: { key, cls, float, fcls }
-  function complete(player, id, date) {
-    const st = state(), q = byId[id]; if (!q) return;
+  function complete(player, id, date, quiet) {   // true if this call ticked it. quiet: no party of its own (17 Nov 2026: a postcard ticks two quests and shows one party for both)
+    const st = state(), q = byId[id]; if (!q) return false;
     const key = tickKey(player, id, q.daily ? date : null);
-    if (liveOn(st, key)) return;
+    if (liveOn(st, key)) return false;
     const who = by();
     put(st, key, { on: true, by: who, date });
     commit(st);
     const waits = needsVerify(q) && who !== 'parent';
     fx = waits ? { key, cls: 'just-sent', float: '📨 sent', fcls: 'send' } : { key, cls: 'just-done', float: `+${q.pts}` };
-    if (waits) celebrate('⏳', 'Sent to Mum and Dad', `${q.t} · ${q.pts} points when they say yes`, player, 'wait');
+    if (quiet) { /* the caller celebrates */ }
+    else if (waits) celebrate('⏳', 'Sent to Mum and Dad', `${q.t} · ${q.pts} points when they say yes`, player, 'wait');
     else celebrate(q.e, `+${q.pts} points`, q.t, player, 'quest', q.pts);
     afterChange();
+    return true;
   }
   function undo(player, id, date) {
     const st = state(), q = byId[id]; if (!q) return;
@@ -662,14 +665,14 @@ window.Quests = (() => {
   function pendingStamps(st, eff) { return Object.keys(arrivals()).map((c) => stampItem(st, eff, c)).filter((it) => it && it.pending); }
   /* postcards (1 Nov 2026): the kids' "ask Mum and Dad to send it" is the fact card|<postId>; the parent's ✓ shares
      from the parent's phone (postcard.js sendApproved) and then writes ok|card|<postId>; a parent's direct Share writes
-     the ok alone. Either way the story's author gets the postcard quest for that day. */
+     the ok alone. Sending pays no points (17 Nov 2026): the postcard quest is ticked when the card is written. */
   function cardItem(st, eff, postId) {
     const key = 'card|' + postId, f = eff[key], ans = answer(eff, key, f), a = ans.a, okValid = ans.t > 0;
     if (!(f && f.v && f.v.on) && !okValid) return null;
     const po = window.Journal && Journal.post ? Journal.post(postId) : null;
     const line = po && window.Postcard ? Postcard.firstLine(po) : '';
     const by = f ? (f.v.by || 'kid') : 'parent', needs = by !== 'parent';
-    return { kind: 'card', key, id: postId, pic: (f && f.v && f.v.pic) || null, title: `Postcard to the grandparents${line ? ': “' + line + '”' : ''}`, e: '📮', pts: 15, date: (f && f.v.date) || (po && po.d) || '', by, t: f ? f.t : 0,
+    return { kind: 'card', key, id: postId, pic: (f && f.v && f.v.pic) || null, title: `Send this postcard${line ? ': “' + line + '”' : ''}`, e: '📮', pts: 0, date: (f && f.v.date) || (po && po.d) || '', by, t: f ? f.t : 0,
       player: (f && f.v.p) || (po && po.p) || st.active, verify: needs, needs, ok: a, okBy: ans.who, okT: ans.t, pending: !!f && needs && !a, rejected: !!f && needs && a === 'no', counted: a === 'yes' || (!!f && !needs) };
   }
   function pendingCards(st, eff) { const out = []; for (const k of Object.keys(eff)) if (k.startsWith('card|')) { const it = cardItem(st, eff, k.slice(5)); if (it && it.pending) out.push(it); } return out; }
@@ -686,15 +689,15 @@ window.Quests = (() => {
     if (cur && cur.counted) { celebrate('📮', 'Already sent', 'That postcard has gone to the grandparents', po.p, 'ok'); return; }
     put(st, key, { on: true, by: by(), p: po.p, date: po.d, pic: pickId || null });
     commit(st);
-    if (by() !== 'parent') celebrate('⏳', 'Sent to Mum and Dad', 'Postcard · 15 points when they send it', po.p, 'wait');
+    if (by() !== 'parent') celebrate('⏳', 'Sent to Mum and Dad', 'They send the postcard from their phone', po.p, 'wait');
     afterChange();
   }
-  function approveCard(postId) {         // a parent's phone, after the share sheet closed: mark it sent and pay the author
+  function approveCard(postId) {         // a parent's phone, after the share sheet closed: mark it sent (the points came when it was written)
     const st = state(), po = window.Journal && Journal.post ? Journal.post(postId) : null;
     put(st, 'ok|card|' + postId, { a: 'yes', who: parentName() });
     commit(st);
-    if (po && !liveOn(st, tickKey(po.p, 'postcard', po.d))) complete(po.p, 'postcard', po.d);   // its own "+15 points" party and afterChange
-    else afterChange();
+    if (po) celebrate('📮', 'Sent!', 'The postcard is on its way', po.p, 'ok');
+    afterChange();
   }
   function stampCity(c) {              // the tap on a ready stamp (Passport) or the Home prompt
     const st = state(), key = 'stamp|' + CITY_KEY[c], cur = stampItem(st, effective(st), c);
@@ -834,23 +837,23 @@ window.Quests = (() => {
     const it = itemState(pl, q, ctx.date);
     const cls = 'quest' + (it ? (it.counted ? ' done' : it.rejected ? ' rejected' : ' pending') : '');
     const status = !it ? '' : it.counted ? ' · ✓ done' : it.rejected ? ` · ✗ ${esc(it.okBy || 'a parent')} said not this time` : ' · ⏳ waiting for Mum or Dad';
-    const btn = it ? `<button class="qbtn undo" data-undo="${q.id}">Undo</button>` : `<button class="qbtn go" data-do="${q.id}">Done!</button>`;
+    const btn = it ? `<button class="qbtn undo" data-undo="${q.id}">Undo</button>` : q.write ? `<button class="qbtn go" data-write="${q.id}">✏️ Write</button>` : `<button class="qbtn go" data-do="${q.id}">Done!</button>`;   // a quest ticked by writing a postcard opens the composer
     return `<div class="${cls}" data-key="${esc(tickKey(player, q.id, q.daily ? ctx.date : null))}"><span class="qe">${q.e}</span><div class="qt"><div class="qn">${esc(q.t)}</div><div class="qp">${q.daily ? 'every day · ' : ''}${q.pts} pts${status}</div></div>${btn}</div>`;
   }
   function roleCard() {
     const cur = role();
     const pill = (r, who, text) => `<button class="pill${cur === r && (r !== 'parent' || owner() === who) ? ' active' : ''}" data-role="${r}" data-who="${who}">${text}</button>`;
-    return `<div class="card rolecard"><div class="h3">Whose device is this?</div><p class="small muted">A parent phone can tick for everyone and approves what the kids tick on their device. The kids' device shows only the kids, and every tick there waits for a parent's ✓. Becoming a parent phone asks for the device PIN. Grandma and Grandpa's phone only reads the stories and shows where we are.</p><div class="row">${parents().map((p) => pill('parent', p, `📱 ${esc(label(p))}'s phone`)).join('')}${pill('kids', '', "🧒 Kids' device")}${pill('grand', '', "👵👴 Grandma and Grandpa's phone")}</div></div>`;
+    return `<div class="card rolecard"><div class="h3">Whose device is this?</div><p class="small muted">A parent phone can tick for everyone and approves what the kids tick on their device. The kids' device shows only the kids, and every tick there waits for a parent's ✓. Becoming a parent phone asks for the device PIN. Grandma and Grandpa's phone only reads the postcards and shows where we are.</p><div class="row">${parents().map((p) => pill('parent', p, `📱 ${esc(label(p))}'s phone`)).join('')}${pill('kids', '', "🧒 Kids' device")}${pill('grand', '', "👵👴 Grandma and Grandpa's phone")}</div></div>`;
   }
   function grandPhoneCard() {   // Grandma and Grandpa's phone (3 Nov 2026): whose phone this is cannot change by accident; Settings → Set-up asks for the device PIN first (app.js)
-    return `<div class="card rolecard"><div class="h3">👵👴 Grandma and Grandpa's phone</div><p class="small muted">This phone shows the family's stories and where they are. Tap ❤️ under a story, or Reply, and the family sees it from Grandma and Grandpa.</p></div>`;
+    return `<div class="card rolecard"><div class="h3">👵👴 Grandma and Grandpa's phone</div><p class="small muted">This phone shows the family's postcards and where they are. Tap ❤️ under a postcard, or Write back, and the family sees it from Grandma and Grandpa.</p></div>`;
   }
   function approvalsCard(st) {
     const pend = pendingAll(st);
     if (!isParentDevice() || !pend.length) return '';
     for (const it of pend) if (it.kind === 'card' && window.Postcard) Postcard.prepare(it.id, it.pic || null);   // drawn now with their pick, so the ✓ can share inside its own tap
     const eff = effective(st);
-    return `<div class="card approvals"><div class="h3 approvals-head"><span>⏳ Waiting for a parent (${pend.length})</span>${pend.length > 1 ? `<button class="qbtn yes all" data-ok-all aria-label="Approve all">✓ All ${pend.length}</button>` : ''}</div>` + pend.map((it) => `<div class="approve-row"><span class="qe">${it.e}</span><div class="qt"><div class="qn">${face(it.player)} ${esc(label(it.player))}: ${esc(it.title)}</div><div class="qp">${it.pts} pts · ${esc(fmtDate(it.date))}</div></div><button class="qbtn yes" data-ok="${esc(it.key)}" aria-label="Approve">✓</button><button class="qbtn no" data-no="${esc(it.key)}" aria-label="Not this time">✗</button></div>`).join('') + `</div>`;
+    return `<div class="card approvals"><div class="h3 approvals-head"><span>⏳ Waiting for a parent (${pend.length})</span>${pend.length > 1 ? `<button class="qbtn yes all" data-ok-all aria-label="Approve all">✓ All ${pend.length}</button>` : ''}</div>` + pend.map((it) => `<div class="approve-row"><span class="qe">${it.e}</span><div class="qt"><div class="qn">${face(it.player)} ${esc(label(it.player))}: ${esc(it.title)}</div><div class="qp">${it.kind === 'card' ? 'to send from this phone' : it.pts + ' pts'} · ${esc(fmtDate(it.date))}</div></div><button class="qbtn yes" data-ok="${esc(it.key)}" aria-label="Approve">✓</button><button class="qbtn no" data-no="${esc(it.key)}" aria-label="Not this time">✗</button></div>`).join('') + `</div>`;
   }
   function renderQuests() {
     const ctx = currentContext(), st = state(), player = st.active, eff = effective(st), pl = view(st, player, eff);
@@ -890,6 +893,7 @@ window.Quests = (() => {
   function wire(el, ctx, player) {
     el.querySelectorAll('[data-player]').forEach((b) => b.onclick = () => { setActive(b.dataset.player); afterChange(); FX.pulse(el.querySelector('.player.active'), 'just', 700); FX.pulse(el.querySelector('.lv-av'), 'bump', 700); });
     el.querySelectorAll('[data-do]').forEach((b) => b.onclick = () => complete(player, b.dataset.do, ctx.date));
+    el.querySelectorAll('[data-write]').forEach((b) => b.onclick = () => { if (!window.Journal) return; show('story'); Journal.openComposer({ mode: 'post', p: player }); });
     el.querySelectorAll('[data-undo]').forEach((b) => b.onclick = () => undo(player, b.dataset.undo, ctx.date));
     el.querySelectorAll('[data-food-undo]').forEach((b) => b.onclick = () => removeFood(player, b.dataset.foodUndo));
     const decide = (b, yes) => { const row = b.closest('.approve-row'), key = yes ? b.dataset.ok : b.dataset.no; FX.haptic(20); if (yes) FX.sound('pop'); if (yes && key.startsWith('card|')) { if (window.Postcard) Postcard.sendApproved(key); return; } if (row && !FX.reduce()) { row.classList.add(yes ? 'yes-out' : 'no-out'); setTimeout(() => approve(key, yes), 360); } else approve(key, yes); };

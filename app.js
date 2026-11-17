@@ -118,7 +118,7 @@ function mapsLink(lat, lon, label) {
   return `<div class="row">${mapButtons(lat, lon, label)}</div>`;
 }
 const isMontreal = (s) => /montr[eé]al/i.test(String(s || ''));
-const moveGlyph = (mode) => (/train|rail|shinkansen/i.test(mode || '') ? '🚆' : /coach|bus/i.test(mode || '') ? '🚌' : '✈️');   // one move's picture, everywhere (Home, Stories, the globe)
+const moveGlyph = (mode) => (/train|rail|shinkansen/i.test(mode || '') ? '🚆' : /coach|bus/i.test(mode || '') ? '🚌' : '✈️');   // one move's picture, everywhere (Home, Postcards, the globe)
 /* One phrase card. Japanese cards carry ja + romaji, French cards (Montréal) fr + a plain pronunciation line. */
 function phraseCard(p, show) {
   const lang = p.lang || 'ja', main = lang === 'fr' ? p.fr : p.ja, sub = lang === 'fr' ? p.say : p.romaji;
@@ -513,7 +513,7 @@ function openDay(date) {
     ev.map((e) => `<div class="card"><div class="h3">🎟️ ${esc(e.time)} · ${esc(e.event)}</div><div>${esc(e.venue)}</div><div class="small muted">${esc(e.who)}${e.seats ? ' · ' + esc(e.seats) : ''}</div></div>`).join(''));
 }
 /* Grandma and Grandpa's phone (2 Nov 2026): a quiet Home. Where the family is, the time there, tonight's bed, the next move,
-   the stories. No quests, no SOS, no day strip: everything on this phone arrives through the sync and is read only. */
+   the postcards. No quests, no SOS, no day strip: everything on this phone arrives through the sync and is read only. */
 function whereLine(ctx, fallback) {                    // the Where tile's subtitle from the globe's clock (3 Nov 2026): on a leg, or the last arrival city
   try {
     const w = window.Globe && Globe.whereNow ? Globe.whereNow(ctx, S.family) : null;
@@ -532,7 +532,7 @@ function renderGrandHome() {
     const sleeps = sleepsUntil(ctx, F.trip.start);
     html += `<div class="hero"><div class="hero-emoji">🛫</div><div class="hero-text"><div class="hero-kicker">Getting ready · ${esc(fmtDate(ctx.date))}</div><div class="hero-date">${sleeps} sleep${sleeps === 1 ? '' : 's'} to go</div><div class="hero-sub">They fly on ${esc(fmtDate(F.trip.start))}</div></div></div>`;
   } else if (dayN > total) {
-    html += `<div class="hero"><div class="hero-emoji">🏡</div><div class="hero-text"><div class="hero-kicker">Home again</div><div class="hero-date">${esc(fmtDate(ctx.date))}</div><div class="hero-sub">${total} days of adventure live on in the stories</div></div></div>`;
+    html += `<div class="hero"><div class="hero-emoji">🏡</div><div class="hero-text"><div class="hero-kicker">Home again</div><div class="hero-date">${esc(fmtDate(ctx.date))}</div><div class="hero-sub">${total} days of adventure live on in the postcards</div></div></div>`;
   } else {
     html += `<div class="hero"><div class="hero-emoji">${Quests.CITY_EMOJI[city] || '📍'}</div><div class="hero-text"><div class="hero-kicker">Day ${dayN} of ${total} · ${esc(ctx.inAir ? 'In the air' : ctx.city)}${S.preview ? ' · preview' : ''}</div><div class="hero-date">${esc(fmtDate(ctx.date))}</div><div class="hero-sub">${esc(localTime(ctx.tz))} there · ${esc(localTime(TZ.Home))} at home</div></div></div>`;
   }
@@ -547,6 +547,7 @@ function renderGrandHome() {
   const el = $('#screen-home'); el.innerHTML = html;
   const ig = $('#install-go'); if (ig) ig.onclick = promptInstall;
   wireGo(el);
+  Journal.fill(el);                                // the little print on the Postcards tile (17 Nov 2026)
 }
 function renderHome() {
   if (Quests.isGrandDevice()) return renderGrandHome();
@@ -565,7 +566,7 @@ function renderHome() {
   html += dayStrip(ctx);
   html += installStrip();
   /* 3 Nov 2026 (Andy: "a lot of info… how could we tidy it up"): Home is right now only. Tonight, the next move and today's
-     plan; a slim row of Taxi card / Call / I'm lost; Stories. Quests, Passport, Where, SOS and the build line live in the
+     plan; a slim row of Taxi card / Call / I'm lost; Postcards. Quests, Passport, Where, SOS and the build line live in the
      nav, the header and the Book. The morning photo is one line until it is done, then nothing. */
   const morning = Media.enabled ? Journal.index().filter((m) => m.k === 'photo' && m.tag === 'morning' && m.d === ctx.date).length : 0;
   const parentish = !Quests.role() || Quests.isParentDevice();
@@ -603,6 +604,7 @@ function renderHome() {
   el.querySelectorAll('[data-kid]').forEach((b) => b.onclick = () => openKidCard());
   el.querySelectorAll('[data-call]').forEach((b) => b.onclick = () => openCalls(calls));
   wireGo(el);
+  Journal.fill(el);                                // the little print on the Postcards tile (17 Nov 2026)
 }
 function openCalls(calls) {
   let html = `<h1 class="h1">📞 Call</h1>`;
@@ -1003,7 +1005,7 @@ function renderSettings() {
     <div class="card"><div class="h3">Home screen</div>${isInstalled() ? '<div class="small">✓ Running from its own Home screen icon.</div>' : Install.done ? '<div class="small">✓ Added. Open it from the Home screen icon from now on.</div>' : Install.evt ? '<button class="btn primary block" id="opt-install">📲 Add World Adventure to the Home screen</button>' : installHelpHtml()}</div>
     ${grand ? '' : `<div class="card"><div class="h3">Confetti, animations and sounds</div><p class="small muted">Auto follows the phone's reduce-motion setting.</p><div class="row">${['auto', 'on', 'off'].map((t) => `<button class="pill${FX.pref() === t ? ' active' : ''}" data-fx="${t}">${t}</button>`).join('')}<button class="btn small-btn" id="opt-fx-demo">Show me a level-up</button></div>${switchRow('sound', 'Sound effects: ticks, badges and level-ups')}<p class="tiny muted">Sounds start after the first tap on the phone; the ring/silent switch still wins.</p></div>`}
     ${Quests.settingsCard()}
-    <div class="card"><div class="h3">Photos and journal</div><div class="small" id="media-msg">…</div>${Media.canSaveOriginals() ? `<div class="small" id="orig-msg"></div>` : ''}<div class="row"><button class="btn" id="opt-media-dl">Download all pictures (Wi-Fi)</button>${Quests.isParentDevice() || Quests.isGrandDevice() ? `<button class="btn" id="opt-media-clear">Clear downloaded pictures here</button>` : ''}${Media.canSaveOriginals() ? `<button class="btn" id="opt-orig-save">Save originals to Photos</button><button class="btn" id="opt-orig-clear">Clear saved originals</button>` : ''}</div>${Media.origHint() ? `<p class="tiny muted">${esc(Media.origHint())}</p>` : ''}${Quests.isParentDevice() ? `<div class="row"><button class="btn danger" id="opt-stories-wipe">🗑️ Delete all stories and photos (everyone)</button></div>` : ''}<div class="tiny mono" id="diag" style="margin-top:8px;white-space:pre-wrap"></div><div class="row"><button class="btn" id="opt-errlog-clear">Clear error log</button></div><p class="tiny muted">Pictures and pages are encrypted on this device and in the cloud; only an unlocked device can open them, so the PIN and the phone's own lock are the gate.</p></div>
+    <div class="card"><div class="h3">Photos and postcards</div><div class="small" id="media-msg">…</div>${Media.canSaveOriginals() ? `<div class="small" id="orig-msg"></div>` : ''}<div class="row"><button class="btn" id="opt-media-dl">Download all pictures (Wi-Fi)</button>${Quests.isParentDevice() || Quests.isGrandDevice() ? `<button class="btn" id="opt-media-clear">Clear downloaded pictures here</button>` : ''}${Media.canSaveOriginals() ? `<button class="btn" id="opt-orig-save">Save originals to Photos</button><button class="btn" id="opt-orig-clear">Clear saved originals</button>` : ''}</div>${Media.origHint() ? `<p class="tiny muted">${esc(Media.origHint())}</p>` : ''}${Quests.isParentDevice() ? `<div class="row"><button class="btn danger" id="opt-stories-wipe">🗑️ Delete all postcards and photos (everyone)</button></div>` : ''}<div class="tiny mono" id="diag" style="margin-top:8px;white-space:pre-wrap"></div><div class="row"><button class="btn" id="opt-errlog-clear">Clear error log</button></div><p class="tiny muted">Pictures and pages are encrypted on this device and in the cloud; only an unlocked device can open them, so the PIN and the phone's own lock are the gate.</p></div>
     ${Quests.isGrandDevice() ? '' : `<div class="card"><div class="h3">Preview a trip day</div><p class="small muted">Shows the app as it will look on that day: for testing and the dry run. Tap a day; tap Now to come back.</p>${previewPicker()}</div>`}
     ${grand && !setup ? `<div class="card"><div class="h3">Set-up</div><p class="small muted">Whose phone this is, opening without a PIN, and forgetting the device sit behind the device PIN, so nothing changes by accident.</p><div class="row"><button class="btn" id="opt-setup">Open set-up (asks for the PIN)</button></div></div>` : ''}
     ${setup ? Quests.roleCard() : ''}
@@ -1054,7 +1056,7 @@ function renderSettings() {
   const ocl = $('#opt-orig-clear'); if (ocl) ocl.onclick = () => { if (confirm('Remove the full-size originals that are already in Photos from the app?')) Media.clearSavedOriginals().then(() => renderSettings()); };
   const sw = $('#opt-stories-wipe');
   if (sw) sw.onclick = () => {
-    if (!confirm('Delete every story, reply, page and picture for the whole family, on every device? This cannot be undone.')) return;
+    if (!confirm('Delete every postcard, reply and picture for the whole family, on every device? This cannot be undone.')) return;
     sw.disabled = true; Quests.wipeStories();
     Media.wipe().then(() => { try { localStorage.removeItem('storyDraft'); localStorage.removeItem('replyDraft'); } catch (e) { /* blocked */ } Journal.warm(); renderSettings(); });   // full-size originals still waiting for Photos are kept
   };

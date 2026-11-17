@@ -581,7 +581,8 @@ window.Journal = (() => {
     if (who.length) h += `<div class="pc-who">${who.join(' · ')}</div>`;
     if (replies.length) h += `<div class="pc-cmts">${replies.map((c) => `<div class="pc-cmt">${Quests.face(c.p)}<div class="bub"><b>${esc(Quests.label(c.p))}</b>${esc(c.text || '')}${c.media && J.media[c.media.id] ? `<button class="phbtn" data-view="${esc(c.media.id)}" aria-label="Open the picture">${pic(c.media)}</button>` : ''}</div>${canDelete(c, st) ? `<button class="xdel" data-del-cmt="${esc(po.id)}|${esc(c.id)}" aria-label="Delete reply">🗑️</button>` : ''}</div>`).join('')}</div>`;
     h += `<button type="button" class="pc-say" data-reply="${esc(po.id)}">💬 ${ro ? 'Write back' : 'Write a reply…'}</button>`;
-    if (!ro) {
+    if (ro) h += `<div class="pc-tools"><button class="btn small-btn" data-save-card="${esc(po.id)}">⬇️ Save this postcard</button></div>`;   // the whole card as a picture, to keep or to print (as their large card view offered, 3 Nov 2026)
+    else {
       const seen = (J.seen[po.id] || []).map((p) => Quests.label(p)), cs = cards && cards[po.id];
       if (seen.length) h += `<div class="pc-seen">👀 Seen by ${esc(seen.join(' and '))}</div>`;
       h += `<div class="pc-tools">${cs ? (cs.sent ? '<span class="chip pc">📮 sent</span>' : cs.pending ? '<span class="chip pc">📮 waiting for Mum or Dad</span>' : '') : ''}<button class="btn small-btn" data-card="${esc(po.id)}">📤 Send</button>${canDelete(po, st) ? `<button class="btn small-btn del" data-del-post="${esc(po.id)}" aria-label="Delete postcard">🗑️</button>` : ''}</div>`;
@@ -655,6 +656,12 @@ window.Journal = (() => {
     root.querySelectorAll('[data-reply]').forEach((b) => b.onclick = () => openComposer({ mode: 'reply', postId: b.dataset.reply, d: (J.posts[b.dataset.reply] || {}).d }));
     root.querySelectorAll('[data-card]').forEach((b) => b.onclick = () => { if (window.Postcard) Postcard.openPreview(b.dataset.card); });
     root.querySelectorAll('[data-quick]').forEach((b) => b.onclick = () => react(b.dataset.quick));
+    root.querySelectorAll('[data-save-card]').forEach((b) => b.onclick = async () => {
+      const label = b.textContent; b.disabled = true; b.textContent = 'Drawing the postcard…';
+      try { const f = await Postcard.prepare(b.dataset.saveCard); if (!f) throw new Error('Could not draw the postcard.'); const how = await Media.saveFile(f); b.textContent = how === 'downloaded' ? '✓ Saved: look in Gallery or Downloads' : '✓ Done'; }
+      catch (e) { b.textContent = label; if (e && e.name !== 'AbortError') alert((e && e.message) || 'Could not save the postcard.'); }
+      setTimeout(() => { b.textContent = label; b.disabled = false; }, 3000);
+    });
     root.querySelectorAll('[data-del-post]').forEach((b) => b.onclick = () => { if (confirm('Delete this postcard for everyone?')) deletePost(b.dataset.delPost).then(() => renderStory()); });
     root.querySelectorAll('[data-del-cmt]').forEach((b) => b.onclick = () => { const [postId, id] = b.dataset.delCmt.split('|'); if (confirm('Delete this reply for everyone?')) { const done = deleteComment(postId, id); refreshPanel(postId); done.then(() => renderStory()); } });
   }

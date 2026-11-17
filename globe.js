@@ -4,8 +4,8 @@
    night side computed from the clock, stars around the sphere. The route is great-circle legs from the moves; cities
    are emoji badges (HTML markers), today's city breathes; the journey replays with the leg's vehicle (plane, bus or
    train) flying every finished leg while the globe turns, landing with a pop, then the globe settles on where the
-   family is and idles round slowly until touched. Tap a badge for the city's dates, its stories and a picture, and
-   jump to those stories. Shown to the family from Home ("🌏 Where are we") and the Book, and as the Where tab on
+   family is and idles round slowly until touched. Tap a badge for the city's dates, its postcards and a picture, and
+   jump to those postcards. Shown to the family from Home ("🌏 Where are we") and the Book, and as the Where tab on
    Grandma and Grandpa's phone. Same MapLibre module as map.js; the map, markers and timers are created on enter and
    torn down on leave.
    3 Nov 2026 (Andy: "semi real time… if we are in the air it stops with the plane somewhere along the journey… the
@@ -271,7 +271,7 @@ function openPopup(city) {
   const st = window.Journal && Journal.cityStats ? Journal.cityStats(city) : { stories: 0, pictures: 0, firstDate: null, photoId: null };
   let when = city === HOME ? 'Home' : a ? `Arrive ${fmtDate(a.date)}` : '';
   if (leave && city !== HOME) when += `${when ? ' · ' : ''}Leave ${fmtDate(leave.date)}`;
-  const html = `<div class="where-pop"><b>${emojiOf(city)} ${esc(city)}</b>${when ? `<div class="small muted">${esc(when)}</div>` : ''}<div class="small">${st.stories ? `${st.stories} stor${st.stories === 1 ? 'y' : 'ies'} · ${st.pictures} picture${st.pictures === 1 ? '' : 's'}` : 'No stories from here yet'}</div>${st.photoId ? `<img data-oid="${esc(st.photoId)}t" alt="">` : ''}${st.firstDate ? `<button class="btn small-btn" data-stories="${esc(st.firstDate)}">See the stories →</button>` : ''}</div>`;
+  const html = `<div class="where-pop"><b>${emojiOf(city)} ${esc(city)}</b>${when ? `<div class="small muted">${esc(when)}</div>` : ''}<div class="small">${st.stories ? `${st.stories} postcard${st.stories === 1 ? '' : 's'} · ${st.pictures} picture${st.pictures === 1 ? '' : 's'}` : 'No postcards from here yet'}</div>${st.photoId ? `<img data-oid="${esc(st.photoId)}t" alt="">` : ''}${st.firstDate ? `<button class="btn small-btn" data-stories="${esc(st.firstDate)}">See the postcards →</button>` : ''}</div>`;
   G.popup = new maplibregl.Popup({ closeButton: false, offset: 22, maxWidth: '220px' }).setLngLat(CITY_LL[city]).setHTML(html).addTo(map);
   const el = G.popup.getElement();
   const img = el.querySelector('img[data-oid]'); if (img) Media.url(img.dataset.oid, 'thumb').then((u) => { if (u) img.src = u; else img.remove(); });

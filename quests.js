@@ -840,10 +840,10 @@ window.Quests = (() => {
   function roleCard() {
     const cur = role();
     const pill = (r, who, text) => `<button class="pill${cur === r && (r !== 'parent' || owner() === who) ? ' active' : ''}" data-role="${r}" data-who="${who}">${text}</button>`;
-    return `<div class="card rolecard"><div class="h3">Whose device is this?</div><p class="small muted">A parent phone can tick for everyone and approves what the kids tick on their device. The kids' device shows only the kids, and every tick there waits for a parent's ✓. Becoming a parent phone asks for the device PIN. Grandma and Grandpa's phone only reads the stories and shows where we are.</p><div class="row">${parents().map((p) => pill('parent', p, `📱 ${esc(label(p))}'s phone`)).join('')}${pill('kids', '', "🧒 Kids' device")}${pill('grand', '', "👵👴 Grandma and Grandpa's phone")}</div></div>`;
+    return `<div class="card rolecard"><div class="h3">Whose device is this?</div><p class="small muted">A parent phone can tick for everyone and approves what the kids tick on their device. The kids' device shows only the kids, and every tick there waits for a parent's ✓. Becoming a parent phone asks for the device PIN. Grandma and Grandpa's phone only reads the postcards and shows where we are.</p><div class="row">${parents().map((p) => pill('parent', p, `📱 ${esc(label(p))}'s phone`)).join('')}${pill('kids', '', "🧒 Kids' device")}${pill('grand', '', "👵👴 Grandma and Grandpa's phone")}</div></div>`;
   }
   function grandPhoneCard() {   // Grandma and Grandpa's phone (3 Nov 2026): whose phone this is cannot change by accident; Settings → Set-up asks for the device PIN first (app.js)
-    return `<div class="card rolecard"><div class="h3">👵👴 Grandma and Grandpa's phone</div><p class="small muted">This phone shows the family's stories and where they are. Tap ❤️ under a story, or Reply, and the family sees it from Grandma and Grandpa.</p></div>`;
+    return `<div class="card rolecard"><div class="h3">👵👴 Grandma and Grandpa's phone</div><p class="small muted">This phone shows the family's postcards and where they are. Tap ❤️ under a postcard, or Write back, and the family sees it from Grandma and Grandpa.</p></div>`;
   }
   function approvalsCard(st) {
     const pend = pendingAll(st);

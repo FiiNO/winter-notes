@@ -657,6 +657,14 @@ img.missing { opacity: 0.3; }
 .pc-msg { padding: 10px 14px 2px; font-family: var(--hand); font-size: 1.34em; line-height: 1.5; }
 .hw1 .pc-msg { font-size: 1.24em; } .hw2 .pc-msg { font-size: 1.3em; } .hw4 .pc-msg { font-size: 1.2em; }   /* the four hands are drawn at different sizes: evened out here */
 .pc-dear { color: var(--acc); }
+/* the composer's "Dear ____,": a box to type another name in, exactly as wide as the name (its hidden twin .sz sets the width) */
+.pc-to { position: relative; display: inline-grid; vertical-align: baseline; max-width: 100%; }
+.pc-to > .sz, .pc-to > input { grid-area: 1 / 1; min-width: 0; font: inherit; padding: 0 2px; }
+.pc-to .sz { visibility: hidden; white-space: pre; overflow: hidden; }
+.pc-to input { width: 100%; margin: 0; border: 0; border-bottom: 2px dashed var(--acc); border-radius: 0; outline: none; background: transparent; color: inherit; -webkit-appearance: none; appearance: none; }
+.pc-to input:focus { border-bottom-style: solid; background: rgba(255,255,255,0.65); }
+.pc-to input::placeholder { color: var(--acc); opacity: 0.45; }
+.pc-to .pc-to-pen { position: absolute; right: -0.9em; top: -0.75em; padding: 0; font-size: 0.6em; line-height: 1; font-style: normal; }   /* a pencil on the corner of the name: inside the label, so a tap on it lands in the box */
 .pc-q { color: var(--acc2); font-size: 0.86em; line-height: 1.4; margin: 2px 0; }
 .pc-q::before { content: "“"; } .pc-q::after { content: "”"; }
 .pc-text { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; background-image: linear-gradient(to bottom, transparent, transparent calc(1.5em - 1px), rgba(0,0,0,0.11) calc(1.5em - 1px)); background-size: 100% 1.5em; }

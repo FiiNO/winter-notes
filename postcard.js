@@ -58,9 +58,15 @@ window.Postcard = (() => {
     const grown = (q) => Quests.label(q) !== q, same = people.filter((q) => grown(q) === grown(p)), i = Math.max(0, same.indexOf(p));
     return grown(p) ? 1 + (i % 2) : 3 + (i % 2);
   }
+  /* who a card is to. "Grandma and Grandpa" unless its writer put another name after "Dear" (17 Nov 2026, Andy: "leave it as default
+     but give us the ability to overwrite it… the option to send to someone else"): the post then carries `to`. A name typed
+     with its own "Dear" or comma is tidied, and an empty one means the default. */
+  const TO = 'Grandma and Grandpa';
+  const cleanTo = (s) => String(s || '').replace(/\s+/g, ' ').replace(/^\s*dear\s+/i, '').replace(/[\s,]+$/, '').trim().slice(0, 40);
+  const toOf = (po) => cleanTo(po && po.to) || TO;
   const firstLine = (po) => (po.text || '').split('\n')[0].slice(0, 60) || (po.media && po.media.length ? 'A picture from our adventure' : 'Thinking of you');
   function seeded(s) { let h = 2166136261; for (const ch of String(s)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; } return () => { h = (Math.imul(h, 1664525) + 1013904223) >>> 0; return h / 4294967296; }; }
-  function words(po) { return `${po.q ? po.q + '\n' : ''}${po.text || ''}\n\nLove, ${Quests.label(po.p)}`; }
+  function words(po) { return `Dear ${toOf(po)},\n\n${po.q ? po.q + '\n' : ''}${po.text || ''}\n\nLove, ${Quests.label(po.p)}`; }
   function picOf(po) { const media = po.media || []; return media.find((m) => m.k === 'photo') || media.find((m) => m.k === 'drawing') || null; }
 
   /* ---------------------------------------------------------------- a small drawn picture of each place (80 × 60), for its stamp
@@ -256,7 +262,7 @@ window.Postcard = (() => {
   }
 
   /* ---------------------------------------------------------------- the card as HTML
-     po: a postcard {id, p, d, t, text, mood, q, media}. o.media: the pictures to show (the caller has dropped the ones
+     po: a postcard {id, p, d, t, text, mood, q, media, to}. o.media: the pictures to show (the caller has dropped the ones
      that are gone), o.isNew: the NEW flag, o.edit: the composer's card (a text box for the words, ✕ on the pictures). */
   function headHtml(th, date, id) {
     let dayLine = '';
@@ -275,7 +281,9 @@ window.Postcard = (() => {
     ensureSprite();
     const ctx = o.ctx || currentContext(), city = Journal.cityOf(po.d, ctx), th = themeOf(city);
     const media = o.media || po.media || [];
-    let msg = `<div class="pc-dear">Dear Grandma and Grandpa,</div>`;
+    const to = toOf(po);                                              // in the composer the name is a box to type in: the dashed line and the pencil say so
+    let msg = o.edit ? `<div class="pc-dear">Dear <label class="pc-to"><span class="sz" id="c-to-sz">${esc(to)}</span><input id="c-to" type="text" size="1" maxlength="40" value="${esc(to)}" placeholder="${esc(TO)}" autocomplete="off" autocapitalize="words" spellcheck="false" aria-label="Who the postcard is to"><i class="pc-to-pen" aria-hidden="true">✏️</i></label>,</div>`
+      : `<div class="pc-dear">Dear ${esc(to)},</div>`;
     if (o.edit) msg += `<div class="pc-q${po.q ? '' : ' hidden'}" id="c-q">${esc(po.q || '')}</div><textarea class="pc-text pc-ta" id="c-text" maxlength="${o.max || 500}" rows="3" placeholder="What happened today?">${esc(po.text || '')}</textarea>`;
     else msg += `${po.q ? `<div class="pc-q">${esc(po.q)}</div>` : ''}${po.text ? `<div class="pc-text">${esc(po.text)}</div>` : ''}`;
     msg += `<div class="pc-sign" id="${o.edit ? 'c-sign' : ''}">${signHtml(po)}</div>`;
@@ -400,15 +408,15 @@ window.Postcard = (() => {
     g.fillStyle = th.nameCol || th.acc; g.fillText(nm, colX, pad + 80 + ts * 0.92);
     const top = Math.max(pad + 120 + ts, sy + ss * 1.22 + 70), bottom = H - pad - 150, boxH = bottom - top;
     const text = po.text || (list.length ? 'Here is a picture from our adventure!' : 'Thinking of you from our adventure!');
-    let fs = 78, lines = [], qLines = [];
+    let fs = 78, lines = [], qLines = [], dear = [];
     for (; fs >= 40; fs -= 4) {
-      g.font = `${fs}px ${HAND[hand]}, ${SANS}`; lines = wrap(g, text, colW); qLines = po.q ? wrap(g, po.q, colW) : [];
-      if ((lines.length + qLines.length + 1.4) * fs * 1.32 <= boxH) break;
+      g.font = `${fs}px ${HAND[hand]}, ${SANS}`; lines = wrap(g, text, colW); qLines = po.q ? wrap(g, po.q, colW) : []; dear = wrap(g, `Dear ${toOf(po)},`, colW);
+      if ((lines.length + qLines.length + dear.length + 0.4) * fs * 1.32 <= boxH) break;
     }
-    const lh = fs * 1.32, maxLines = Math.max(2, Math.floor(boxH / lh - qLines.length - 1.4));
+    const lh = fs * 1.32, maxLines = Math.max(2, Math.floor(boxH / lh - qLines.length - dear.length - 0.4));
     if (lines.length > maxLines) { lines = lines.slice(0, maxLines); lines[maxLines - 1] = lines[maxLines - 1].replace(/\s*\S*$/, '') + ' …'; }
     let y = top + fs;
-    g.fillStyle = th.ink; g.font = `${fs}px ${HAND[hand]}, ${SANS}`; g.fillText('Dear Grandma and Grandpa,', colX, y); y += lh * 1.2;
+    g.fillStyle = th.ink; g.font = `${fs}px ${HAND[hand]}, ${SANS}`; for (const l of dear) { g.fillText(l, colX, y); y += lh; } y += lh * 0.2;
     g.fillStyle = th.acc2; for (const l of qLines) { g.fillText(l, colX, y); y += lh; }
     g.fillStyle = th.ink; for (const l of lines) { g.fillText(l, colX, y); y += lh; }
     g.font = `${Math.round(fs * 1.08)}px ${HAND[hand]}, ${SANS}`; g.fillStyle = th.acc;
@@ -508,6 +516,6 @@ window.Postcard = (() => {
     catch (e) { if (e && e.name !== 'AbortError') alert((e && e.message) || 'Could not share.'); return false; }
   }
 
-  return { cardHtml, photosHtml, signHtml, stampHtml, fit, themeOf, handOf, layoutOf, render, prepare, picOf, words, share, openPreview, sendApproved, firstLine, canShareFile, shareInfo, diag, releaseUrls,
+  return { TO, cleanTo, toOf, cardHtml, photosHtml, signHtml, stampHtml, fit, themeOf, handOf, layoutOf, render, prepare, picOf, words, share, openPreview, sendApproved, firstLine, canShareFile, shareInfo, diag, releaseUrls,
     lookOf: themeOf, themes: () => TH };
 })();

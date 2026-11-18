@@ -1085,8 +1085,10 @@ function renderSettings() {
   if (navigator.storage && navigator.storage.estimate) navigator.storage.estimate().then((e) => { $('#storage-msg').textContent = `${Math.round((e.usage || 0) / 1024)} KB used of ${Math.round((e.quota || 0) / 1048576)} MB available`; });
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 }
+let UPDATING = false;                                               // Update has been tapped: the banner says "Updating…" until the reload
 async function checkForUpdate(manual) {
   const msg = $('#update-msg');
+  if (UPDATING) { if (manual && msg) msg.textContent = 'Updating…'; return; }   // not redrawn mid-update: that put the button back to "Update"
   if (!navigator.onLine) { if (msg) msg.textContent = 'Offline: cannot check.'; return; }
   try {
     const r = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store' });
@@ -1097,15 +1099,20 @@ async function checkForUpdate(manual) {
       /* Reload when the new build has taken over, not a moment after asking for it (15 Nov 2026): the download of a new build
          takes a while, and a reload 0.6 s later came back on the old one, PIN, banner and all. */
       $('#banner-update').onclick = async () => {
-        const b = $('#banner-update'); b.disabled = true; b.textContent = 'Updating…';
+        const b = $('#banner-update'); b.disabled = true; b.textContent = 'Updating…'; UPDATING = true;
         let gone = false; const go = () => { if (gone) return; gone = true; location.reload(); };
         if (!('serviceWorker' in navigator)) return go();
         navigator.serviceWorker.addEventListener('controllerchange', go);
+        /* 18 Nov 2026: the new build is told to take over at the moment its download ends, whenever that is. Its own
+           skipWaiting() at the end of the install is not always enough: when the old worker happens to be busy just then,
+           Chrome leaves the new one waiting until the old has sat idle for half a minute, and "Updating…" hung that long. */
+        const poke = (w) => { if (!w) return; const f = () => { if (w.state === 'installed') w.postMessage('skipWaiting'); }; w.addEventListener('statechange', f); f(); };
         try {
           const reg = await navigator.serviceWorker.getRegistration();
           if (!reg) return go();
+          reg.addEventListener('updatefound', () => poke(reg.installing));
           try { await reg.update(); } catch (e) { /* offline again: the reload below shows what there is */ }
-          if (reg.waiting) reg.waiting.postMessage('skipWaiting');
+          poke(reg.installing); poke(reg.waiting);
           if (!reg.installing && !reg.waiting) return go();        // nothing newer on its way: a plain reload
         } catch (e) { return go(); }
         setTimeout(go, 90000);                                      // a very slow connection: after a minute and a half, reload whatever is there

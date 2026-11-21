@@ -440,36 +440,47 @@ async function startFamily() {
 }
 ui.fpp.onsubmit = async (e) => {
   e.preventDefault();
-  const genv = S.guestPending;                        // a guest file was chosen: this is its code
-  const pp = genv ? $('#pp').value.trim() : $('#pp').value;
+  const door = S.guestPending;                        // null: the family door · true: the guest door · an envelope: a guest file was chosen
+  const pp = door ? $('#pp').value.trim() : $('#pp').value;
   ui.sub.textContent = 'Checking… (a few seconds)';
   try {
-    const env = genv || S.familyEnv;
-    const key = await deriveKey(pp, env);
-    S.family = await decryptWith(key, env);
+    let key = null, data = null, genv = null;
+    if (!door) { try { key = await deriveKey(pp, S.familyEnv); data = await decryptWith(key, S.familyEnv); } catch (notFamily) { data = null; } }
+    if (!data && !holdsFamilyTrip()) {
+      /* not the family passphrase: perhaps a guest's PIN (21 Nov 2026, Andy: "I'll send him the address and a pin"). It
+         opens guest.enc, the guest copy this site carries, and nothing else; or the guest file that was chosen. */
+      genv = door && door !== true ? door : await loadEnvelope('guest').catch(() => null);
+      if (validEnvelope(genv)) { key = await deriveKey(pp.trim(), genv); data = await decryptWith(key, genv); }
+    }
+    if (!data) throw new Error('nothing opened');
+    S.family = data;
     await kvSet('key:family', key);
     $('#pp').value = '';
     if (genv) { await kvSet('guest:env', genv); S.familyEnv = genv; S.guestPending = null; localStorage.setItem('edition', 'guest'); return enterApp(); }
     unlockMode('setpin', 'Passphrase accepted. Now a PIN for everyday use.');
   } catch (err) {
     S.family = null;
-    unlockMode('passphrase', genv ? 'Guest copy chosen. Now its code.' : 'First unlock on this device');
-    unlockError(genv ? 'That code did not open the guest copy.' : 'That passphrase did not open the family data.');
+    unlockMode('passphrase', door ? 'Guest: the PIN or code you were given.' : 'First unlock on this device');
+    unlockError(door ? 'That did not open the guest copy.' : 'That passphrase did not open the family data.');
   }
 };
-/* the guest's way in: choose the file a parent sent, then type its code */
+/* the guest's way in: the PIN they were given (it also works typed straight into the family box), or a guest file a parent sent */
 function guestDoor(on) {
   S.guestPending = on || null;
-  $('#pp-label').textContent = on ? 'Guest code' : 'Family passphrase (first time on this device)';
-  $('#pp-note').textContent = on ? 'The code that came with the guest file.' : 'Typed once per device. After this, the 4-digit PIN.';
-  $('#guest-open').textContent = on ? 'Not a guest? Back to the family passphrase' : 'Looking around as a guest? Open the guest file';
-  unlockMode('passphrase', on ? 'Guest copy chosen. Now its code.' : 'First unlock on this device');
+  const file = !!on && on !== true;
+  $('#pp-label').textContent = on ? 'Guest PIN or code' : 'Family passphrase (first time on this device)';
+  $('#pp-note').textContent = file ? 'The code that came with the guest file.' : on ? 'The PIN or code the family gave you.' : 'Typed once per device. After this, the 4-digit PIN.';
+  $('#guest-open').textContent = on ? 'Not a guest? Back to the family passphrase' : 'Looking around as a guest?';
+  $('#guest-pick').classList.toggle('hidden', on !== true);
+  unlockMode('passphrase', file ? 'Guest file chosen. Now its code.' : on ? 'Guest: the PIN or code you were given.' : 'First unlock on this device');
+  setTimeout(() => { try { $('#pp').focus(); } catch (e) { /* no keyboard yet */ } }, 50);
 }
 $('#guest-open').onclick = () => {
   if (S.guestPending) return guestDoor(null);
   if (holdsFamilyTrip()) return unlockError('This phone already holds the family trip, so it cannot open a guest copy.');
-  $('#guest-file').value = ''; $('#guest-file').click();
+  guestDoor(true);
 };
+$('#guest-pick').onclick = () => { $('#guest-file').value = ''; $('#guest-file').click(); };
 $('#guest-file').onchange = async () => {
   const f = $('#guest-file').files[0]; if (!f) return;
   let env = null;
@@ -1094,7 +1105,7 @@ function renderSettings() {
      mode, and whose phone this is, PIN-less opening and Forget this device sit behind the device PIN (Set-up). */
   const grand = Quests.isGrandDevice(), setup = grand && S.setupOpen;
   $('#screen-settings').innerHTML = `<h1 class="h1">⚙️ Settings</h1>
-    ${S.guest ? `<div class="card guest-note"><div class="h3">👋 Guest copy</div><p class="small">This is the family's trip, to look around in. Everything works, and what you do here (quests, postcards, photos) stays on this phone: a guest copy does not sync with the family.</p><p class="small muted">The family uses three kinds of device: a parent's phone, the kids' tablet, and Grandma and Grandpa's phone. ${Quests.isGrandDevice() ? 'This is the grandparents\' one now; pick another here:' : 'Switch between them under "Whose device is this?" below, and jump to any day of the trip under "Preview a trip day".'}</p>${Quests.isGrandDevice() ? Quests.roleCard() : ''}<button class="btn block" id="opt-leave">Leave (clears the guest copy from this phone)</button></div>` : ''}
+    ${S.guest ? `<div class="card guest-note"><div class="h3">👋 Guest copy</div><p class="small">${(S.family.trip || {}).sample ? 'This is a made-up sample trip, to look around in.' : 'This is the family\'s trip, to look around in.'} Everything works, and what you do here (quests, postcards, photos) stays on this phone: a guest copy does not sync with the family.</p><p class="small muted">The family uses three kinds of device: a parent's phone, the kids' tablet, and Grandma and Grandpa's phone. ${Quests.isGrandDevice() ? 'This is the grandparents\' one now; pick another here:' : 'Switch between them under "Whose device is this?" below, and jump to any day of the trip under "Preview a trip day".'}</p>${Quests.isGrandDevice() ? Quests.roleCard() : ''}<button class="btn block" id="opt-leave">Leave (clears the guest copy from this phone)</button></div>` : ''}
     <div class="card"><div class="h3">Theme</div><div class="row">${['auto', 'light', 'dark'].map((t) => `<button class="pill${settings.theme === t ? ' active' : ''}" data-theme="${t}">${t}</button>`).join('')}</div></div>
     <div class="card"><div class="h3">Text size</div>${switchRow('bigText', grand ? 'Big text' : 'Big text (for the kids and tired eyes)')}</div>
     <div class="card"><div class="h3">Home screen</div>${isInstalled() ? '<div class="small">✓ Running from its own Home screen icon.</div>' : Install.done ? '<div class="small">✓ Added. Open it from the Home screen icon from now on.</div>' : Install.evt ? '<button class="btn primary block" id="opt-install">📲 Add World Adventure to the Home screen</button>' : installHelpHtml()}</div>

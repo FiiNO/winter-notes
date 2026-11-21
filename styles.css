@@ -899,3 +899,57 @@ html[data-guest="1"] #top-edition { color: #e9a23b; }
 #guest-msg { margin-top: 8px; }
 #guest-msg .btn { margin: 8px 0 4px; }
 
+/* ---- the Book's one way of writing things down (21 Nov 2026): see app.js, "the Book's one way"
+   names teal · addresses violet · dates and times amber · codes a small chip · notes grey and smaller.
+   Each ink is 4.5:1 or better on the card in both themes. No flex gap here: the old tablet has none. */
+:root { --ik-name: #0A6159; --ik-addr: #5B3CC4; --ik-time: #9A4300; --ik-code: #1F2A44; --ik-code-bg: #EDF0F6; }
+:root[data-theme="dark"] { --ik-name: #6FE3D6; --ik-addr: #C0AEFF; --ik-time: #FFB86B; --ik-code: #E8ECFF; --ik-code-bg: #2B2B47; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ik-name: #6FE3D6; --ik-addr: #C0AEFF; --ik-time: #FFB86B; --ik-code: #E8ECFF; --ik-code-bg: #2B2B47; }
+}
+.ik-name { color: var(--ik-name); font-weight: 800; }
+.ik-addr { color: var(--ik-addr); }
+.ik-time { color: var(--ik-time); font-weight: 700; }
+.ik-code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9em; color: var(--ik-code); background: var(--ik-code-bg); padding: 1px 7px; border-radius: 7px; overflow-wrap: anywhere; }
+.ik-note { color: var(--muted); font-size: 0.9em; line-height: 1.45; margin: 6px 0; overflow-wrap: anywhere; }
+.ik-note b { display: block; color: var(--text); font-size: 0.8em; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
+.lbl { color: var(--muted); font-size: 0.76em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+.fact { display: flex; align-items: baseline; margin: 5px 0; line-height: 1.35; }
+.fact .fi { flex: 0 0 1.75em; }
+.fact .fv { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.fact.bigfact { font-size: 1.2em; }
+.fact.ik-warn .fv { color: var(--red); font-weight: 700; }
+.cardhead { display: flex; flex-wrap: wrap; align-items: center; }
+.cardhead > * { margin: 0 7px 5px 0; }
+.cardhead .chip { margin-left: 0; }
+.cardtitle { font-size: 1.2em; line-height: 1.25; margin: 0 0 6px; }
+.cardtitle .arrow, .past .arrow { color: var(--muted); font-weight: 400; }
+.citytag { display: inline-block; color: #fff; font-weight: 800; font-size: 0.8em; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+.when { font-weight: 800; }
+.plan { margin: 6px 0; line-height: 1.45; }
+.card.slim { padding: 10px var(--pad); }
+.card[data-now] { border-width: 3px; }
+/* the long text: one tap away */
+.fold { margin: 8px 0 0; padding: 0; border: 0; border-top: 1px dashed var(--border); border-radius: 0; background: transparent; }
+.fold > summary { cursor: pointer; list-style: none; padding: 9px 0 5px; font-weight: 700; font-size: 0.9em; color: var(--muted); }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::before { content: '▸'; display: inline-block; width: 1.3em; }
+.fold[open] > summary::before { content: '▾'; }
+.fold .steps { margin: 4px 0; }
+/* what is over: one line, the whole card a tap away */
+details.card.past { padding-top: 10px; padding-bottom: 10px; border-style: dashed; background: transparent; }
+details.card.past > summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; align-items: center; font-size: 0.92em; }
+details.card.past > summary::-webkit-details-marker { display: none; }
+details.card.past > summary::before { content: '✓'; color: var(--muted); font-weight: 900; margin-right: 8px; }
+details.card.past > summary > * { margin: 2px 7px 2px 0; }
+details.card.past > summary .ik-name { font-weight: 700; }
+details.card.past[open] { background: var(--card); border-style: solid; }
+details.card.past[open] > summary { margin-bottom: 8px; }
+/* the key to the colours, on the Book's first page */
+.inkkey { display: flex; flex-wrap: wrap; font-size: 0.82em; margin: 0 0 12px; }
+.inkkey > * { margin: 0 14px 4px 0; white-space: nowrap; }
+.inkkey a { color: var(--link); text-decoration: underline; }
+.taxi-go { display: flex; align-items: center; text-decoration: none; font-size: 1.08em; }
+.taxi-go .ik-name { flex: 1 1 auto; min-width: 0; }
+.taxi-go .chev { color: var(--muted); font-size: 1.4em; padding-left: 8px; }
+

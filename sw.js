@@ -4,7 +4,7 @@
 /* The build's number is written in three places and they must agree: here, index.html (<body data-version>) and
    version.json (version, label). 18 Nov 2026: v51 changed two of the three, so a phone that took it still called itself
    v50 and offered "New build v51" for good, PIN and all, however often Update was tapped. */
-const VERSION = 'v54';
+const VERSION = 'v55';
 const CACHE = 'dossier-' + VERSION;
 // Every site file except the tile packs (those are downloaded on demand into OPFS / Cache Storage by map.js).
 const SHELL = ['./'].concat(["./app.js", "./check.html", "./compat.js", "./family.enc", "./fonts/LICENSE.txt", "./fonts/abril-fatface.woff2", "./fonts/alfa-slab-one.woff2", "./fonts/amatic-sc-bold.woff2", "./fonts/bebas-neue.woff2", "./fonts/gochi-hand.woff2", "./fonts/handlee.woff2", "./fonts/kalam.woff2", "./fonts/limelight.woff2", "./fonts/pacifico.woff2", "./fonts/patrick-hand.woff2", "./fonts/playfair-display-black-italic.woff2", "./fx.js", "./globe.js", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon-maskable-192.png", "./icons/icon-maskable-512.png", "./icons/icon.svg", "./index.html", "./journal.js", "./manifest.json", "./map.js", "./media.js", "./postcard.js", "./quests.js", "./style/dark.json", "./style/fonts/Noto Sans Italic/0-255.pbf", "./style/fonts/Noto Sans Italic/256-511.pbf", "./style/fonts/Noto Sans Italic/512-767.pbf", "./style/fonts/Noto Sans Italic/768-1023.pbf", "./style/fonts/Noto Sans Italic/7680-7935.pbf", "./style/fonts/Noto Sans Medium/0-255.pbf", "./style/fonts/Noto Sans Medium/256-511.pbf", "./style/fonts/Noto Sans Medium/512-767.pbf", "./style/fonts/Noto Sans Medium/768-1023.pbf", "./style/fonts/Noto Sans Medium/7680-7935.pbf", "./style/fonts/Noto Sans Regular/0-255.pbf", "./style/fonts/Noto Sans Regular/256-511.pbf", "./style/fonts/Noto Sans Regular/512-767.pbf", "./style/fonts/Noto Sans Regular/768-1023.pbf", "./style/fonts/Noto Sans Regular/7680-7935.pbf", "./style/light.json", "./style/sprites/dark.json", "./style/sprites/dark.png", "./style/sprites/dark@2x.json", "./style/sprites/dark@2x.png", "./style/sprites/light.json", "./style/sprites/light.png", "./style/sprites/light@2x.json", "./style/sprites/light@2x.png", "./styles.css", "./sync.js", "./tiles/manifest.json", "./vault.enc", "./vendor/maplibre-gl-shared.mjs", "./vendor/maplibre-gl-worker.mjs", "./vendor/maplibre-gl.css", "./vendor/maplibre-gl.mjs", "./vendor/pmtiles.js", "./version.json", "./world.tiles"]);
@@ -56,6 +56,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;          // never proxy anything off-origin
   if (url.pathname.endsWith('.pmtiles')) return;            // tile packs: straight to the network (range requests) or OPFS
+  if (url.search.indexOf('probe=') >= 0) return;            // app.js Net.ask: "is there really internet?" must never be answered from the cache
   if (url.pathname.endsWith('/version.json')) { event.respondWith(networkFirst(event.request, 8000)); return; }
   if (url.pathname.endsWith('/tiles/manifest.json')) { event.respondWith(networkFirst(event.request, 3000)); return; }
   event.respondWith(cached(event.request).then((hit) => hit || fetch(event.request)));

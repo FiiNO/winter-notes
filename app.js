@@ -91,33 +91,93 @@ function kv(rows) {
   return '<div class="kv">' + rows.filter((r) => r[1] !== undefined && r[1] !== null && String(r[1]) !== '').map(([k, v, raw]) =>
     `<div class="k">${esc(k)}</div><div class="v">${raw ? v : tel(v)}</div>`).join('') + '</div>';
 }
-/* Hand-off links, the same three everywhere. 6 Nov 2026 (Andy: "Google Maps to be the default, and then Organic Maps as a
-   fall back if not online"): the main button is Google Maps while the phone is online and Organic Maps when it is not
-   (every device carries Organic Maps with its regions downloaded). The other one stays beside it, because a phone on
-   Wi-Fi with no internet still says it is online. The buttons follow the connection as it changes (syncMapButtons), so
-   the choice is right at the tap. Google Earth stays for a look at the building; it needs data. Apple Maps and the
-   Android geo: intent were dropped on 10 Oct. */
-const MAP_GO = ['🗺️ Google Maps', '🗺️ Organic Maps (offline)'], MAP_ALT = ['Organic Maps', 'Google Maps'];
+/* Hand-off links, the same everywhere. 21 Nov 2026 (Andy: "make Google Maps the default... switch to Organic Maps only
+   when no internet"): ONE map button. It is Google Maps while there is internet and Organic Maps when there is not (every
+   device carries Organic Maps with its regions downloaded). There used to be both side by side, because a phone on Wi-Fi
+   with no internet behind it still says it is online; now the app asks for itself (Net, below) and the button follows.
+   Google Earth, for a look at the building, shows only while there is internet. */
+const MAP_GO = ['🗺️ Google Maps', '🗺️ Organic Maps (offline)'];
 function mapButtons(lat, lon, label) {
   const q = `${(+lat).toFixed(6)},${(+lon).toFixed(6)}`, n = encodeURIComponent(label || 'Here');
-  const gm = `https://www.google.com/maps/search/?api=1&query=${q}`, om = `om://map?v=1&ll=${q}&n=${n}`, on = navigator.onLine !== false, blank = ' target="_blank" rel="noopener"';
+  const gm = `https://www.google.com/maps/search/?api=1&query=${q}`, om = `om://map?v=1&ll=${q}&n=${n}`, on = Net.on, blank = ' target="_blank" rel="noopener"';
+  Net.wanted();
   return `<a class="btn primary mapgo" href="${on ? gm : om}" data-gm="${gm}" data-om="${om}"${on ? blank : ''}>${MAP_GO[on ? 0 : 1]}</a>` +
-    `<a class="btn mapalt" href="${on ? om : gm}" data-gm="${gm}" data-om="${om}"${on ? '' : blank}>${MAP_ALT[on ? 0 : 1]}</a>` +
-    `<a class="btn" href="https://earth.google.com/web/search/${q}" target="_blank" rel="noopener">Google Earth</a>`;
+    `<a class="btn mapearth${on ? '' : ' hidden'}" href="https://earth.google.com/web/search/${q}" target="_blank" rel="noopener">Google Earth</a>`;
 }
 function syncMapButtons() {                          // the connection changed: every map button on the page swaps with it
-  const on = navigator.onLine !== false;
-  const set = (a, web, text) => { a.href = web ? a.dataset.gm : a.dataset.om; a.textContent = text; if (web) { a.target = '_blank'; a.rel = 'noopener'; } else { a.removeAttribute('target'); a.removeAttribute('rel'); } };
-  document.querySelectorAll('a.mapgo').forEach((a) => set(a, on, MAP_GO[on ? 0 : 1]));
-  document.querySelectorAll('a.mapalt').forEach((a) => set(a, !on, MAP_ALT[on ? 0 : 1]));
+  const on = Net.on;
+  document.querySelectorAll('a.mapgo').forEach((a) => {
+    a.href = on ? a.dataset.gm : a.dataset.om; a.textContent = MAP_GO[on ? 0 : 1];
+    if (on) { a.target = '_blank'; a.rel = 'noopener'; } else { a.removeAttribute('target'); a.removeAttribute('rel'); }
+  });
+  document.querySelectorAll('a.mapearth').forEach((a) => a.classList.toggle('hidden', !on));
 }
-window.addEventListener('online', syncMapButtons);
-window.addEventListener('offline', syncMapButtons);
+/* Is there really internet? navigator.onLine only knows whether the phone is connected to something. So the app fetches its
+   own small version.json past the cache (sw.js lets "probe=" requests straight through to the network) and reads it: a
+   hotel's sign-in page answers too, but not with this file. Asked when the app opens or comes back, when the connection
+   changes, and every 15 seconds while a map button is on a screen that is showing. */
+const Net = {
+  on: navigator.onLine !== false, at: 0, asking: null, timer: null,
+  set(on) { Net.at = Date.now(); if (Net.on === on) return; Net.on = on; syncMapButtons(); },
+  ask() {
+    if (navigator.onLine === false) { Net.set(false); return Promise.resolve(false); }
+    if (Net.asking) return Net.asking;
+    const giveUp = new Promise((res) => setTimeout(() => res(null), 4000));
+    const got = fetch('./version.json?probe=' + Date.now(), { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((v) => !!(v && v.label)).catch(() => false);
+    Net.asking = Promise.race([got, giveUp]).then((ok) => { Net.asking = null; Net.set(ok === true); return Net.on; });
+    return Net.asking;
+  },
+  wanted() {                                         // a map button was just drawn: keep the answer fresh while one is on show
+    if (Date.now() - Net.at > 15000) Net.ask();
+    if (Net.timer) return;
+    Net.timer = setInterval(() => {
+      if (document.hidden) return;
+      const showing = [].some.call(document.querySelectorAll('a.mapgo'), (a) => a.offsetParent !== null);
+      if (showing) Net.ask(); else { clearInterval(Net.timer); Net.timer = null; }
+    }, 15000);
+  },
+};
+window.addEventListener('online', () => Net.ask());
+window.addEventListener('offline', () => Net.set(false));
+document.addEventListener('visibilitychange', () => { if (!document.hidden) Net.ask(); });
 function mapsLink(lat, lon, label) {
   if (lat == null || lat === '') return '';
   return `<div class="row">${mapButtons(lat, lon, label)}</div>`;
 }
 const isMontreal = (s) => /montr[eé]al/i.test(String(s || ''));
+/* ---- the Book's one way of writing things down (21 Nov 2026)
+   Andy: "less text walls and more simple coloured text for different info, like addresses one colour, property names
+   another... a consistent formula across the different info tabs." Every Book screen says the same kind of thing the
+   same way:
+     a name (a place, a property, a carrier)    ikName   teal, bold
+     an address                                 ikAddr   violet, after 📍
+     a date or a time                           ikTime   amber, after 🕒
+     a phone number                             ikPhone  a tap-to-call link, after 📞
+     a booking code, a seat, a PIN              ikCode   a small chip in fixed-width type, after 🔖
+     notes and how-to text                      note     grey and smaller, under a fold when there is a lot of it
+   A card is its heading, then one line per fact (fact), then the long text under a fold (fold). What is over (a stay we
+   have left, a move that has gone, a day that has passed) folds down to one line, and the entry that matters now carries
+   data-now: show() scrolls the list to it. */
+const fact = (icon, html, cls) => (html ? `<div class="fact${cls ? ' ' + cls : ''}"><span class="fi" aria-hidden="true">${icon}</span><span class="fv">${html}</span></div>` : '');
+const lbl = (t) => `<span class="lbl">${esc(t)}</span> `;
+const ikName = (t) => `<span class="ik-name">${esc(t)}</span>`;
+const ikTime = (t) => `<span class="ik-time">${nl(t)}</span>`;
+const ikCode = (t) => (t === undefined || t === null || String(t) === '' ? '' : `<span class="ik-code">${esc(t)}</span>`);
+const ikAddr = (t) => fact('📍', t ? `<span class="ik-addr">${esc(t)}</span>` : '');
+const ikPhone = (t) => fact('📞', t ? tel(t) : '');
+const note = (label, text) => (text ? `<div class="ik-note">${label ? `<b>${esc(label)}</b>` : ''}${tel(text).replace(/\n/g, '<br>')}</div>` : '');
+const fold = (label, inner, open) => (inner ? `<details class="fold"${open ? ' open' : ''}><summary>${esc(label)}</summary><div class="fold-in">${inner}</div></details>` : '');
+const cityTag = (city) => `<span class="citytag" style="background: var(--c-${Quests.CITY_KEY[city] || 'home'})">${Quests.CITY_EMOJI[city] || '📍'} ${esc(city)}</span>`;
+const inkKey = () => `<div class="inkkey" aria-hidden="true"><span class="ik-name">Names</span><span class="ik-addr">📍 Addresses</span><span class="ik-time">🕒 Dates and times</span><span>📞 <a>Phones</a></span><span>🔖 <span class="ik-code">Codes</span></span></div>`;
+/* the list scrolls to the entry marked data-now, just under the header (Andy: "users need to scroll a long way to find the current dates entry") */
+function scrollToNow(root) {
+  const t = root && root.querySelector('[data-now]');
+  if (!t) return;
+  let y = 0; for (let n = t; n && n !== document.body; n = n.offsetParent) y += n.offsetTop;
+  const top = $('#top'), bn = $('#banner');
+  const head = (top ? top.offsetHeight : 0) + (bn && !bn.classList.contains('hidden') ? bn.offsetHeight : 0);
+  window.scrollTo(0, Math.max(0, y - head - 10));
+}
 const moveGlyph = (mode) => (/train|rail|shinkansen/i.test(mode || '') ? '🚆' : /coach|bus/i.test(mode || '') ? '🚌' : '✈️');   // one move's picture, everywhere (Home, Postcards, the globe)
 /* One phrase card. Japanese cards carry ja + romaji, French cards (Montréal) fr + a plain pronunciation line. */
 function phraseCard(p, show) {
@@ -170,6 +230,10 @@ function show(screen, fromHistory) {
   S.screen = screen;
   if (screen !== 'settings') S.setupOpen = false;    // the grandparents' PIN-gated set-up closes with Settings
   window.scrollTo(0, 0);
+  if (screen === 'days') renderDays();               // drawn afresh, so "today", "now" and "next" are right at the tap, then scrolled to
+  if (screen === 'moves') renderMoves();
+  if (screen === 'stays') renderStays();
+  if (screen === 'days' || screen === 'moves' || screen === 'stays') scrollToNow(el);
   if (screen === 'sos') renderSOS();
   if (screen === 'home') renderHome();
   if (screen === 'quests') Quests.renderQuests();
@@ -726,13 +790,13 @@ function renderBook() {                              // 3 Nov 2026: the referenc
   const items = [['days', '📅', 'Days', 'The plan, day by day'], ['moves', '✈️', 'Moves', 'Flights, trains, buses, taxis'], ['stays', '🛏️', 'Stays', 'Every bed, check-in times'],
     ['taxi', '🚕', 'Taxi cards', 'Japanese and French, phrases'], ['protocols', '📋', 'Protocols', 'Lost kid, PACE, phone stolen'], ['gates', '✅', 'Before we go', "Mum and Dad's to-do list"],
     ['where', '🌏', 'Where are we', 'The globe and the route'], ['vault', '🔒', 'Vault', 'PINs and document numbers']];
-  $('#screen-book').innerHTML = `<h1 class="h1">📖 Book</h1><div class="booklist">` + items.filter((i) => !(i[0] === 'vault' && settings.readerMode) && !(i[0] === 'where' && !hasGlobe())).map((i, k) => `<button class="bkrow c${k % 8}" data-go="${i[0]}"><span class="ico">${i[1]}</span><span class="bt"><span class="tt">${esc(i[2])}</span><span class="ts">${esc(i[3])}</span></span><span class="chev">›</span></button>`).join('') + `</div>`;
+  $('#screen-book').innerHTML = `<h1 class="h1">📖 Book</h1>${inkKey()}<div class="booklist">` + items.filter((i) => !(i[0] === 'vault' && settings.readerMode) && !(i[0] === 'where' && !hasGlobe())).map((i, k) => `<button class="bkrow c${k % 8}" data-go="${i[0]}"><span class="ico">${i[1]}</span><span class="bt"><span class="tt">${esc(i[2])}</span><span class="ts">${esc(i[3])}</span></span><span class="chev">›</span></button>`).join('') + `</div>`;
   wireGo($('#screen-book'));
 }
 function renderGates() {
   const g = S.family.gates || [];
   $('#screen-gates').innerHTML = `<h1 class="h1">✅ Before we go</h1><p class="small muted">Open gates from the planner's Next Steps tab (Done ones drop off at the next build). Tick them off in the planner.</p>` +
-    (g.length ? `<ul class="list gates">` + g.map((x) => `<li><div><b>${esc(x.what)}</b> <span class="chip${/critical|high/i.test(x.priority) ? ' red' : ''}">${esc(x.priority || x.status)}</span></div><div class="small muted">${esc(x.label)}${x.when ? ' · ' + esc(x.when) : ''}${x.where ? ' · ' + esc(x.where) : ''}</div>${x.need ? `<div class="tiny muted">Need: ${esc(x.need)}</div>` : ''}</li>`).join('') + `</ul>` : `<div class="card">Nothing open. 🎉</div>`);
+    (g.length ? `<ul class="list gates">` + g.map((x) => `<li><div class="cardhead">${ikName(x.what)}<span class="chip${/critical|high/i.test(x.priority) ? ' red' : ''}">${esc(x.priority || x.status)}</span></div><div class="small muted">${esc(x.label)}</div>${fact('🕒', x.when ? ikTime(x.when) : '')}${ikAddr(x.where)}${note('Need', x.need)}</li>`).join('') + `</ul>` : `<div class="card">Nothing open. 🎉</div>`);
 }
 function wireGo(root) {
   root.querySelectorAll('[data-go]').forEach((a) => a.onclick = (e) => { e.preventDefault(); show(a.dataset.go); });
@@ -895,11 +959,11 @@ function openNumbers() {
     const isHere = city === here, key = Quests.CITY_KEY[city] || 'home';
     html += `<details class="numbers-city" style="border-left-color: var(--c-${esc(key)})"${isHere ? ' open' : ''}><summary>${Quests.CITY_EMOJI[city] || '📍'} ${esc(city)} <span class="muted">· ${esc(E.country)}</span>${isHere ? '<span class="chip red">here</span>' : ''}</summary>`;
     html += kv(E.numbers.map((c) => [c.who, c.phone + (c.ref ? ' · ' + c.ref : '')]));
-    if (E.hospitals.length) html += `<div class="h3">Hospital for a sick child</div>` + E.hospitals.map((h) => `<div class="card"><b>${esc(h.name)}</b><div>${tel(h.address_en + ' · ' + h.phone + (h.open_24h ? ' · 24 h' : ''))}</div>${h.address_ja ? `<div class="ja">${esc(h.address_ja)}</div>` : ''}${coordLine(h.coord) ? `<div class="mono small">${coordLine(h.coord)}</div>` : ''}<div class="small muted">${esc(h.notes)}</div>${h.coord && h.coord.lat != null ? mapsLink(h.coord.lat, h.coord.lon, h.name) : ''}</div>`).join('');
-    if (E.pharmacies.length) html += `<div class="h3">Pharmacy at night</div>` + E.pharmacies.map((p) => `<div class="card"><b>${esc(p.name)}</b><div>${tel(p.address_en + ' · ' + p.phone + ' · ' + p.hours)}</div>${p.address_ja ? `<div class="ja">${esc(p.address_ja)}</div>` : ''}<div class="small muted">${tel(p.notes)}</div></div>`).join('');
+    if (E.hospitals.length) html += `<div class="h3">Hospital for a sick child</div>` + E.hospitals.map((h) => `<div class="card slim"><div class="cardhead">${ikName(h.name)}${h.open_24h ? '<span class="chip">24 h</span>' : ''}</div>${ikAddr(h.address_en)}${h.address_ja ? `<div class="ja ik-addr">${esc(h.address_ja)}</div>` : ''}${ikPhone(h.phone)}${note('', h.notes)}${h.coord && h.coord.lat != null ? mapsLink(h.coord.lat, h.coord.lon, h.name) : ''}</div>`).join('');
+    if (E.pharmacies.length) html += `<div class="h3">Pharmacy at night</div>` + E.pharmacies.map((p) => `<div class="card slim"><div class="cardhead">${ikName(p.name)}</div>${ikAddr(p.address_en)}${p.address_ja ? `<div class="ja ik-addr">${esc(p.address_ja)}</div>` : ''}${ikPhone(p.phone)}${fact('🕒', p.hours ? ikTime(p.hours) : '')}${note('', p.notes)}</div>`).join('');
     if (E.medicine.length) html += E.medicine.map((m) => `<div class="small muted">${esc(m)}</div>`).join('');
     if (E.health_lines.length) html += `<div class="h3">Health lines</div>` + kv(E.health_lines.map((h) => [h.name, `${h.number} · ${h.hours}`]));
-    if (E.consulates.length) html += `<div class="h3">Australian consulate</div>` + E.consulates.map((c) => `<div class="card">${c.who ? tel(`${c.who} — ${c.phone} · ${c.ref}`) : tel(`${c.name} — ${c.address_en} · ${c.phone} · ${c.hours}`)}${c.after_hours ? `<div class="small muted">${tel(c.after_hours)}</div>` : ''}</div>`).join('');
+    if (E.consulates.length) html += `<div class="h3">Australian consulate</div>` + E.consulates.map((c) => `<div class="card slim"><div class="cardhead">${ikName(c.who || c.name)}</div>${ikAddr(c.address_en)}${ikPhone(c.phone)}${fact('🕒', c.hours ? ikTime(c.hours) : '')}${note('', c.ref)}${note('After hours', c.after_hours)}</div>`).join('');
     if (E.insurers.length) html += `<div class="h3">Insurance</div>` + kv(E.insurers.map((c) => [c.who, c.phone + (c.ref ? ' · ' + c.ref : '')]));
     html += `</details>`;
   }
@@ -916,29 +980,42 @@ $('#btn-sos').onclick = () => { if (S.family) show('sos'); };
 
 function renderDays() {
   const ctx = currentContext();
-  $('#screen-days').innerHTML = `<h1 class="h1">Days</h1>` + S.family.days.map((d) => `
-    <div class="card${d.date === ctx.date ? ' today-now' : ''}" id="day-${d.date}">
-      <div><b>${esc(d.label)}</b> <span class="muted">· ${esc(d.where)}</span>${d.date === ctx.date ? '<span class="chip red">today</span>' : ''}</div>
-      <div class="small muted">Sleep: ${esc(d.sleep)}</div>
-      <div>${nl(d.plan)}</div>
-      ${d.travel ? `<div class="small">${nl(d.travel)}</div>` : ''}
-      ${d.heads_up ? `<div class="small red">${nl(d.heads_up)}</div>` : ''}
-    </div>`).join('');
+  const body = (d) => fact('🛏️', lbl('Sleep') + ikName(d.sleep)) + `<div class="plan">${nl(d.plan)}</div>` +
+    fact('🕒', d.travel ? ikTime(d.travel) : '') + fact('⚠️', d.heads_up ? nl(d.heads_up) : '', 'ik-warn');
+  $('#screen-days').innerHTML = `<h1 class="h1">Days</h1>` + S.family.days.map((d) => {
+    const city = Quests.dayCity(d);
+    if (d.date < ctx.date) return `<details class="card past" id="day-${d.date}"><summary><span class="when">${esc(d.label)}</span>${ikName(d.where)}</summary>${body(d)}</details>`;
+    const today = d.date === ctx.date;
+    return `<div class="card${today ? ' today-now' : ''}" id="day-${d.date}"${today ? ' data-now' : ''}>
+      <div class="cardhead"><span class="when">${esc(d.label)}</span>${cityTag(city)}${today ? '<span class="chip red">today</span>' : ''}</div>
+      <div class="cardtitle">${ikName(d.where)}</div>${body(d)}</div>`;
+  }).join('');
 }
 
 function renderMoves() {
-  const F = S.family;
+  const F = S.family, nm = nextMove(), iNext = nm ? F.moves.indexOf(nm) : F.moves.length;
+  const body = (m, open) => {
+    const parts = m.carrier.split('·'), num = parts.slice(1).join('·').trim();
+    const bags = m.bags ? (m.bags.checked.startsWith('None') || m.bags.checked.startsWith('—') ? 'No checked bags. Cabin: ' + m.bags.cabin : `Checked: ${m.bags.checked} (${m.bags.who}). Cabin: ${m.bags.cabin}`) : '';
+    const checkin = m.checkin ? `Opens ${m.checkin.opens}. Closes ${m.checkin.closes}.${m.checkin.bag_drop_closes ? ' Bag drop closes ' + m.checkin.bag_drop_closes + '.' : ''}` : '';
+    return fact('🕒', ikTime(`${m.depart} → ${m.arrive}`), 'bigfact') +
+      fact('🔖', [num ? lbl(/train|rail|shinkansen|coach|bus/i.test(m.mode || '') ? 'Service' : 'Flight') + ikCode(num) : '', m.ref ? lbl('Booking') + ikCode(m.ref) : ''].filter(Boolean).join(' ')) +
+      fact('💺', m.seats ? lbl('Seats') + ikCode(m.seats) : '') +
+      fact('⚠️', m.check ? lbl('Check') + esc(m.check) : '', 'ik-warn') +
+      fold('Bags, check-in and notes', note('Bags', bags) + note('Check-in', checkin) + note('Notes', m.notes), open);
+  };
   let html = `<h1 class="h1">Moves</h1><p class="small muted">All times local. Clock times only; check the boarding pass where it says "check".</p>`;
-  html += F.moves.map((m) => `<div class="card">
-    <div><b>${esc(m.label)} · ${esc(m.carrier.split('·')[0].trim())}</b> <span class="chip">${esc(m.status)}</span></div>
-    <div class="big">${esc(m.frm)} → ${esc(m.to)}</div>
-    <div class="big">${esc(m.depart)} → ${esc(m.arrive)}</div>
-    ${kv([['Carrier', m.carrier], ['Booking', m.ref], ['Seats', m.seats],
-      ['Bags', m.bags ? (m.bags.checked.startsWith('None') || m.bags.checked.startsWith('—') ? 'No checked bags. Cabin: ' + m.bags.cabin : `Checked: ${m.bags.checked} (${m.bags.who}). Cabin: ${m.bags.cabin}`) : ''],
-      ['Check-in', m.checkin ? `Opens ${m.checkin.opens}. Closes ${m.checkin.closes}.${m.checkin.bag_drop_closes ? ' Bag drop closes ' + m.checkin.bag_drop_closes + '.' : ''}` : ''],
-      ['Check', m.check], ['Notes', m.notes]])}
-  </div>`).join('');
-  html += `<h2 class="h2">Getting between airports, stations and beds</h2><div class="card"><table class="t"><tr><th>When</th><th>From → to</th><th>How</th></tr>${F.transfers.map((t) => `<tr><td>${esc(t.label)}<br>${esc(t.time)}</td><td>${esc(t.route)}</td><td>${esc(t.how)}<br><span class="chip">${esc(t.status)}</span></td></tr>`).join('')}</table></div>`;
+  html += F.moves.map((m, i) => {
+    const who = `${moveGlyph(m.mode)} ${esc(m.carrier.split('·')[0].trim())}`, route = `${ikName(m.frm)} <span class="arrow">→</span> ${ikName(m.to)}`;
+    if (i < iNext) return `<details class="card past"><summary><span class="when">${esc(m.label)}</span><span class="muted">${moveGlyph(m.mode)}</span>${route}</summary>${body(m)}</details>`;
+    const next = m === nm;
+    return `<div class="card${next ? ' today-now' : ''}"${next ? ' data-now' : ''}>
+      <div class="cardhead"><span class="when">${esc(m.label)}</span><span class="muted">${who}</span><span class="chip">${esc(m.status)}</span>${next ? '<span class="chip red">next</span>' : ''}</div>
+      <div class="cardtitle">${route}</div>${body(m)}</div>`;
+  }).join('');
+  html += `<h2 class="h2">Getting between airports, stations and beds</h2>` + F.transfers.map((t) => `<div class="card slim">
+    <div class="cardhead"><span class="when">${esc(t.label)}</span>${ikTime(t.time)}<span class="chip">${esc(t.status)}</span></div>
+    <div>${ikName(t.route)}</div>${note('', t.how)}</div>`).join('');
   $('#screen-moves').innerHTML = html;
 }
 
@@ -947,15 +1024,24 @@ function renderStays() {
   if (!F) return;                                    // hidden before unlock: lockVault() calls this with nothing to draw
   const pins = {};
   if (S.vault) for (const p of S.vault.stay_pins) pins[p.conf] = p.pin;
-  $('#screen-stays').innerHTML = `<h1 class="h1">Stays</h1>` + F.stays.map((s) => `<div class="card">
-    <div><b>${esc(s.city)}</b> · ${esc(s.property)} <span class="chip">${esc(s.nights)} nights</span></div>
-    <div>${esc(s.address)}</div>${s.address_ja ? `<div class="ja">${esc(s.address_ja)}</div>` : ''}
-    ${kv([['Check-in', `${fmtDate(s.checkin_date)}, ${s.checkin_from}`], ['Check-out', `${fmtDate(s.checkout_date)} by ${s.checkout_by}`],
-      ['You arrive', s.arrive], ['You leave', s.leave], ['Phone', s.phone],
-      ['Confirmation', s.conf + (pins[s.conf] ? ` · PIN <b>${esc(pins[s.conf])}</b>` : ' · PIN in the vault'), true],
-      ['Where', coordLine(s.coord) ? coordLine(s.coord) : ''], ['Notes', s.notes]])}
-    ${s.coord && s.coord.lat != null ? mapsLink(s.coord.lat, s.coord.lon, s.property) : ''}
-  </div>`).join('');
+  const today = currentContext().date;
+  /* the one that matters now: the bed for tonight, else the next one */
+  const now = F.stays.find((s) => s.checkin_date <= today && today < s.checkout_date) || F.stays.find((s) => s.checkin_date > today) || null;
+  const body = (s, open) =>
+    ikAddr(s.address) + (s.address_ja ? `<div class="ja ik-addr">${esc(s.address_ja)}</div>` : '') +
+    fact('🕒', lbl('In') + ikTime(`${fmtDate(s.checkin_date)} · from ${s.checkin_from}`)) +
+    fact('🕒', lbl('Out') + ikTime(`${fmtDate(s.checkout_date)} · by ${s.checkout_by}`)) +
+    ikPhone(s.phone) +
+    fact('🔖', (s.conf ? lbl('Confirmation') + ikCode(s.conf) + ' ' : '') + (pins[s.conf] ? lbl('PIN') + ikCode(pins[s.conf]) : '<span class="muted small">PIN in the vault</span>')) +
+    fold('Getting there, leaving and notes', note('You arrive', s.arrive) + note('You leave', s.leave) + note('Notes', s.notes) + (coordLine(s.coord) ? `<div class="ik-note"><b>Where</b><span class="mono">${coordLine(s.coord)}</span></div>` : ''), open) +
+    (s.coord && s.coord.lat != null ? mapsLink(s.coord.lat, s.coord.lon, s.property) : '');
+  $('#screen-stays').innerHTML = `<h1 class="h1">Stays</h1>` + F.stays.map((s) => {
+    if (s.checkout_date <= today) return `<details class="card past"><summary>${cityTag(s.city)}${ikName(s.property)}<span class="muted small">${esc(fmtDate(s.checkin_date))} → ${esc(fmtDate(s.checkout_date))}</span></summary>${body(s)}</details>`;
+    const mark = s === now ? (s.checkin_date <= today ? 'now' : 'next') : '';
+    return `<div class="card${mark ? ' today-now' : ''}"${mark ? ' data-now' : ''}>
+      <div class="cardhead">${cityTag(s.city)}<span class="chip">${esc(s.nights)} night${String(s.nights) === '1' ? '' : 's'}</span>${mark ? `<span class="chip red">${mark}</span>` : ''}</div>
+      <div class="cardtitle">${ikName(s.property)}</div>${body(s)}</div>`;
+  }).join('');
 }
 
 function currentTheme() { const t = settings.theme; if (t !== 'auto') return t; return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; }
@@ -979,7 +1065,7 @@ function renderMap() {
       <div id="map-card" class="hidden"></div></div>
     <div class="row" id="map-filter"><button class="pill" id="map-packs-toggle">Offline maps</button></div>
     <div id="map-packs" class="card hidden"></div>
-    <p class="tiny muted">Directions and search: use the Organic Maps or Google Maps buttons on a place. Location is used only on this screen and never stored.</p>
+    <p class="tiny muted">Directions and search: use the map button on a place. It opens Google Maps while there is internet and Organic Maps when there is not. Location is used only on this screen and never stored.</p>
     <h2 class="h2">All places as a list</h2>`;
   for (const layer of ['stays', 'moves', 'venues', 'emergency', 'rally']) {
     if (!layers[layer]) continue;
@@ -999,7 +1085,7 @@ function renderTaxi() {
   const BASE_LABEL = { vancouver: 'Vancouver', whistler: 'Whistler', toronto: 'Toronto', 'new york': 'New York', newyork: 'New York', 'montréal': 'Montréal', montreal: 'Montréal', tokyo: 'Tokyo', nagoya: 'Nagoya' };
   const bases = [...new Set(F.taxi_cards.map((c) => c.base))].filter((b) => BASE_LABEL[b]);
   let html = `<h1 class="h1">Taxi cards</h1><div class="pill-row" id="taxi-pills"><button class="pill active" data-base="all">All</button>${bases.map((b) => `<button class="pill" data-base="${esc(b)}">${esc(BASE_LABEL[b])}</button>`).join('')}</div>`;
-  html += `<ul class="list" id="taxi-list">` + F.taxi_cards.map((c, i) => `<li data-base="${esc(c.base)}"><a href="#" data-card="${i}"><b>${esc(c.title_en)}</b></a>${c.name_ja ? `<div class="ja">${esc(c.name_ja)}</div>` : ''}${c.name_fr ? `<div class="fr">${esc(c.name_fr)}</div>` : ''}<div class="small muted">${esc(c.address_en)}</div></li>`).join('') + `</ul>`;
+  html += `<ul class="list" id="taxi-list">` + F.taxi_cards.map((c, i) => `<li data-base="${esc(c.base)}"><a href="#" data-card="${i}" class="taxi-go">${ikName(c.title_en)}<span class="chev">›</span></a>${c.name_ja ? `<div class="ja">${esc(c.name_ja)}</div>` : ''}${c.name_fr ? `<div class="fr">${esc(c.name_fr)}</div>` : ''}${ikAddr(c.address_en)}</li>`).join('') + `</ul>`;
   const lang0 = isMontreal(currentContext().city) ? 'fr' : 'ja';
   html += `<h2 class="h2">Phrases</h2><div class="pill-row" id="phrase-pills"><button class="pill${lang0 === 'ja' ? ' active' : ''}" data-lang="ja">Japanese</button><button class="pill${lang0 === 'fr' ? ' active' : ''}" data-lang="fr">French · Montréal</button></div>`;
   html += (F.phrases || []).map((p) => phraseCard(p, lang0)).join('');
@@ -1018,7 +1104,7 @@ function renderProtocols() {
   html += `<div class="card"><div class="h2">Lost kid</div>${stepsList(lk.steps, currentContext())}<div><b>Say:</b> ${esc(lk.say_en || '')}</div>${lk.say_ja ? `<div class="ja">${esc(lk.say_ja)}</div>` : ''}${lk.say_romaji ? `<div class="tiny muted">${esc(lk.say_romaji)}</div>` : ''}${lk.say_fr ? `<div class="fr">${esc(lk.say_fr)} <span class="tiny muted">Montréal</span></div>` : ''}<div class="red">${esc(lk.morning_photo || '')}</div></div>`;
   html += `<div class="card small muted">Sick or hurt, the kids' own "I'm lost" card, disasters and the say-it lines are under SOS.</div>`;
   html += `<div class="card"><div class="h2">PACE</div>${kv([['Primary', pace.primary], ['Alternate', pace.alternate], ['Contingency', pace.contingency], ['Emergency', pace.emergency]])}</div>`;
-  html += `<div class="card"><div class="h2">Phone stolen</div><div class="h3">iPhone (Sarah)</div><ol class="steps">${(ps.ios || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol><div class="h3">Android (Andy)</div><ol class="steps">${(ps.android || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol>${kv([['SIM / eSIM', ps.sim], ['Wallet cards', ps.wallet_lock], ['Sign out everywhere', ps.sign_out_everywhere]])}${(ps.carriers || []).some((c) => c && (c.carrier || c.lost_sim)) ? `<div class="h3">Carriers: suspend the SIM or eSIM</div>${kv((ps.carriers || []).filter((c) => c && (c.carrier || c.lost_sim)).map((c) => [c.who || 'Carrier', [c.carrier, c.lost_sim].filter(Boolean).join(' · ') + (c.note ? ' — ' + c.note : '')]))}` : ''}<div class="small muted">Card-lock list: in the vault.</div></div>`;
+  html += `<div class="card"><div class="h2">Phone stolen</div>${fold('iPhone (Sarah)', (ps.ios || []).length ? `<ol class="steps">${ps.ios.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>` : '')}${fold('Android (Andy)', (ps.android || []).length ? `<ol class="steps">${ps.android.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>` : '')}${kv([['SIM / eSIM', ps.sim], ['Wallet cards', ps.wallet_lock], ['Sign out everywhere', ps.sign_out_everywhere]])}${(ps.carriers || []).some((c) => c && (c.carrier || c.lost_sim)) ? `<div class="h3">Carriers: suspend the SIM or eSIM</div>${kv((ps.carriers || []).filter((c) => c && (c.carrier || c.lost_sim)).map((c) => [c.who || 'Carrier', [c.carrier, c.lost_sim].filter(Boolean).join(' · ') + (c.note ? ' — ' + c.note : '')]))}` : ''}<div class="small muted">Card-lock list: in the vault.</div></div>`;
   $('#screen-protocols').innerHTML = html;
 }
 

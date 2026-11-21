@@ -438,8 +438,11 @@ async function startFamily() {
   if (key && pinRec) { unlockMode('pin', 'Family view'); $('#pin-hint').textContent = ''; return; }
   unlockMode('passphrase', 'First unlock on this device');
 }
+let ppBusy = false;                                   // one check at a time: each takes seconds, and a second tap used to start a second one whose answer landed on top of the first
 ui.fpp.onsubmit = async (e) => {
   e.preventDefault();
+  if (ppBusy) return;
+  ppBusy = true; ui.err.classList.add('hidden');      // the last answer goes while the new one is worked out
   const door = S.guestPending;                        // null: the family door · true: the guest door · an envelope: a guest file was chosen
   const pp = door ? $('#pp').value.trim() : $('#pp').value;
   ui.sub.textContent = 'Checking… (a few seconds)';
@@ -462,7 +465,7 @@ ui.fpp.onsubmit = async (e) => {
     S.family = null;
     unlockMode('passphrase', door ? 'Guest: the PIN or code you were given.' : 'First unlock on this device');
     unlockError(door ? 'That did not open the guest copy.' : 'That passphrase did not open the family data.');
-  }
+  } finally { ppBusy = false; }
 };
 /* the guest's way in: the PIN they were given (it also works typed straight into the family box), or a guest file a parent sent */
 function guestDoor(on) {
@@ -476,6 +479,7 @@ function guestDoor(on) {
   setTimeout(() => { try { $('#pp').focus(); } catch (e) { /* no keyboard yet */ } }, 50);
 }
 $('#guest-open').onclick = () => {
+  if (ppBusy) return;                                 // not while a check is running
   if (S.guestPending) return guestDoor(null);
   if (holdsFamilyTrip()) return unlockError('This phone already holds the family trip, so it cannot open a guest copy.');
   guestDoor(true);

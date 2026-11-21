@@ -1,0 +1,62 @@
+{
+ "stay_pins": [
+  {
+   "property": "Sample Harbour Hotel",
+   "city": "Vancouver",
+   "dates": "3 to 6 Jul",
+   "conf": "SAMPLE-1",
+   "pin": "0000"
+  },
+  {
+   "property": "Sample Asakusa Inn",
+   "city": "Tokyo",
+   "dates": "7 to 10 Jul",
+   "conf": "SAMPLE-2",
+   "pin": "1111"
+  }
+ ],
+ "door_codes": [
+  {
+   "stay": "Sample Asakusa Inn",
+   "note": "Front door after 11 pm: 0000# (made up)"
+  }
+ ],
+ "entry": {
+  "eta": [
+   {
+    "person": "Adult 1",
+    "number": "SAMPLE-ETA-1",
+    "valid_to": "2030-01-01"
+   }
+  ],
+  "esta": [],
+  "passports": "Passport numbers and expiry dates go here."
+ },
+ "policies": [
+  {
+   "name": "Travel insurance (sample)",
+   "number": "SAMPLE-0001",
+   "when": "The whole trip",
+   "emergency": "(02) 5550 0123",
+   "claims": "claims@example.com"
+  }
+ ],
+ "surprise": [
+  {
+   "label": "A plan to keep quiet",
+   "text": "Anything the kids must not read goes in the vault.",
+   "note": "This card is headed \"5 January\" in app.js: rename it for your trip."
+  }
+ ],
+ "card_lock": [
+  {
+   "label": "Card 1",
+   "text": "Bank app → Cards → Lock",
+   "note": "made up"
+  }
+ ],
+ "overlay": {
+  "type": "FeatureCollection",
+  "features": []
+ }
+}

@@ -1,0 +1,763 @@
+{
+ "trip": {
+  "start": "2027-07-03",
+  "end": "2027-07-10",
+  "family": {
+   "mobiles": {
+    "sarah": "0491 570 006",
+    "andy": "0491 570 156"
+   }
+  },
+  "sync": {
+   "media": "c3RhcnRlci1zYW1wbGUta2V5LW5vdC1yZWFsLTAwMDE="
+  }
+ },
+ "days": [
+  {
+   "date": "2027-07-03",
+   "label": "Sat 03 Jul",
+   "where": "Townsville → Brisbane → Vancouver",
+   "sleep": "Sample Harbour Hotel",
+   "plan": "Fly all day and land this morning (the date line gives the day back).\nEasy afternoon: walk the seawall, early dinner.",
+   "travel": "TSV 06:05 → BNE 07:55\nBNE 10:35 → YVR 06:40",
+   "heads_up": "Jet lag: keep everyone awake until 7 pm."
+  },
+  {
+   "date": "2027-07-04",
+   "label": "Sun 04 Jul",
+   "where": "Vancouver",
+   "sleep": "Sample Harbour Hotel",
+   "plan": "Bikes around the park, then the aquarium.",
+   "travel": "",
+   "heads_up": ""
+  },
+  {
+   "date": "2027-07-05",
+   "label": "Mon 05 Jul",
+   "where": "Vancouver",
+   "sleep": "Sample Harbour Hotel",
+   "plan": "Market in the morning. Harbour boat ride at 6.",
+   "travel": "",
+   "heads_up": ""
+  },
+  {
+   "date": "2027-07-06",
+   "label": "Tue 06 Jul",
+   "where": "Vancouver → Tokyo",
+   "sleep": "In the air",
+   "plan": "The long flight: films, naps, a whole plane meal.",
+   "travel": "YVR 13:30 → NRT 15:40 (+1)",
+   "heads_up": ""
+  },
+  {
+   "date": "2027-07-07",
+   "label": "Wed 07 Jul",
+   "where": "Tokyo",
+   "sleep": "Sample Asakusa Inn",
+   "plan": "Land mid-afternoon, train to the hotel, ramen and bed.",
+   "travel": "",
+   "heads_up": ""
+  },
+  {
+   "date": "2027-07-08",
+   "label": "Thu 08 Jul",
+   "where": "Tokyo",
+   "sleep": "Sample Asakusa Inn",
+   "plan": "Temple and market in the morning. Sushi train for lunch.",
+   "travel": "",
+   "heads_up": ""
+  },
+  {
+   "date": "2027-07-09",
+   "label": "Fri 09 Jul",
+   "where": "Tokyo",
+   "sleep": "Sample Asakusa Inn",
+   "plan": "Tower at sunset. Last souvenirs. Pack.",
+   "travel": "",
+   "heads_up": ""
+  },
+  {
+   "date": "2027-07-10",
+   "label": "Sat 10 Jul",
+   "where": "Tokyo → Cairns → Townsville",
+   "sleep": "Home",
+   "plan": "Fly home.",
+   "travel": "NRT 11:00 → CNS 19:30\nCNS 21:00 → TSV 21:55",
+   "heads_up": ""
+  }
+ ],
+ "stays": [
+  {
+   "n": 1,
+   "city": "Vancouver",
+   "property": "Sample Harbour Hotel",
+   "address": "100 Sample Street, Vancouver BC",
+   "address_ja": "",
+   "nights": 3,
+   "checkin_date": "2027-07-03",
+   "checkin_from": "15:00",
+   "checkout_date": "2027-07-06",
+   "checkout_by": "11:00",
+   "arrive": "Train from the airport, 25 minutes.",
+   "leave": "Taxi to the airport by 10:30.",
+   "phone": "(604) 555-0142",
+   "conf": "SAMPLE-1",
+   "coord": {
+    "lat": 49.2888,
+    "lon": -123.1111
+   },
+   "notes": "Bags can be left from 9 am.",
+   "ja_id": ""
+  },
+  {
+   "n": 2,
+   "city": "Tokyo",
+   "property": "Sample Asakusa Inn",
+   "address": "1 Sample-chome, Asakusa, Taito City, Tokyo",
+   "address_ja": "東京都台東区浅草1丁目（サンプル）",
+   "nights": 3,
+   "checkin_date": "2027-07-07",
+   "checkin_from": "15:00",
+   "checkout_date": "2027-07-10",
+   "checkout_by": "10:00",
+   "arrive": "Airport train, then one change.",
+   "leave": "Leave by 7:30 for the airport.",
+   "phone": "",
+   "conf": "SAMPLE-2",
+   "coord": {
+    "lat": 35.7148,
+    "lon": 139.7967
+   },
+   "notes": "",
+   "ja_id": "stay-2"
+  }
+ ],
+ "moves": [
+  {
+   "date": "2027-07-03",
+   "label": "Sat 03 Jul",
+   "carrier": "Sample Air · SA 101",
+   "status": "Booked",
+   "frm": "Townsville (TSV)",
+   "to": "Brisbane (BNE)",
+   "depart": "06:05",
+   "arrive": "07:55",
+   "ref": "SAMPLE",
+   "seats": "",
+   "check": "",
+   "notes": "",
+   "mode": "flight",
+   "bags": {
+    "checked": "2 × 23 kg",
+    "cabin": "4 × 7 kg",
+    "who": "Sample fare"
+   },
+   "checkin": {
+    "opens": "24 h before",
+    "closes": "45 min before"
+   }
+  },
+  {
+   "date": "2027-07-03",
+   "label": "Sat 03 Jul",
+   "carrier": "Sample Air · SA 12",
+   "status": "Booked",
+   "frm": "Brisbane (BNE)",
+   "to": "Vancouver (YVR)",
+   "depart": "10:35",
+   "arrive": "06:40",
+   "ref": "SAMPLE",
+   "seats": "",
+   "check": "",
+   "notes": "Arrives the same morning: the date line.",
+   "mode": "flight",
+   "bags": {
+    "checked": "2 × 23 kg",
+    "cabin": "4 × 7 kg",
+    "who": "Sample fare"
+   },
+   "checkin": {
+    "opens": "24 h before",
+    "closes": "60 min before"
+   }
+  },
+  {
+   "date": "2027-07-06",
+   "label": "Tue 06 Jul",
+   "carrier": "Sample Air · SA 3",
+   "status": "Booked",
+   "frm": "Vancouver (YVR)",
+   "to": "Tokyo (NRT)",
+   "depart": "13:30",
+   "arrive": "15:40 +1",
+   "ref": "SAMPLE",
+   "seats": "",
+   "check": "",
+   "notes": "",
+   "mode": "flight",
+   "bags": {
+    "checked": "2 × 23 kg",
+    "cabin": "4 × 7 kg",
+    "who": "Sample fare"
+   }
+  },
+  {
+   "date": "2027-07-10",
+   "label": "Sat 10 Jul",
+   "carrier": "Sample Air · SA 70",
+   "status": "Booked",
+   "frm": "Tokyo (NRT)",
+   "to": "Cairns (CNS)",
+   "depart": "11:00",
+   "arrive": "19:30",
+   "ref": "SAMPLE",
+   "seats": "",
+   "check": "",
+   "notes": "",
+   "mode": "flight",
+   "bags": {
+    "checked": "2 × 23 kg",
+    "cabin": "4 × 7 kg",
+    "who": "Sample fare"
+   }
+  },
+  {
+   "date": "2027-07-10",
+   "label": "Sat 10 Jul",
+   "carrier": "Sample Air · SA 240",
+   "status": "Booked",
+   "frm": "Cairns (CNS)",
+   "to": "Townsville (TSV)",
+   "depart": "21:00",
+   "arrive": "21:55",
+   "ref": "SAMPLE",
+   "seats": "",
+   "check": "",
+   "notes": "",
+   "mode": "flight",
+   "bags": {
+    "checked": "2 × 23 kg",
+    "cabin": "4 × 7 kg",
+    "who": "Sample fare"
+   }
+  }
+ ],
+ "transfers": [
+  {
+   "label": "Sat 03 Jul",
+   "time": "07:30",
+   "route": "Vancouver airport → hotel",
+   "how": "Airport train, 25 min",
+   "status": "No booking needed"
+  },
+  {
+   "label": "Wed 07 Jul",
+   "time": "16:30",
+   "route": "Tokyo airport → hotel",
+   "how": "Airport train, one change",
+   "status": "Tickets at the airport"
+  }
+ ],
+ "events": [
+  {
+   "date": "2027-07-05",
+   "time": "18:00",
+   "event": "Harbour boat ride (sample)",
+   "venue": "The ferry dock",
+   "who": "All four",
+   "seats": ""
+  },
+  {
+   "date": "2027-07-08",
+   "time": "12:00",
+   "event": "Sushi train lunch (sample)",
+   "venue": "Near the hotel",
+   "who": "All four"
+  }
+ ],
+ "gates": [
+  {
+   "what": "Canada eTA for everyone",
+   "priority": "Critical",
+   "label": "Entry documents",
+   "when": "by 1 June",
+   "need": "Passports"
+  },
+  {
+   "what": "Travel insurance",
+   "priority": "High",
+   "label": "Money",
+   "when": "by 1 June"
+  },
+  {
+   "what": "Download the offline map packs",
+   "status": "Open",
+   "label": "Phones",
+   "where": "Map screen, on Wi-Fi"
+  }
+ ],
+ "taxi_cards": [
+  {
+   "id": "stay-1",
+   "base": "vancouver",
+   "title_en": "Sample Harbour Hotel",
+   "address_en": "100 Sample Street, Vancouver BC",
+   "coord": {
+    "lat": 49.2888,
+    "lon": -123.1111
+   },
+   "notes": ""
+  },
+  {
+   "id": "stay-2",
+   "base": "tokyo",
+   "title_en": "Sample Asakusa Inn",
+   "name_ja": "浅草サンプル旅館",
+   "address_en": "1 Sample-chome, Asakusa, Taito City, Tokyo",
+   "address_ja": "東京都台東区浅草1丁目（サンプル）",
+   "coord": {
+    "lat": 35.7148,
+    "lon": 139.7967
+   },
+   "notes": "Show this to the driver."
+  },
+  {
+   "id": "tokyo-station",
+   "base": "tokyo",
+   "title_en": "Tokyo Station, Yaesu side",
+   "name_ja": "東京駅 八重洲口",
+   "address_en": "Marunouchi 1-chome, Chiyoda City, Tokyo",
+   "address_ja": "東京都千代田区丸の内1丁目",
+   "coord": {
+    "lat": 35.6812,
+    "lon": 139.7671
+   }
+  }
+ ],
+ "phrases": [
+  {
+   "id": "take-us-here",
+   "lang": "ja",
+   "en": "Please take us here.",
+   "ja": "ここまでお願いします。",
+   "romaji": "Koko made onegai shimasu."
+  },
+  {
+   "id": "thanks",
+   "lang": "ja",
+   "en": "Thank you very much.",
+   "ja": "ありがとうございます。",
+   "romaji": "Arigatō gozaimasu."
+  },
+  {
+   "id": "toilet",
+   "lang": "ja",
+   "en": "Where is the toilet?",
+   "ja": "トイレはどこですか？",
+   "romaji": "Toire wa doko desu ka?"
+  },
+  {
+   "id": "fr-take-us-here",
+   "lang": "fr",
+   "en": "Please take us here.",
+   "fr": "Pouvez-vous nous emmener ici, s'il vous plaît ?",
+   "say": "poo-vay voo noo zom-nay ee-see, seel voo play"
+  }
+ ],
+ "koban": [
+  {
+   "venue_id": "stay-2",
+   "note": "Police box near the hotel (sample): three minutes on foot, by the big gate."
+  }
+ ],
+ "emergency": {
+  "CA": {
+   "name": "Canada",
+   "numbers": [
+    {
+     "who": "Police, fire, ambulance",
+     "phone": "911"
+    }
+   ],
+   "hospitals": [
+    {
+     "base": "vancouver",
+     "name": "Sample General Hospital",
+     "address_en": "200 Sample Avenue, Vancouver BC",
+     "phone": "(604) 555-0100",
+     "open_24h": true,
+     "notes": "A made-up entry: put the real one here."
+    }
+   ],
+   "pharmacies": [
+    {
+     "base": "vancouver",
+     "name": "Sample Pharmacy",
+     "address_en": "200 Sample Avenue, Vancouver BC",
+     "phone": "(604) 555-0100",
+     "hours": "8 am to 10 pm"
+    }
+   ],
+   "health_lines": [
+    {
+     "region": "British Columbia",
+     "name": "Nurse advice line (sample)",
+     "number": "811",
+     "hours": "24 hours"
+    }
+   ],
+   "consulates": [
+    {
+     "who": "Your consulate (sample)",
+     "phone": "(604) 555-0100",
+     "ref": "Put the real number here"
+    }
+   ],
+   "insurers": [
+    {
+     "who": "Insurer emergency line (sample)",
+     "phone": "(604) 555-0100",
+     "ref": "Policy SAMPLE-0001"
+    }
+   ],
+   "medicine": [
+    "What your usual medicines are called here goes in this list."
+   ]
+  },
+  "US": {
+   "name": "United States",
+   "numbers": [
+    {
+     "who": "Police, fire, ambulance",
+     "phone": "911"
+    }
+   ],
+   "hospitals": [
+    {
+     "base": "newyork",
+     "name": "Sample General Hospital",
+     "address_en": "300 Sample Avenue, New York NY",
+     "phone": "(212) 555-0100",
+     "open_24h": true,
+     "notes": "A made-up entry: put the real one here."
+    }
+   ],
+   "pharmacies": [
+    {
+     "base": "newyork",
+     "name": "Sample Pharmacy",
+     "address_en": "300 Sample Avenue, New York NY",
+     "phone": "(212) 555-0100",
+     "hours": "8 am to 10 pm"
+    }
+   ],
+   "health_lines": [],
+   "consulates": [
+    {
+     "who": "Your consulate (sample)",
+     "phone": "(212) 555-0100",
+     "ref": "Put the real number here"
+    }
+   ],
+   "insurers": [
+    {
+     "who": "Insurer emergency line (sample)",
+     "phone": "(212) 555-0100",
+     "ref": "Policy SAMPLE-0001"
+    }
+   ],
+   "medicine": [
+    "What your usual medicines are called here goes in this list."
+   ]
+  },
+  "JP": {
+   "name": "Japan",
+   "numbers": [
+    {
+     "who": "Ambulance and fire",
+     "phone": "119"
+    },
+    {
+     "who": "Police",
+     "phone": "110"
+    }
+   ],
+   "hospitals": [
+    {
+     "base": "tokyo",
+     "name": "Sample General Hospital",
+     "address_en": "2 Sample-chome, Taito City, Tokyo",
+     "phone": "03-5550-0100",
+     "open_24h": true,
+     "notes": "A made-up entry: put the real one here."
+    }
+   ],
+   "pharmacies": [
+    {
+     "base": "tokyo",
+     "name": "Sample Pharmacy",
+     "address_en": "2 Sample-chome, Taito City, Tokyo",
+     "phone": "03-5550-0100",
+     "hours": "8 am to 10 pm"
+    }
+   ],
+   "health_lines": [],
+   "consulates": [
+    {
+     "who": "Your consulate (sample)",
+     "phone": "03-5550-0100",
+     "ref": "Put the real number here"
+    }
+   ],
+   "insurers": [
+    {
+     "who": "Insurer emergency line (sample)",
+     "phone": "03-5550-0100",
+     "ref": "Policy SAMPLE-0001"
+    }
+   ],
+   "medicine": [
+    "What your usual medicines are called here goes in this list."
+   ]
+  }
+ },
+ "protocols": {
+  "lost_kid": {
+   "steps": [
+    "Stop where you last saw them. One adult stays put, one looks.",
+    "Look at this morning's photo: what are they wearing?",
+    "Tell the nearest staff member or police officer. Police: {pol}.",
+    "After 10 minutes call {em}."
+   ],
+   "morning_photo": "Take a photo of the kids every morning: it shows today's clothes.",
+   "say_en": "My child is lost. Can you help me, please?",
+   "say_ja": "子供が迷子になりました。助けてください。",
+   "say_romaji": "Kodomo ga maigo ni narimashita. Tasukete kudasai.",
+   "say_fr": "Mon enfant est perdu. Pouvez-vous m'aider, s'il vous plaît ?"
+  },
+  "kid_card": {
+   "title": "If you are lost",
+   "steps": [
+    "Stay where you are. We will come back to you.",
+    "Find someone in a uniform, or a mum with kids.",
+    "Show them this screen."
+   ],
+   "say_en": "I am lost. Please call my mum or dad.",
+   "say_ja": "迷子です。両親に電話してください。",
+   "say_romaji": "Maigo desu. Ryōshin ni denwa shite kudasai.",
+   "say_fr": "Je suis perdu. Appelez mes parents, s'il vous plaît."
+  },
+  "sick": {
+   "steps": [
+    "Not urgent: the pharmacy first, then the advice line.",
+    "Urgent: the hospital below, by taxi.",
+    "Life-threatening: call {em}.",
+    "Call the insurer before paying for anything big."
+   ],
+   "say_en": "My child is sick. Where is the nearest doctor?",
+   "say_ja": "子供が病気です。近くの病院はどこですか？",
+   "say_romaji": "Kodomo ga byōki desu. Chikaku no byōin wa doko desu ka?",
+   "say_fr": "Mon enfant est malade. Où est le médecin le plus proche ?"
+  },
+  "call": {
+   "say_en": "We need an ambulance. A child is hurt.",
+   "say_ja": "救急車をお願いします。子供がけがをしました。",
+   "say_romaji": "Kyūkyūsha o onegai shimasu. Kodomo ga kega o shimashita.",
+   "say_fr": "Nous avons besoin d'une ambulance. Un enfant est blessé."
+  },
+  "disasters": [
+   {
+    "id": "earthquake",
+    "title": "Earthquake",
+    "icon": "🌏",
+    "where": [
+     "JP",
+     "CA"
+    ],
+    "rank": {
+     "JP": 1,
+     "CA": 2
+    },
+    "steps": [
+     "Drop, cover, hold on. Stay away from windows.",
+     "When the shaking stops: shoes on, grab the day bag, take the stairs.",
+     "Go to the open area the hotel points to. Stay together."
+    ],
+    "notes": [
+     "Hotels post their evacuation area by the lift."
+    ],
+    "say_ja": "避難場所はどこですか？",
+    "say_romaji": "Hinan basho wa doko desu ka?",
+    "say_en": "Where is the evacuation area?"
+   },
+   {
+    "id": "fire",
+    "title": "Hotel fire",
+    "icon": "🔥",
+    "where": [
+     "CA",
+     "US",
+     "JP"
+    ],
+    "rank": {
+     "CA": 1,
+     "US": 1,
+     "JP": 2
+    },
+    "steps": [
+     "Feel the door. Hot: stay in, wet towels at the gap, call {em}.",
+     "Cool: leave by the stairs, never the lift.",
+     "Meet across the street from the front door."
+    ]
+   }
+  ],
+  "pace": {
+   "primary": "Phone call",
+   "alternate": "The family group chat",
+   "contingency": "Back to the hotel lobby",
+   "emergency": "A message left at the hotel front desk"
+  },
+  "phone_stolen": {
+   "ios": [
+    "Find My on another device: mark as lost.",
+    "Change the Apple account password."
+   ],
+   "android": [
+    "Find My Device on another device: secure it.",
+    "Change the Google account password."
+   ],
+   "sim": "Ask the carrier to suspend the SIM or eSIM.",
+   "wallet_lock": "Lock the cards in each bank app.",
+   "sign_out_everywhere": "Email, banking, messaging.",
+   "carriers": [
+    {
+     "who": "Mum",
+     "carrier": "Sample Mobile",
+     "lost_sim": "(02) 5550 0140",
+     "note": "made-up number"
+    }
+   ]
+  }
+ },
+ "overlay": {
+  "type": "FeatureCollection",
+  "features": [
+   {
+    "type": "Feature",
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      -123.1111,
+      49.2888
+     ]
+    },
+    "properties": {
+     "id": "stay-1",
+     "layer": "stays",
+     "name_en": "Sample Harbour Hotel",
+     "address_en": "100 Sample Street, Vancouver BC",
+     "plus_code": "",
+     "lat": 49.2888,
+     "lon": -123.1111,
+     "dates": "3 to 6 Jul",
+     "taxi_card_id": "stay-1"
+    }
+   },
+   {
+    "type": "Feature",
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      139.7967,
+      35.7148
+     ]
+    },
+    "properties": {
+     "id": "stay-2",
+     "layer": "stays",
+     "name_en": "Sample Asakusa Inn",
+     "address_en": "1 Sample-chome, Asakusa, Tokyo",
+     "plus_code": "",
+     "lat": 35.7148,
+     "lon": 139.7967,
+     "name_ja": "浅草サンプル旅館",
+     "address_ja": "東京都台東区浅草1丁目（サンプル）",
+     "dates": "7 to 10 Jul",
+     "taxi_card_id": "stay-2"
+    }
+   },
+   {
+    "type": "Feature",
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      139.7671,
+      35.6812
+     ]
+    },
+    "properties": {
+     "id": "tokyo-station",
+     "layer": "venues",
+     "name_en": "Tokyo Station",
+     "address_en": "Marunouchi 1-chome, Chiyoda City, Tokyo",
+     "plus_code": "",
+     "lat": 35.6812,
+     "lon": 139.7671,
+     "taxi_card_id": "tokyo-station"
+    }
+   },
+   {
+    "type": "Feature",
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      139.796,
+      35.714
+     ]
+    },
+    "properties": {
+     "id": "koban-stay-2",
+     "layer": "emergency",
+     "name_en": "Police box near the hotel (sample)",
+     "address_en": "By the big gate, Asakusa",
+     "plus_code": "",
+     "lat": 35.714,
+     "lon": 139.796,
+     "notes": "A made-up entry."
+    }
+   }
+  ]
+ },
+ "journal": {
+  "prompts": {
+   "any": [
+    {
+     "id": "a1",
+     "q": "What made you laugh today?"
+    },
+    {
+     "id": "a2",
+     "q": "What was the yummiest thing you ate?"
+    }
+   ],
+   "vancouver": [
+    {
+     "id": "v1",
+     "q": "What did you see from the water?"
+    }
+   ],
+   "tokyo": [
+    {
+     "id": "t1",
+     "q": "What was the strangest thing in the vending machine?"
+    }
+   ],
+   "air": [
+    {
+     "id": "f1",
+     "q": "What did you watch on the plane?"
+    }
+   ]
+  }
+ }
+}

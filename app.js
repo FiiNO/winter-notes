@@ -444,6 +444,7 @@ function kvDo(mode, fn) { return idbRun('kv', mode, (t) => new Promise((res, rej
 const kvGet = (k) => kvDo('readonly', (s) => s.get(k));
 const kvSet = (k, v) => kvDo('readwrite', (s) => s.put(v, k)).then(() => {});
 const kvDel = (k) => kvDo('readwrite', (s) => s.delete(k)).then(() => {});
+const kvKeys = () => kvDo('readonly', (s) => s.getAllKeys());   // tickets.js: the sealed documents kept under "vdoc:<id>"
 
 /* ------------------------------------------------------------------ crypto */
 const b64d = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -474,6 +475,7 @@ async function checkPin(edition, pin) {
 }
 async function forgetDevice() {
   for (const k of ['key:family', 'key:vault', 'pin:family', 'pin:vault', 'guest:env']) await kvDel(k);
+  if (window.VaultDocs) await VaultDocs.forget();     // the sealed tickets and their key
   try { await Media.wipeAll(); } catch (e) { /* no media store yet */ }   // everything, the full-size originals too: their key leaves with the device
   localStorage.clear();
   location.reload();
@@ -550,6 +552,7 @@ const isGuest = () => localStorage.getItem('edition') === 'guest';
 const holdsFamilyTrip = () => !isGuest() && !!(localStorage.getItem('deviceRole') || localStorage.getItem('quests:v2'));
 async function wipeLocal() {                         // forgetDevice without the reload
   for (const k of ['key:family', 'key:vault', 'pin:family', 'pin:vault', 'guest:env']) await kvDel(k);
+  if (window.VaultDocs) await VaultDocs.forget();
   try { await Media.wipeAll(); } catch (e) { /* no media store yet */ }
   localStorage.clear();
   S.preview = null; Quests.reload();
@@ -699,6 +702,7 @@ async function enterApp() {
   if (!Quests.role()) { openModal(Quests.roleCard()); Quests.wireRole($('#modal-inner')); }   // 2 Nov 2026: a fresh device says whose it is first
   else if (!Quests.isGrandDevice()) { Quests.checkNewBadges(currentContext()); setTimeout(() => Quests.checkLevelUp(), 2500); }   // badges earned by the date can tip a level too (3 Nov 2026); the show waits for the map and stories to settle
   Quests.startSync();                                // no-op unless the family blob carries a sync address
+  if (window.VaultDocs) setTimeout(() => VaultDocs.sync(), 4000);   // sealed tickets not yet sent or fetched (again after every sync: quests.js)
   checkForUpdate();
   S.today = currentContext().date;
   setInterval(clockTick, 60000);
@@ -942,6 +946,15 @@ async function flyChecks() {
     if (missing) add('warn', `${missing} picture${missing === 1 ? '' : 's'} from the others not on this phone`, 'Postcards show a grey box for them until they are fetched.', 'pics', 'Fetch them now');
     else if (Media.enabled) add('ok', 'Every picture is on this phone');
   } else add('info', 'This phone does not sync', 'What is written here stays here.');
+  /* 3b. tickets and documents in the Vault: their sealed bytes can be counted without opening it */
+  if (window.VaultDocs) {
+    try {
+      const vd = await VaultDocs.status();
+      if (vd.missing) add('warn', `${vd.missing} ticket${vd.missing === 1 ? '' : 's'} or document${vd.missing === 1 ? '' : 's'} in the Vault not on this phone yet`, 'Added on another phone. They cannot be opened here without internet until they are fetched.', 'vdocs', 'Fetch them now');
+      else if (vd.total) add('ok', `All ${vd.total} ticket${vd.total === 1 ? '' : 's'} and document${vd.total === 1 ? '' : 's'} in the Vault are on this phone`);
+      if (vd.waiting && vd.syncs) add('warn', `${vd.waiting} ticket${vd.waiting === 1 ? '' : 's'} or document${vd.waiting === 1 ? '' : 's'} not sent to the other phones yet`, '', 'vdocs', 'Send them now');
+    } catch (e) { /* cannot tell */ }
+  }
   /* 4. the map of where we are and where we are going */
   const nm = nextMove(), ctx = currentContext(), want = [];
   for (const c of [ctx.city, nm ? placeCity(nm.to) : null]) if (c && c !== 'Home' && COUNTRY[c] && COUNTRY[c] !== 'AU' && want.indexOf(c) < 0) want.push(c);
@@ -975,7 +988,7 @@ async function openFlyCheck() {
       const a = b.dataset.flyAct;
       if (a === 'map') { closeModal(); show('map'); return; }
       b.disabled = true; b.textContent = 'Working…';
-      try { if (a === 'sync') await Sync.sync(); if (a === 'pics') await Journal.downloadAll((done, total) => { b.textContent = `Fetching ${done} of ${total}…`; }); } catch (e) { /* the next check says what is left */ }
+      try { if (a === 'vdocs') await VaultDocs.sync(); if (a === 'sync') await Sync.sync(); if (a === 'pics') await Journal.downloadAll((done, total) => { b.textContent = `Fetching ${done} of ${total}…`; }); } catch (e) { /* the next check says what is left */ }
       run();
     });
   };
@@ -1342,13 +1355,15 @@ function armVaultLock() {
   S.vaultTimer = setTimeout(lockVault, VAULT_LOCK_MS);
 }
 function lockVault() {
+  if (window.VaultDocs) VaultDocs.lock();             // an opened ticket leaves the screen with it
   S.vault = null; clearTimeout(S.vaultTimer);
   $('#screen-vault').innerHTML = '';                 // never leave decrypted vault text in the DOM, even hidden
   if (S.screen === 'vault') renderVault();
   renderStays();                                     // inline PINs disappear again
   if (window.DossierMap) window.DossierMap.setVaultFeatures([]);
 }
-document.addEventListener('visibilitychange', () => { if (document.hidden) lockVault(); });
+/* choosing a file to add (tickets.js) sends the app to the background for a moment: the Vault stays open for that, up to three minutes */
+document.addEventListener('visibilitychange', () => { if (document.hidden && !(S.vaultHold && Date.now() - S.vaultHold < 180000)) lockVault(); });
 ['click', 'touchstart', 'keydown'].forEach((ev) => document.addEventListener(ev, () => { if (S.vault) armVaultLock(); }, { passive: true }));
 
 async function renderVault() {
@@ -1359,12 +1374,14 @@ async function renderVault() {
     armVaultLock();
     el.innerHTML = `<h1 class="h1">Vault <span class="chip red">locks in 5 min</span></h1>
       <button class="btn block" id="vault-lock">Lock now</button>
+      <div id="vault-docs"></div>
       <div class="card"><div class="h2">Stay PINs and door codes</div><table class="t"><tr><th>Stay</th><th>Conf</th><th>PIN</th></tr>${V.stay_pins.map((p) => `<tr><td>${esc(p.property)}<br><span class="muted small">${esc(p.city)} · ${esc(p.dates)}</span></td><td class="mono">${esc(p.conf)}</td><td class="mono big">${esc(p.pin)}</td></tr>`).join('')}</table>${V.door_codes.map((d) => `<div class="small muted" style="margin-top:6px"><b>${esc(d.stay)}:</b> ${esc(d.note)}</div>`).join('')}</div>
       <div class="card"><div class="h2">Entry documents</div><table class="t"><tr><th>Person</th><th>Document</th><th>Number</th><th>Valid to</th></tr>${V.entry.eta.map((e) => `<tr><td>${esc(e.person)}</td><td>Canada eTA</td><td class="mono">${esc(e.number)}</td><td>${esc(e.valid_to)}</td></tr>`).join('')}${V.entry.esta.map((e) => `<tr><td>${esc(e.person)}</td><td>US ESTA</td><td class="mono">${esc(e.number)}</td><td>${esc(e.valid_to)}</td></tr>`).join('')}</table>${V.entry.esta_group ? `<div class="mono small">ESTA group ${esc(V.entry.esta_group)}</div>` : ''}<div class="small muted">${esc(V.entry.passports)}</div></div>
       <div class="card"><div class="h2">Insurance policies</div>${V.policies.map((p) => `<div class="h3">${esc(p.name)}</div>${kv([['Policy', p.number], ['Covers', p.when], ['Emergency', p.emergency], ['Claims', p.claims]])}`).join('')}</div>
       <div class="card"><div class="h2">5 January: the plan</div>${kv(V.surprise.filter((r) => r.text).map((r) => [r.label || '·', r.text + (r.note ? ' — ' + r.note : '')]))}</div>
       <div class="card"><div class="h2">Card-lock list</div>${(V.card_lock || []).length ? kv(V.card_lock.map((r) => [r.label || '·', r.text + (r.note ? ' — ' + r.note : '')])) : `<div class="small">${esc(V.card_lock_note || '')}</div>`}</div>`;
     $('#vault-lock').onclick = lockVault;
+    if (window.VaultDocs) VaultDocs.render($('#vault-docs'));     // tickets and documents (tickets.js)
     return;
   }
   const key = await kvGet('key:vault'), pinRec = await kvGet('pin:vault');
@@ -1393,9 +1410,10 @@ async function renderVault() {
       } else {
         const a = $('#vpin1').value, b = $('#vpin2').value;
         if (!/^\d{4}$/.test(a) || a !== b) { err.textContent = 'PIN must be four digits, typed twice the same.'; return err.classList.remove('hidden'); }
-        const k = await deriveKey($('#vpp').value, env);
+        const pp = $('#vpp').value, k = await deriveKey(pp, env);
         S.vault = await decryptWith(k, env);
         await kvSet('key:vault', k); await setPin('vault', a);
+        if (window.VaultDocs) { try { await VaultDocs.keep(pp); } catch (e2) { /* the Vault card offers to turn documents on */ } }
       }
       renderVault(); renderStays();
       if (window.DossierMap) window.DossierMap.setVaultFeatures(vaultPins());

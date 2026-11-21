@@ -899,3 +899,101 @@ html[data-guest="1"] #top-edition { color: #e9a23b; }
 #guest-msg { margin-top: 8px; }
 #guest-msg .btn { margin: 8px 0 4px; }
 
+/* ---- the Book's one way of writing things down (21 Nov 2026): see app.js, "the Book's one way"
+   names teal · addresses violet · dates and times amber · codes a small chip · notes grey and smaller.
+   Each ink is 4.5:1 or better on the card in both themes. No flex gap here: the old tablet has none. */
+:root { --ik-name: #0A6159; --ik-addr: #5B3CC4; --ik-time: #9A4300; --ik-code: #1F2A44; --ik-code-bg: #EDF0F6; }
+:root[data-theme="dark"] { --ik-name: #6FE3D6; --ik-addr: #C0AEFF; --ik-time: #FFB86B; --ik-code: #E8ECFF; --ik-code-bg: #2B2B47; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ik-name: #6FE3D6; --ik-addr: #C0AEFF; --ik-time: #FFB86B; --ik-code: #E8ECFF; --ik-code-bg: #2B2B47; }
+}
+.ik-name { color: var(--ik-name); font-weight: 800; }
+.ik-addr { color: var(--ik-addr); }
+.ik-time { color: var(--ik-time); font-weight: 700; }
+.ik-code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9em; color: var(--ik-code); background: var(--ik-code-bg); padding: 1px 7px; border-radius: 7px; overflow-wrap: anywhere; }
+.ik-note { color: var(--muted); font-size: 0.9em; line-height: 1.45; margin: 6px 0; overflow-wrap: anywhere; }
+.ik-note b { display: block; color: var(--text); font-size: 0.8em; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
+.lbl { color: var(--muted); font-size: 0.76em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+.fact { display: flex; align-items: baseline; margin: 5px 0; line-height: 1.35; }
+.fact .fi { flex: 0 0 1.75em; }
+.fact .fv { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.fact.bigfact { font-size: 1.2em; }
+.fact.ik-warn .fv { color: var(--red); font-weight: 700; }
+.cardhead { display: flex; flex-wrap: wrap; align-items: center; }
+.cardhead > * { margin: 0 7px 5px 0; }
+.cardhead .chip { margin-left: 0; }
+.cardtitle { font-size: 1.2em; line-height: 1.25; margin: 0 0 6px; }
+.cardtitle .arrow, .past .arrow { color: var(--muted); font-weight: 400; }
+.citytag { display: inline-block; color: #fff; font-weight: 800; font-size: 0.8em; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+.when { font-weight: 800; }
+.plan { margin: 6px 0; line-height: 1.45; }
+.card.slim { padding: 10px var(--pad); }
+.card[data-now] { border-width: 3px; }
+/* the long text: one tap away */
+.fold { margin: 8px 0 0; padding: 0; border: 0; border-top: 1px dashed var(--border); border-radius: 0; background: transparent; }
+.fold > summary { cursor: pointer; list-style: none; padding: 9px 0 5px; font-weight: 700; font-size: 0.9em; color: var(--muted); }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::before { content: '▸'; display: inline-block; width: 1.3em; }
+.fold[open] > summary::before { content: '▾'; }
+.fold .steps { margin: 4px 0; }
+/* what is over: one line, the whole card a tap away */
+details.card.past { padding-top: 10px; padding-bottom: 10px; border-style: dashed; background: transparent; }
+details.card.past > summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; align-items: center; font-size: 0.92em; }
+details.card.past > summary::-webkit-details-marker { display: none; }
+details.card.past > summary::before { content: '✓'; color: var(--muted); font-weight: 900; margin-right: 8px; }
+details.card.past > summary > * { margin: 2px 7px 2px 0; }
+details.card.past > summary .ik-name { font-weight: 700; }
+details.card.past[open] { background: var(--card); border-style: solid; }
+details.card.past[open] > summary { margin-bottom: 8px; }
+/* the key to the colours, on the Book's first page */
+.inkkey { display: flex; flex-wrap: wrap; font-size: 0.82em; margin: 0 0 12px; }
+.inkkey > * { margin: 0 14px 4px 0; white-space: nowrap; }
+.inkkey a { color: var(--link); text-decoration: underline; }
+.taxi-go { display: flex; align-items: center; text-decoration: none; font-size: 1.08em; }
+.taxi-go .ik-name { flex: 1 1 auto; min-width: 0; }
+.taxi-go .chev { color: var(--muted); font-size: 1.4em; padding-left: 8px; }
+
+/* ---- 21 Nov 2026: the header on a phone, tap-to-copy, the Days agenda, "next up", search, Ready to fly? */
+.stamp { display: flex; flex-direction: column; justify-content: center; line-height: 1.12; }
+.stamp-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.edition { font-size: 0.74em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 480px) { .stamp .w1 { display: none; } .edition { display: block; } }   /* "Adventure" over "Family": the whole of both, on any phone (the second word used to be hidden there) */
+@media (min-width: 700px) { .stamp { display: block; white-space: nowrap; } .stamp-name { display: inline; } .edition { display: inline; font-size: 0.85em; } .edition::before { content: ' · '; } }
+.ik-code { cursor: pointer; }
+.ik-code.copied { background: var(--ik-name); color: #fff; }
+.found { box-shadow: 0 0 0 4px var(--city); }
+.leghead { display: flex; flex-wrap: wrap; align-items: center; margin: 18px 0 2px; }
+.leghead > * { margin: 0 8px 4px 0; }
+details.card.dayrow { padding-top: 6px; padding-bottom: 6px; margin: 6px 0; }
+details.card.dayrow > summary { list-style: none; display: flex; align-items: center; min-height: 34px; }
+details.card.dayrow > summary::-webkit-details-marker { display: none; }
+details.card.dayrow > summary > * { margin: 0 8px 0 0; flex: 0 0 auto; }
+details.card.dayrow > summary .when { min-width: 5.6em; }
+details.card.dayrow > summary .ik-name { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
+details.card.dayrow > summary .daypeek { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 0.88em; font-weight: 500; margin-right: 0; }
+details.card.dayrow[open] > summary { flex-wrap: wrap; }
+details.card.dayrow[open] > summary .daypeek { display: none; }
+details.card.dayrow[open] > summary .ik-name { max-width: none; white-space: normal; flex: 1 1 100%; font-size: 1.15em; margin-top: 4px; }
+details.card.dayrow[open] { padding-bottom: 12px; }
+details.card.dayrow[open] > summary { margin-bottom: 4px; }
+details.card.dayrow.past > summary::before { margin-right: 8px; }
+.dayflag { font-size: 0.9em; }
+.tile.nextup { background: var(--card); border: 3px solid var(--city); color: var(--text); }
+.tile.nextup.soon { background: var(--red); border-color: var(--red); color: #fff; }
+.booksearch { margin: 0 0 12px; }
+.booksearch .input { width: 100%; }
+.hitcount { margin: 0 0 8px; }
+.bkrow.hit { margin-bottom: 8px; border: 2px solid var(--border); }
+.bkrow.hit .ico { background: var(--pale); }
+.bkrow.hit .tk { display: block; font-size: 0.68em; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.bkrow.hit .tt, .bkrow.hit .ts { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flysum { font-weight: 800; text-align: center; }
+.flysum.good { border-color: #2A9D8F; }
+.flysum.todo { border-color: var(--red); }
+.flyrow { display: flex; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.flyrow .fi { flex: 0 0 2em; font-size: 1.15em; }
+.flyrow .fv { flex: 1 1 auto; min-width: 0; }
+.flyrow .ft { font-weight: 700; }
+.tripbook { margin: 10px 0 4px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.tripbook .btn { margin-bottom: 6px; }
+

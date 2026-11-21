@@ -1,0 +1,18 @@
+# Runs tools/check.js on every pull request and on every change to main: the build number in its three places, the
+# offline file list, the scripts, the public map-pack list. A red cross here means: do not merge yet.
+name: checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tools/check.js

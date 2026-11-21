@@ -91,33 +91,161 @@ function kv(rows) {
   return '<div class="kv">' + rows.filter((r) => r[1] !== undefined && r[1] !== null && String(r[1]) !== '').map(([k, v, raw]) =>
     `<div class="k">${esc(k)}</div><div class="v">${raw ? v : tel(v)}</div>`).join('') + '</div>';
 }
-/* Hand-off links, the same three everywhere. 6 Nov 2026 (Andy: "Google Maps to be the default, and then Organic Maps as a
-   fall back if not online"): the main button is Google Maps while the phone is online and Organic Maps when it is not
-   (every device carries Organic Maps with its regions downloaded). The other one stays beside it, because a phone on
-   Wi-Fi with no internet still says it is online. The buttons follow the connection as it changes (syncMapButtons), so
-   the choice is right at the tap. Google Earth stays for a look at the building; it needs data. Apple Maps and the
-   Android geo: intent were dropped on 10 Oct. */
-const MAP_GO = ['🗺️ Google Maps', '🗺️ Organic Maps (offline)'], MAP_ALT = ['Organic Maps', 'Google Maps'];
+/* Hand-off links, the same everywhere. 21 Nov 2026 (Andy: "make Google Maps the default... switch to Organic Maps only
+   when no internet"): ONE map button. It is Google Maps while there is internet and Organic Maps when there is not (every
+   device carries Organic Maps with its regions downloaded). There used to be both side by side, because a phone on Wi-Fi
+   with no internet behind it still says it is online; now the app asks for itself (Net, below) and the button follows.
+   Google Earth, for a look at the building, shows only while there is internet. */
+const MAP_GO = ['🗺️ Google Maps', '🗺️ Organic Maps (offline)'];
 function mapButtons(lat, lon, label) {
   const q = `${(+lat).toFixed(6)},${(+lon).toFixed(6)}`, n = encodeURIComponent(label || 'Here');
-  const gm = `https://www.google.com/maps/search/?api=1&query=${q}`, om = `om://map?v=1&ll=${q}&n=${n}`, on = navigator.onLine !== false, blank = ' target="_blank" rel="noopener"';
+  const gm = `https://www.google.com/maps/search/?api=1&query=${q}`, om = `om://map?v=1&ll=${q}&n=${n}`, on = Net.on, blank = ' target="_blank" rel="noopener"';
+  Net.wanted();
   return `<a class="btn primary mapgo" href="${on ? gm : om}" data-gm="${gm}" data-om="${om}"${on ? blank : ''}>${MAP_GO[on ? 0 : 1]}</a>` +
-    `<a class="btn mapalt" href="${on ? om : gm}" data-gm="${gm}" data-om="${om}"${on ? '' : blank}>${MAP_ALT[on ? 0 : 1]}</a>` +
-    `<a class="btn" href="https://earth.google.com/web/search/${q}" target="_blank" rel="noopener">Google Earth</a>`;
+    `<a class="btn mapearth${on ? '' : ' hidden'}" href="https://earth.google.com/web/search/${q}" target="_blank" rel="noopener">Google Earth</a>`;
 }
 function syncMapButtons() {                          // the connection changed: every map button on the page swaps with it
-  const on = navigator.onLine !== false;
-  const set = (a, web, text) => { a.href = web ? a.dataset.gm : a.dataset.om; a.textContent = text; if (web) { a.target = '_blank'; a.rel = 'noopener'; } else { a.removeAttribute('target'); a.removeAttribute('rel'); } };
-  document.querySelectorAll('a.mapgo').forEach((a) => set(a, on, MAP_GO[on ? 0 : 1]));
-  document.querySelectorAll('a.mapalt').forEach((a) => set(a, !on, MAP_ALT[on ? 0 : 1]));
+  const on = Net.on;
+  document.querySelectorAll('a.mapgo').forEach((a) => {
+    a.href = on ? a.dataset.gm : a.dataset.om; a.textContent = MAP_GO[on ? 0 : 1];
+    if (on) { a.target = '_blank'; a.rel = 'noopener'; } else { a.removeAttribute('target'); a.removeAttribute('rel'); }
+  });
+  document.querySelectorAll('a.mapearth').forEach((a) => a.classList.toggle('hidden', !on));
 }
-window.addEventListener('online', syncMapButtons);
-window.addEventListener('offline', syncMapButtons);
+/* Is there really internet? navigator.onLine only knows whether the phone is connected to something. So the app fetches its
+   own small version.json past the cache (sw.js lets "probe=" requests straight through to the network) and reads it: a
+   hotel's sign-in page answers too, but not with this file. Asked when the app opens or comes back, when the connection
+   changes, and every 15 seconds while a map button is on a screen that is showing. */
+const Net = {
+  on: navigator.onLine !== false, at: 0, asking: null, timer: null,
+  set(on) { Net.at = Date.now(); if (Net.on === on) return; Net.on = on; syncMapButtons(); },
+  ask() {
+    if (navigator.onLine === false) { Net.set(false); return Promise.resolve(false); }
+    if (Net.asking) return Net.asking;
+    const giveUp = new Promise((res) => setTimeout(() => res(null), 4000));
+    const got = fetch('./version.json?probe=' + Date.now(), { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((v) => !!(v && v.label)).catch(() => false);
+    Net.asking = Promise.race([got, giveUp]).then((ok) => { Net.asking = null; Net.set(ok === true); return Net.on; });
+    return Net.asking;
+  },
+  wanted() {                                         // a map button was just drawn: keep the answer fresh while one is on show
+    if (Date.now() - Net.at > 15000) Net.ask();
+    if (Net.timer) return;
+    Net.timer = setInterval(() => {
+      if (document.hidden) return;
+      const showing = [].some.call(document.querySelectorAll('a.mapgo'), (a) => a.offsetParent !== null);
+      if (showing) Net.ask(); else { clearInterval(Net.timer); Net.timer = null; }
+    }, 15000);
+  },
+};
+window.addEventListener('online', () => Net.ask());
+window.addEventListener('offline', () => Net.set(false));
+document.addEventListener('visibilitychange', () => { if (!document.hidden) Net.ask(); });
 function mapsLink(lat, lon, label) {
   if (lat == null || lat === '') return '';
   return `<div class="row">${mapButtons(lat, lon, label)}</div>`;
 }
 const isMontreal = (s) => /montr[eé]al/i.test(String(s || ''));
+/* ---- the Book's one way of writing things down (21 Nov 2026)
+   Andy: "less text walls and more simple coloured text for different info, like addresses one colour, property names
+   another... a consistent formula across the different info tabs." Every Book screen says the same kind of thing the
+   same way:
+     a name (a place, a property, a carrier)    ikName   teal, bold
+     an address                                 ikAddr   violet, after 📍
+     a date or a time                           ikTime   amber, after 🕒
+     a phone number                             ikPhone  a tap-to-call link, after 📞
+     a booking code, a seat, a PIN              ikCode   a small chip in fixed-width type, after 🔖
+     notes and how-to text                      note     grey and smaller, under a fold when there is a lot of it
+   A card is its heading, then one line per fact (fact), then the long text under a fold (fold). What is over (a stay we
+   have left, a move that has gone, a day that has passed) folds down to one line, and the entry that matters now carries
+   data-now: show() scrolls the list to it. */
+const fact = (icon, html, cls) => (html ? `<div class="fact${cls ? ' ' + cls : ''}"><span class="fi" aria-hidden="true">${icon}</span><span class="fv">${html}</span></div>` : '');
+const lbl = (t) => `<span class="lbl">${esc(t)}</span> `;
+const ikName = (t) => `<span class="ik-name">${esc(t)}</span>`;
+const ikTime = (t) => `<span class="ik-time">${nl(t)}</span>`;
+const ikCode = (t) => (t === undefined || t === null || String(t) === '' ? '' : `<span class="ik-code">${esc(t)}</span>`);
+const ikAddr = (t) => fact('📍', t ? `<span class="ik-addr">${esc(t)}</span>` : '');
+const ikPhone = (t) => fact('📞', t ? tel(t) : '');
+const note = (label, text) => (text ? `<div class="ik-note">${label ? `<b>${esc(label)}</b>` : ''}${tel(text).replace(/\n/g, '<br>')}</div>` : '');
+const fold = (label, inner, open) => (inner ? `<details class="fold"${open ? ' open' : ''}><summary>${esc(label)}</summary><div class="fold-in">${inner}</div></details>` : '');
+const cityTag = (city) => `<span class="citytag" style="background: var(--c-${Quests.CITY_KEY[city] || 'home'})">${Quests.CITY_EMOJI[city] || '📍'} ${esc(city)}</span>`;
+const inkKey = () => `<div class="inkkey" aria-hidden="true"><span class="ik-name">Names</span><span class="ik-addr">📍 Addresses</span><span class="ik-time">🕒 Dates and times</span><span>📞 <a>Phones</a></span><span>🔖 <span class="ik-code">Codes</span></span></div>`;
+/* A booking code is typed into airline and hotel sites again and again: a tap on one copies it (21 Nov 2026). */
+function copyText(t) {
+  const old = () => { try { const ta = document.createElement('textarea'); ta.value = t; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove(); return ok; } catch (e) { return false; } };
+  if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(t).then(() => true, old);
+  return Promise.resolve(old());
+}
+document.addEventListener('click', (e) => {
+  const c = e.target && e.target.closest ? e.target.closest('.ik-code') : null;
+  if (!c || c.closest('.inkkey') || c.dataset.busy) return;
+  const text = c.textContent;
+  copyText(text).then((ok) => {
+    if (!ok) return;
+    c.dataset.busy = '1'; c.classList.add('copied'); c.textContent = '✓ copied';
+    setTimeout(() => { c.textContent = text; c.classList.remove('copied'); delete c.dataset.busy; }, 1100);
+  });
+});
+/* open a list at one entry (a search result, the "next up" tile): the screen, then that card, opened if it is folded */
+function jumpTo(screen, id) {
+  show(screen);
+  const t = id ? document.getElementById(id) : null;
+  if (!t) return;
+  if (t.tagName === 'DETAILS') t.open = true;
+  let y = 0; for (let n = t; n && n !== document.body; n = n.offsetParent) y += n.offsetTop;
+  const top = $('#top');
+  window.scrollTo(0, Math.max(0, y - (top ? top.offsetHeight : 0) - 10));
+  t.classList.add('found'); setTimeout(() => t.classList.remove('found'), 1600);
+}
+/* ---- search the Book (21 Nov 2026): one box for "pharmacy", a hotel's name, a booking code
+   Everything the Book shows goes into one list of entries (built when the box is first used, from the trip data that
+   is already open): what it is, a title, a line under it, the words to match, and where a tap goes. Every word typed
+   must be in the entry; accents and capitals do not matter. The Vault is not searched: it is locked. */
+const plain = (t) => String(t == null ? '' : t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+let bookIndex = null, bookIndexFor = null;
+function buildBookIndex() {
+  const F = S.family, out = [];
+  const add = (kind, icon, title, sub, words, go) => out.push({ kind, icon, title: String(title || ''), sub: String(sub || ''), hay: plain([kind, title, sub].concat(words).join(' ')), go });
+  F.days.forEach((d) => add('Day', '📅', `${d.label} · ${d.where}`, String(d.plan || '').split('\n')[0], [d.sleep, d.plan, d.travel, d.heads_up], () => jumpTo('days', 'day-' + d.date)));
+  (F.events || []).forEach((e) => add('Event', '🎟️', e.event, `${fmtDate(e.date)} · ${e.time || ''}`, [e.venue, e.who, e.seats], () => jumpTo('days', 'day-' + e.date)));
+  F.stays.forEach((st) => add('Stay', '🛏️', st.property, `${st.city} · ${fmtDate(st.checkin_date)} → ${fmtDate(st.checkout_date)}`, [st.address, st.address_ja, st.phone, st.conf, st.notes, st.arrive, st.leave], () => jumpTo('stays', 'stay-' + st.n)));
+  F.moves.forEach((m, i) => add('Move', moveGlyph(m.mode), `${m.frm} → ${m.to}`, `${m.label} · ${m.depart} · ${m.carrier}`, [m.ref, m.seats, m.notes, m.check, m.status], () => jumpTo('moves', 'move-' + i)));
+  (F.transfers || []).forEach((t) => add('Transfer', '🚆', t.route, `${t.label} · ${t.time || ''}`, [t.how, t.status], () => jumpTo('moves', 'transfers')));
+  (F.taxi_cards || []).forEach((c) => add('Taxi card', '🚕', c.title_en, c.address_en, [c.name_ja, c.name_fr, c.address_ja, c.notes, c.base], () => openTaxiCard(c)));
+  (F.phrases || []).forEach((ph) => add('Phrase', '🗣️', ph.en, ph.ja || ph.fr || '', [ph.romaji, ph.say], () => jumpTo('taxi', 'phrases')));
+  (F.gates || []).forEach((g) => add('To do', '✅', g.what, [g.label, g.when].filter(Boolean).join(' · '), [g.where, g.need, g.priority, g.status], () => show('gates')));
+  for (const [cc, E] of Object.entries(F.emergency || {})) {
+    const where = COUNTRY_LABEL[cc] || E.name || cc, num = () => openNumbers();
+    (E.numbers || []).forEach((n) => add('Number', '📞', n.who, `${n.phone} · ${where}`, [n.ref], num));
+    (E.hospitals || []).forEach((h) => add('Hospital', '🏥', h.name, h.address_en, [h.phone, h.notes, h.base, where, 'doctor emergency sick'], num));
+    (E.pharmacies || []).forEach((h) => add('Pharmacy', '💊', h.name, h.address_en, [h.phone, h.hours, h.notes, h.base, where, 'chemist medicine'], num));
+    (E.health_lines || []).forEach((h) => add('Health line', '📞', h.name, `${h.number} · ${h.region || where}`, [h.hours, 'nurse advice'], num));
+    (E.consulates_verified || []).concat(E.consulates || []).forEach((c) => add('Consulate', '🏛️', c.who || c.name, c.address_en || c.phone, [c.phone, c.ref, c.hours, where, 'embassy australian'], num));
+    (E.insurers || []).forEach((c) => add('Insurance', '🛡️', c.who, c.phone, [c.ref, 'insurer claim'], num));
+  }
+  const P = F.protocols || {};
+  for (const [id, title, words] of [['lost_kid', 'Lost kid', 'missing child'], ['sick', 'Sick or hurt', 'ill injured doctor'], ['phone_stolen', 'Phone stolen', 'lost phone sim'], ['pace', 'PACE: how we find each other', 'contact plan']]) if (P[id]) add('Protocol', '📋', title, 'Protocols', [words, JSON.stringify(P[id])], () => show(id === 'sick' ? 'sos' : 'protocols'));
+  (P.disasters || []).forEach((d) => add('Protocol', '⚠️', d.title, 'SOS · disasters', [(d.steps || []).join(' ')], () => show('sos')));
+  return out;
+}
+function searchBook(q) {
+  if (!bookIndex || bookIndexFor !== S.family) { bookIndex = buildBookIndex(); bookIndexFor = S.family; }
+  const words = plain(q).split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const hits = bookIndex.filter((e) => words.every((w) => e.hay.indexOf(w) >= 0));
+  /* best first: the more of the words are in the title the better, and a place to sleep or a way to travel before a day that mentions it */
+  const WEIGHT = { Stay: 5, Move: 5, 'Taxi card': 4, Event: 4, Hospital: 4, Pharmacy: 4, Day: 1 };
+  const score = (e) => { const t = plain(e.title); return words.filter((w) => t.indexOf(w) >= 0).length * 10 + (WEIGHT[e.kind] || 3); };
+  return hits.map((e, i) => [score(e), i, e]).sort((a, b) => b[0] - a[0] || a[1] - b[1]).slice(0, 40).map((x) => x[2]);
+}
+/* the list scrolls to the entry marked data-now, just under the header (Andy: "users need to scroll a long way to find the current dates entry") */
+function scrollToNow(root) {
+  const t = root && root.querySelector('[data-now]');
+  if (!t) return;
+  let y = 0; for (let n = t; n && n !== document.body; n = n.offsetParent) y += n.offsetTop;
+  const top = $('#top'), bn = $('#banner');
+  const head = (top ? top.offsetHeight : 0) + (bn && !bn.classList.contains('hidden') ? bn.offsetHeight : 0);
+  window.scrollTo(0, Math.max(0, y - head - 10));
+}
 const moveGlyph = (mode) => (/train|rail|shinkansen/i.test(mode || '') ? '🚆' : /coach|bus/i.test(mode || '') ? '🚌' : '✈️');   // one move's picture, everywhere (Home, Postcards, the globe)
 /* One phrase card. Japanese cards carry ja + romaji, French cards (Montréal) fr + a plain pronunciation line. */
 function phraseCard(p, show) {
@@ -170,6 +298,10 @@ function show(screen, fromHistory) {
   S.screen = screen;
   if (screen !== 'settings') S.setupOpen = false;    // the grandparents' PIN-gated set-up closes with Settings
   window.scrollTo(0, 0);
+  if (screen === 'days') renderDays();               // drawn afresh, so "today", "now" and "next" are right at the tap, then scrolled to
+  if (screen === 'moves') renderMoves();
+  if (screen === 'stays') renderStays();
+  if (screen === 'days' || screen === 'moves' || screen === 'stays') scrollToNow(el);
   if (screen === 'sos') renderSOS();
   if (screen === 'home') renderHome();
   if (screen === 'quests') Quests.renderQuests();
@@ -366,6 +498,26 @@ async function makeGuestCopy() {                     // a parent phone, behind t
     } catch (e) { if (!e || e.name !== 'AbortError') Media.saveDownload(file, file.name); }
   };
 }
+/* The trip book (book.js): made here, then handed over by a tap of its own, because the share sheet only opens straight
+   after a tap and collecting the pictures takes a while. */
+async function makeTripBook() {
+  const b = $('#opt-book'), msg = $('#book-msg');
+  if (!b || !window.TripBook || b.disabled) return;
+  b.disabled = true; msg.textContent = 'Collecting the postcards…';
+  let file = null;
+  try { file = await TripBook.make((done, total) => { const m = $('#book-msg'); if (m) m.textContent = `Collecting pictures: ${done} of ${total}…`; }); }
+  catch (e) { const m = $('#book-msg'); if (m) m.textContent = 'Could not make the book: ' + ((e && e.message) || e); const bb = $('#opt-book'); if (bb) bb.disabled = false; return; }
+  const box = $('#book-msg'); if (!box) return;
+  const mb = file.size / 1048576;
+  box.innerHTML = `<div>Ready: ${mb < 1 ? Math.round(file.size / 1024) + ' KB' : mb.toFixed(1) + ' MB'}.</div><button class="btn primary block" id="book-save">📤 Save the trip book</button><div class="tiny muted">Keep it somewhere safe (Files, Drive, email to yourself). Open it in a browser and use Print, then Save as PDF, for a printable book.</div>`;
+  const bb = $('#opt-book'); if (bb) bb.disabled = false;
+  $('#book-save').onclick = async () => {
+    try {
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: 'World Adventure trip book' });
+      else Media.saveDownload(file, file.name);
+    } catch (e) { if (!e || e.name !== 'AbortError') Media.saveDownload(file, file.name); }
+  };
+}
 function forgetQuestion() {                          // says what would be lost for good (15 Nov 2026)
   const up = Media.pendingCount(), orig = Media.originalsSummary().waiting, lost = [];
   if (up) lost.push(`${up} picture${up === 1 ? ' has' : 's have'} not been uploaded yet`);
@@ -524,7 +676,7 @@ function applyRoleChrome() {                         // 2 Nov 2026: the chrome f
   document.documentElement.dataset.nomap = hasMap() ? '0' : '1';       // 6 Nov 2026: the nav's Map and the globe entries go where they cannot run
   document.documentElement.dataset.noglobe = hasGlobe() ? '0' : '1';
   document.documentElement.dataset.guest = S.guest ? '1' : '0';
-  const ed = $('#top-edition'); if (ed) ed.textContent = S.guest ? ' · Guest' : Quests.isGrandDevice() ? ' · Grandparents' : ' · Family';
+  const ed = $('#top-edition'); if (ed) ed.textContent = S.guest ? 'Guest' : Quests.isGrandDevice() ? 'Grandparents' : 'Family';   // the dot between the two is the stylesheet's (wide screens only)
 }
 window.addEventListener('load', () => { if (S.family) { applyRoleChrome(); if (S.screen === 'home') renderHome(); } });   // the map modules finish loading after app.js; a quick unlock must not hide them by mistake
 let entered = false;
@@ -682,6 +834,10 @@ function renderHome() {
   html += `<div class="tiles">`;
   const landed = Quests.stampsReady(ctx);        // we have landed somewhere and nobody has stamped the passport yet
   if (landed.length) html += `<button class="tile ht wide stampt" data-go="passport"><span class="ico">${Quests.CITY_EMOJI[landed[0]] || '🛬'}</span><span class="tt">We made it to ${esc(landed.join(' and '))}!</span><span class="ts">Tap to stamp the passport${Quests.isParentDevice() ? '' : ' (Mum or Dad say yes)'}</span></button>`;
+  const nu = nextUp(ctx);
+  if (nu) html += `<button class="tile ht wide nextup${nu.mins <= 90 ? ' soon' : ''}" data-next="${esc(nu.screen)}" data-next-id="${esc(nu.id)}"><span class="ico">${nu.icon}</span><span class="tt">Next up · ${esc(untilText(nu.mins))}</span><span class="ts">${esc(nu.title)}</span><span class="ts small">${esc(nu.sub)}</span></button>`;
+  const fly = flyingSoon();
+  if (fly && parentish) html += `<button class="tile ht wide t8" data-fly="1"><span class="ico">🛫</span><span class="tt">Flying ${esc(fly)}: ready for airplane mode?</span><span class="ts small">Check what this phone has saved</span></button>`;
   if (ctx.stay) {
     html += `<button class="tile ht t1" data-go="stays"><span class="ico">🛏️</span><span class="tt">Tonight</span><span class="ts">${esc(ctx.stay.property)}</span><span class="ts small">${esc(ctx.stay.address)}</span></button>`;
   } else if (!ctx.before) {
@@ -710,9 +866,120 @@ function renderHome() {
   el.querySelectorAll('[data-day]').forEach((b) => b.onclick = () => openDay(b.dataset.day));
   el.querySelectorAll('[data-taxi]').forEach((b) => b.onclick = () => { if (b.dataset.taxi) openTaxiById(b.dataset.taxi); else show('taxi'); });
   el.querySelectorAll('[data-kid]').forEach((b) => b.onclick = () => openKidCard());
+  el.querySelectorAll('[data-next]').forEach((b) => b.onclick = () => jumpTo(b.dataset.next, b.dataset.nextId));
+  el.querySelectorAll('[data-fly]').forEach((b) => b.onclick = () => openFlyCheck());
   el.querySelectorAll('[data-call]').forEach((b) => b.onclick = () => openCalls(calls));
   wireGo(el);
   Journal.fill(el);                                // the little print on the Postcards tile (17 Nov 2026)
+}
+/* ---- "next up" on Home (21 Nov 2026): the next thing with a clock on it, and how long until then
+   A check-out or a check-in today, the next move, an event today: the soonest of them, if it is within two days. Times
+   are read on the clock of the place they happen in. The tile is redrawn with Home every minute (clockTick). */
+function minutesUntil(date, hhmm, tz) {
+  const t = String(hhmm || '').match(/(\d{1,2}):(\d{2})/), now = String(localTime(tz)).match(/(\d{1,2}):(\d{2})/);
+  if (!t || !now) return null;
+  return Quests.daysBetween(localDate(tz), date) * 1440 + (+t[1] * 60 + +t[2]) - (+now[1] * 60 + +now[2]);
+}
+function untilText(m) {
+  if (m <= 0) return 'now';
+  if (m < 60) return `in ${m} min`;
+  if (m < 1440) { const h = Math.floor(m / 60), r = m % 60; return `in ${h} h${r ? ' ' + r + ' min' : ''}`; }
+  return m < 2880 ? 'tomorrow' : `in ${Math.floor(m / 1440)} days`;
+}
+function nextUp(ctx) {
+  const F = S.family, out = [];
+  const add = (mins, icon, title, sub, screen, id) => { if (mins !== null && mins >= -5) out.push({ mins, icon, title, sub, screen, id }); };
+  for (const s of F.stays) {
+    const tz = tzOf(s.city), ld = localDate(tz);
+    if (s.checkout_date === ld) add(minutesUntil(ld, s.checkout_by, tz), '🧳', `Check out of ${s.property}`, `by ${s.checkout_by}`, 'stays', 'stay-' + s.n);
+    if (s.checkin_date === ld) add(minutesUntil(ld, s.checkin_from, tz), '🛏️', `Check in at ${s.property}`, `from ${s.checkin_from}`, 'stays', 'stay-' + s.n);
+  }
+  const nm = nextMove();
+  if (nm) add(minutesUntil(nm.date, nm.depart, tzOf(placeCity(nm.frm))), moveGlyph(nm.mode), `${nm.carrier.split('·')[0].trim()} to ${nm.to}`, `leaves ${nm.frm} at ${nm.depart}`, 'moves', 'move-' + F.moves.indexOf(nm));
+  for (const e of eventsOn(ctx.date)) add(minutesUntil(ctx.date, e.time, ctx.tz), '🎟️', e.event, `at ${e.time}${e.venue ? ' · ' + e.venue : ''}`, 'days', 'day-' + ctx.date);
+  out.sort((a, b) => a.mins - b.mins);
+  return out.length && out[0].mins <= 2880 ? out[0] : null;
+}
+/* ---- "Ready to fly?" (21 Nov 2026): what this phone has saved, looked at while there is still internet
+   The Book has it always; Home offers it when the next move is a flight within a day and a half. Each line is a check
+   this phone can make for itself: the app's own files, a newer build waiting, changes and pictures not yet sent or
+   fetched, the map of where we are going, and whether the phone has promised to keep the data. */
+function flyingSoon() {
+  const nm = nextMove();
+  if (!nm || moveGlyph(nm.mode) !== '✈️') return '';
+  const tz = tzOf(placeCity(nm.frm)), m = minutesUntil(nm.date, nm.depart, tz);
+  if (m === null || m > 36 * 60) return '';
+  const d = Quests.daysBetween(localDate(tz), nm.date);
+  return d <= 0 ? 'today' : d === 1 ? 'tomorrow' : 'soon';
+}
+async function flyChecks() {
+  const out = [], add = (state, title, detail, act, label) => out.push({ state, title, detail: detail || '', act: act || '', label: label || '' });
+  /* 1. the app itself */
+  let shell = false;
+  try {
+    if (window.caches && navigator.serviceWorker && navigator.serviceWorker.controller) {
+      const c = await caches.open('dossier-' + VERSION);
+      shell = true;
+      for (const u of ['./index.html', './app.js', './styles.css', './quests.js', './journal.js', './postcard.js', './media.js', './sync.js', './family.enc', './vault.enc']) if (!(await c.match(u))) { shell = false; break; }
+    }
+  } catch (e) { shell = false; }
+  if (shell) add('ok', 'The app is saved on this phone', 'It opens with no signal at all.');
+  else add('bad', 'The app is not saved on this phone yet', 'With internet: close it, open it again and give it a minute. Opening it from its Home screen icon helps the phone keep it.');
+  /* 2. a newer build */
+  const online = await Net.ask();
+  if (online) {
+    try { const v = await (await fetch('./version.json?probe=' + Date.now(), { cache: 'no-store' })).json(); if (v.label !== VERSION) add('warn', `A newer build (${v.label}) is waiting`, 'Update before you fly: the banner at the top of Home.'); else add('ok', 'This is the latest build', VERSION); }
+    catch (e) { add('info', 'Could not check for a newer build'); }
+  } else add('info', 'No internet right now', 'The lines below show what is already on the phone. Look again with internet to be sure nothing is waiting.');
+  /* 3. what has not been sent or fetched */
+  const sy = Sync.status();
+  if (sy.enabled) {
+    const up = Media.pendingCount();
+    if (sy.dirty || up) add('warn', `${[sy.dirty ? 'Scores and postcards' : '', up ? `${up} picture${up === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ')} not sent yet`, 'They are safe on this phone, but the others cannot see them until it syncs.', 'sync', 'Sync now');
+    else add('ok', 'Everything from this phone has been sent', sy.last ? 'Last sync ' + new Date(sy.last).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+    let missing = 0;
+    try { for (const m of Journal.index()) if (!(await Media.has(m.id))) missing++; } catch (e) { missing = 0; }
+    if (missing) add('warn', `${missing} picture${missing === 1 ? '' : 's'} from the others not on this phone`, 'Postcards show a grey box for them until they are fetched.', 'pics', 'Fetch them now');
+    else if (Media.enabled) add('ok', 'Every picture is on this phone');
+  } else add('info', 'This phone does not sync', 'What is written here stays here.');
+  /* 4. the map of where we are and where we are going */
+  const nm = nextMove(), ctx = currentContext(), want = [];
+  for (const c of [ctx.city, nm ? placeCity(nm.to) : null]) if (c && c !== 'Home' && COUNTRY[c] && COUNTRY[c] !== 'AU' && want.indexOf(c) < 0) want.push(c);
+  if (hasMap() && window.DossierMap.packReport) {
+    const packs = await window.DossierMap.packReport().catch(() => null);
+    if (packs) for (const city of want) {
+      const mine = packs.filter((k) => k.city === city);
+      if (!mine.length) continue;
+      const lack = mine.filter((k) => !k.have);
+      if (lack.length) add('warn', `The ${city} map is not on this phone`, `${lack.map((k) => k.title).join(', ')}: ${(lack.reduce((n, k) => n + (k.size || 0), 0) / 1e6).toFixed(0)} MB, best on Wi-Fi.`, 'map', 'Open the Map to download');
+      else add('ok', `The ${city} map is on this phone`);
+    }
+  }
+  if (want.length) add('info', 'Organic Maps is its own app', `Check in Organic Maps that ${want.join(' and ')} ${want.length === 1 ? 'is' : 'are'} downloaded: this app cannot look inside it.`);
+  /* 5. will the phone keep it? */
+  try { if (navigator.storage && navigator.storage.persisted) { if (await navigator.storage.persisted()) add('ok', 'The phone has promised to keep this data'); else add('warn', 'The phone may clear this data if it runs low on space', 'Adding the app to the Home screen (Settings) makes the phone keep it.'); } } catch (e) { /* cannot tell */ }
+  return out;
+}
+async function openFlyCheck() {
+  const ICON = { ok: '✅', warn: '⚠️', bad: '❌', info: 'ℹ️' };
+  openModal(`<h1 class="h1">🛫 Ready to fly?</h1><div id="fly-body"><div class="card">Checking this phone…</div></div>`);
+  const run = async () => {
+    const rows = await flyChecks(), body = $('#fly-body');
+    if (!body) return;                               // closed meanwhile
+    const todo = rows.filter((r) => r.state === 'warn' || r.state === 'bad').length;
+    body.innerHTML = `<div class="card flysum ${todo ? 'todo' : 'good'}">${todo ? `${todo} thing${todo === 1 ? '' : 's'} to sort out while there is still internet` : 'All set for airplane mode'}</div>` +
+      rows.map((r) => `<div class="flyrow ${r.state}"><span class="fi" aria-hidden="true">${ICON[r.state]}</span><div class="fv"><div class="ft">${esc(r.title)}</div>${r.detail ? `<div class="small muted">${esc(r.detail)}</div>` : ''}${r.act ? `<button class="btn small-btn" data-fly-act="${r.act}">${esc(r.label)}</button>` : ''}</div></div>`).join('') +
+      `<div class="row"><button class="btn" id="fly-again">Check again</button></div>`;
+    $('#fly-again').onclick = () => { body.innerHTML = '<div class="card">Checking this phone…</div>'; run(); };
+    body.querySelectorAll('[data-fly-act]').forEach((b) => b.onclick = async () => {
+      const a = b.dataset.flyAct;
+      if (a === 'map') { closeModal(); show('map'); return; }
+      b.disabled = true; b.textContent = 'Working…';
+      try { if (a === 'sync') await Sync.sync(); if (a === 'pics') await Journal.downloadAll((done, total) => { b.textContent = `Fetching ${done} of ${total}…`; }); } catch (e) { /* the next check says what is left */ }
+      run();
+    });
+  };
+  run();
 }
 function openCalls(calls) {
   let html = `<h1 class="h1">📞 Call</h1>`;
@@ -725,14 +992,32 @@ function openCalls(calls) {
 function renderBook() {                              // 3 Nov 2026: the reference shelf only, one screen of compact rows (Map, Quests, Passport and Settings live in the nav and the header)
   const items = [['days', '📅', 'Days', 'The plan, day by day'], ['moves', '✈️', 'Moves', 'Flights, trains, buses, taxis'], ['stays', '🛏️', 'Stays', 'Every bed, check-in times'],
     ['taxi', '🚕', 'Taxi cards', 'Japanese and French, phrases'], ['protocols', '📋', 'Protocols', 'Lost kid, PACE, phone stolen'], ['gates', '✅', 'Before we go', "Mum and Dad's to-do list"],
+    ['fly', '🛫', 'Ready to fly?', 'What this phone has saved for airplane mode'],
     ['where', '🌏', 'Where are we', 'The globe and the route'], ['vault', '🔒', 'Vault', 'PINs and document numbers']];
-  $('#screen-book').innerHTML = `<h1 class="h1">📖 Book</h1><div class="booklist">` + items.filter((i) => !(i[0] === 'vault' && settings.readerMode) && !(i[0] === 'where' && !hasGlobe())).map((i, k) => `<button class="bkrow c${k % 8}" data-go="${i[0]}"><span class="ico">${i[1]}</span><span class="bt"><span class="tt">${esc(i[2])}</span><span class="ts">${esc(i[3])}</span></span><span class="chev">›</span></button>`).join('') + `</div>`;
-  wireGo($('#screen-book'));
+  const shelf = items.filter((i) => !(i[0] === 'vault' && settings.readerMode) && !(i[0] === 'where' && !hasGlobe()) && !(i[0] === 'fly' && Quests.isGrandDevice())).map((i, k) => `<button class="bkrow c${k % 8}" data-go="${i[0]}"><span class="ico">${i[1]}</span><span class="bt"><span class="tt">${esc(i[2])}</span><span class="ts">${esc(i[3])}</span></span><span class="chev">›</span></button>`).join('');
+  $('#screen-book').innerHTML = `<h1 class="h1">📖 Book</h1>
+    <div class="booksearch"><input id="book-q" class="input" type="search" placeholder="Search: a hotel, a booking code, pharmacy…" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="search" aria-label="Search the Book" value="${esc(S.bookQ || '')}"></div>
+    <div id="book-hits"></div><div id="book-shelf">${inkKey()}<div class="booklist">${shelf}</div></div>`;
+  const q = $('#book-q'), hitsEl = $('#book-hits'), shelfEl = $('#book-shelf');
+  let hits = [];
+  const draw = () => {
+    S.bookQ = q.value;
+    const typed = q.value.trim().length > 0;
+    hits = typed ? searchBook(q.value) : [];
+    shelfEl.classList.toggle('hidden', typed);
+    hitsEl.innerHTML = !typed ? '' : hits.length ? `<div class="small muted hitcount">${hits.length === 40 ? 'The first 40 matches' : hits.length + (hits.length === 1 ? ' match' : ' matches')}</div>` + hits.map((h, i) => `<button class="bkrow hit" data-hit="${i}"><span class="ico">${h.icon}</span><span class="bt"><span class="tk">${esc(h.kind)}</span><span class="tt ik-name">${esc(h.title)}</span><span class="ts">${esc(h.sub)}</span></span><span class="chev">›</span></button>`).join('')
+      : `<div class="card">Nothing in the Book matches "${esc(q.value.trim())}". The Vault is not searched: it is locked.</div>`;
+  };
+  q.oninput = draw;
+  q.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); q.blur(); } };
+  hitsEl.onclick = (e) => { const b = e.target.closest('[data-hit]'); if (b && hits[+b.dataset.hit]) hits[+b.dataset.hit].go(); };
+  draw();
+  $('#screen-book').querySelectorAll('[data-go]').forEach((a) => a.onclick = (e) => { e.preventDefault(); if (a.dataset.go === 'fly') openFlyCheck(); else show(a.dataset.go); });
 }
 function renderGates() {
   const g = S.family.gates || [];
   $('#screen-gates').innerHTML = `<h1 class="h1">✅ Before we go</h1><p class="small muted">Open gates from the planner's Next Steps tab (Done ones drop off at the next build). Tick them off in the planner.</p>` +
-    (g.length ? `<ul class="list gates">` + g.map((x) => `<li><div><b>${esc(x.what)}</b> <span class="chip${/critical|high/i.test(x.priority) ? ' red' : ''}">${esc(x.priority || x.status)}</span></div><div class="small muted">${esc(x.label)}${x.when ? ' · ' + esc(x.when) : ''}${x.where ? ' · ' + esc(x.where) : ''}</div>${x.need ? `<div class="tiny muted">Need: ${esc(x.need)}</div>` : ''}</li>`).join('') + `</ul>` : `<div class="card">Nothing open. 🎉</div>`);
+    (g.length ? `<ul class="list gates">` + g.map((x) => `<li><div class="cardhead">${ikName(x.what)}<span class="chip${/critical|high/i.test(x.priority) ? ' red' : ''}">${esc(x.priority || x.status)}</span></div><div class="small muted">${esc(x.label)}</div>${fact('🕒', x.when ? ikTime(x.when) : '')}${ikAddr(x.where)}${note('Need', x.need)}</li>`).join('') + `</ul>` : `<div class="card">Nothing open. 🎉</div>`);
 }
 function wireGo(root) {
   root.querySelectorAll('[data-go]').forEach((a) => a.onclick = (e) => { e.preventDefault(); show(a.dataset.go); });
@@ -895,11 +1180,11 @@ function openNumbers() {
     const isHere = city === here, key = Quests.CITY_KEY[city] || 'home';
     html += `<details class="numbers-city" style="border-left-color: var(--c-${esc(key)})"${isHere ? ' open' : ''}><summary>${Quests.CITY_EMOJI[city] || '📍'} ${esc(city)} <span class="muted">· ${esc(E.country)}</span>${isHere ? '<span class="chip red">here</span>' : ''}</summary>`;
     html += kv(E.numbers.map((c) => [c.who, c.phone + (c.ref ? ' · ' + c.ref : '')]));
-    if (E.hospitals.length) html += `<div class="h3">Hospital for a sick child</div>` + E.hospitals.map((h) => `<div class="card"><b>${esc(h.name)}</b><div>${tel(h.address_en + ' · ' + h.phone + (h.open_24h ? ' · 24 h' : ''))}</div>${h.address_ja ? `<div class="ja">${esc(h.address_ja)}</div>` : ''}${coordLine(h.coord) ? `<div class="mono small">${coordLine(h.coord)}</div>` : ''}<div class="small muted">${esc(h.notes)}</div>${h.coord && h.coord.lat != null ? mapsLink(h.coord.lat, h.coord.lon, h.name) : ''}</div>`).join('');
-    if (E.pharmacies.length) html += `<div class="h3">Pharmacy at night</div>` + E.pharmacies.map((p) => `<div class="card"><b>${esc(p.name)}</b><div>${tel(p.address_en + ' · ' + p.phone + ' · ' + p.hours)}</div>${p.address_ja ? `<div class="ja">${esc(p.address_ja)}</div>` : ''}<div class="small muted">${tel(p.notes)}</div></div>`).join('');
+    if (E.hospitals.length) html += `<div class="h3">Hospital for a sick child</div>` + E.hospitals.map((h) => `<div class="card slim"><div class="cardhead">${ikName(h.name)}${h.open_24h ? '<span class="chip">24 h</span>' : ''}</div>${ikAddr(h.address_en)}${h.address_ja ? `<div class="ja ik-addr">${esc(h.address_ja)}</div>` : ''}${ikPhone(h.phone)}${note('', h.notes)}${h.coord && h.coord.lat != null ? mapsLink(h.coord.lat, h.coord.lon, h.name) : ''}</div>`).join('');
+    if (E.pharmacies.length) html += `<div class="h3">Pharmacy at night</div>` + E.pharmacies.map((p) => `<div class="card slim"><div class="cardhead">${ikName(p.name)}</div>${ikAddr(p.address_en)}${p.address_ja ? `<div class="ja ik-addr">${esc(p.address_ja)}</div>` : ''}${ikPhone(p.phone)}${fact('🕒', p.hours ? ikTime(p.hours) : '')}${note('', p.notes)}</div>`).join('');
     if (E.medicine.length) html += E.medicine.map((m) => `<div class="small muted">${esc(m)}</div>`).join('');
     if (E.health_lines.length) html += `<div class="h3">Health lines</div>` + kv(E.health_lines.map((h) => [h.name, `${h.number} · ${h.hours}`]));
-    if (E.consulates.length) html += `<div class="h3">Australian consulate</div>` + E.consulates.map((c) => `<div class="card">${c.who ? tel(`${c.who} — ${c.phone} · ${c.ref}`) : tel(`${c.name} — ${c.address_en} · ${c.phone} · ${c.hours}`)}${c.after_hours ? `<div class="small muted">${tel(c.after_hours)}</div>` : ''}</div>`).join('');
+    if (E.consulates.length) html += `<div class="h3">Australian consulate</div>` + E.consulates.map((c) => `<div class="card slim"><div class="cardhead">${ikName(c.who || c.name)}</div>${ikAddr(c.address_en)}${ikPhone(c.phone)}${fact('🕒', c.hours ? ikTime(c.hours) : '')}${note('', c.ref)}${note('After hours', c.after_hours)}</div>`).join('');
     if (E.insurers.length) html += `<div class="h3">Insurance</div>` + kv(E.insurers.map((c) => [c.who, c.phone + (c.ref ? ' · ' + c.ref : '')]));
     html += `</details>`;
   }
@@ -915,30 +1200,50 @@ function openTaxiById(id) { const c = (S.family.taxi_cards || []).find((x) => x.
 $('#btn-sos').onclick = () => { if (S.family) show('sos'); };
 
 function renderDays() {
-  const ctx = currentContext();
-  $('#screen-days').innerHTML = `<h1 class="h1">Days</h1>` + S.family.days.map((d) => `
-    <div class="card${d.date === ctx.date ? ' today-now' : ''}" id="day-${d.date}">
-      <div><b>${esc(d.label)}</b> <span class="muted">· ${esc(d.where)}</span>${d.date === ctx.date ? '<span class="chip red">today</span>' : ''}</div>
-      <div class="small muted">Sleep: ${esc(d.sleep)}</div>
-      <div>${nl(d.plan)}</div>
-      ${d.travel ? `<div class="small">${nl(d.travel)}</div>` : ''}
-      ${d.heads_up ? `<div class="small red">${nl(d.heads_up)}</div>` : ''}
-    </div>`).join('');
+  /* 21 Nov 2026: an agenda. One line per day under a heading per place; a tap opens the day. Today is open. */
+  const ctx = currentContext(), days = S.family.days;
+  const body = (d) => fact('🛏️', lbl('Sleep') + ikName(d.sleep)) + `<div class="plan">${nl(d.plan)}</div>` +
+    eventsOn(d.date).map((e) => fact('🎟️', (e.time ? ikTime(e.time) + ' ' : '') + ikName(e.event) + (e.venue ? ` <span class="muted">· ${esc(e.venue)}</span>` : ''))).join('') +
+    fact('🕒', d.travel ? ikTime(d.travel) : '') + fact('⚠️', d.heads_up ? nl(d.heads_up) : '', 'ik-warn');
+  let html = `<h1 class="h1">Days</h1>`, leg = null;
+  days.forEach((d, i) => {
+    const city = Quests.dayCity(d);
+    if (city !== leg) {
+      let j = i; while (j + 1 < days.length && Quests.dayCity(days[j + 1]) === city) j++;
+      html += `<div class="leghead">${cityTag(city)}<span class="muted small">${esc(fmtDate(d.date))}${j > i ? ' → ' + esc(fmtDate(days[j].date)) : ''}</span></div>`;
+      leg = city;
+    }
+    const today = d.date === ctx.date, past = d.date < ctx.date;
+    html += `<details class="card dayrow${past ? ' past' : ''}${today ? ' today-now' : ''}" id="day-${d.date}"${today ? ' data-now open' : ''}>
+      <summary><span class="when">${esc(d.label)}</span>${today ? '<span class="chip red">today</span>' : ''}${d.where !== city ? ikName(d.where) : ''}${eventsOn(d.date).length ? '<span class="dayflag">🎟️</span>' : ''}${d.heads_up ? '<span class="dayflag">⚠️</span>' : ''}<span class="daypeek">${esc(String(d.plan || '').split('\n')[0])}</span></summary>${body(d)}</details>`;
+  });
+  $('#screen-days').innerHTML = html;
 }
 
 function renderMoves() {
-  const F = S.family;
+  const F = S.family, nm = nextMove(), iNext = nm ? F.moves.indexOf(nm) : F.moves.length;
+  const body = (m, open) => {
+    const parts = m.carrier.split('·'), num = parts.slice(1).join('·').trim();
+    const bags = m.bags ? (m.bags.checked.startsWith('None') || m.bags.checked.startsWith('—') ? 'No checked bags. Cabin: ' + m.bags.cabin : `Checked: ${m.bags.checked} (${m.bags.who}). Cabin: ${m.bags.cabin}`) : '';
+    const checkin = m.checkin ? `Opens ${m.checkin.opens}. Closes ${m.checkin.closes}.${m.checkin.bag_drop_closes ? ' Bag drop closes ' + m.checkin.bag_drop_closes + '.' : ''}` : '';
+    return fact('🕒', ikTime(`${m.depart} → ${m.arrive}`), 'bigfact') +
+      fact('🔖', [num ? lbl(/train|rail|shinkansen|coach|bus/i.test(m.mode || '') ? 'Service' : 'Flight') + ikCode(num) : '', m.ref ? lbl('Booking') + ikCode(m.ref) : ''].filter(Boolean).join(' ')) +
+      fact('💺', m.seats ? lbl('Seats') + ikCode(m.seats) : '') +
+      fact('⚠️', m.check ? lbl('Check') + esc(m.check) : '', 'ik-warn') +
+      fold('Bags, check-in and notes', note('Bags', bags) + note('Check-in', checkin) + note('Notes', m.notes), open);
+  };
   let html = `<h1 class="h1">Moves</h1><p class="small muted">All times local. Clock times only; check the boarding pass where it says "check".</p>`;
-  html += F.moves.map((m) => `<div class="card">
-    <div><b>${esc(m.label)} · ${esc(m.carrier.split('·')[0].trim())}</b> <span class="chip">${esc(m.status)}</span></div>
-    <div class="big">${esc(m.frm)} → ${esc(m.to)}</div>
-    <div class="big">${esc(m.depart)} → ${esc(m.arrive)}</div>
-    ${kv([['Carrier', m.carrier], ['Booking', m.ref], ['Seats', m.seats],
-      ['Bags', m.bags ? (m.bags.checked.startsWith('None') || m.bags.checked.startsWith('—') ? 'No checked bags. Cabin: ' + m.bags.cabin : `Checked: ${m.bags.checked} (${m.bags.who}). Cabin: ${m.bags.cabin}`) : ''],
-      ['Check-in', m.checkin ? `Opens ${m.checkin.opens}. Closes ${m.checkin.closes}.${m.checkin.bag_drop_closes ? ' Bag drop closes ' + m.checkin.bag_drop_closes + '.' : ''}` : ''],
-      ['Check', m.check], ['Notes', m.notes]])}
-  </div>`).join('');
-  html += `<h2 class="h2">Getting between airports, stations and beds</h2><div class="card"><table class="t"><tr><th>When</th><th>From → to</th><th>How</th></tr>${F.transfers.map((t) => `<tr><td>${esc(t.label)}<br>${esc(t.time)}</td><td>${esc(t.route)}</td><td>${esc(t.how)}<br><span class="chip">${esc(t.status)}</span></td></tr>`).join('')}</table></div>`;
+  html += F.moves.map((m, i) => {
+    const who = `${moveGlyph(m.mode)} ${esc(m.carrier.split('·')[0].trim())}`, route = `${ikName(m.frm)} <span class="arrow">→</span> ${ikName(m.to)}`;
+    if (i < iNext) return `<details class="card past" id="move-${i}"><summary><span class="when">${esc(m.label)}</span><span class="muted">${moveGlyph(m.mode)}</span>${route}</summary>${body(m)}</details>`;
+    const next = m === nm;
+    return `<div class="card${next ? ' today-now' : ''}" id="move-${i}"${next ? ' data-now' : ''}>
+      <div class="cardhead"><span class="when">${esc(m.label)}</span><span class="muted">${who}</span><span class="chip">${esc(m.status)}</span>${next ? '<span class="chip red">next</span>' : ''}</div>
+      <div class="cardtitle">${route}</div>${body(m)}</div>`;
+  }).join('');
+  html += `<h2 class="h2" id="transfers">Getting between airports, stations and beds</h2>` + F.transfers.map((t) => `<div class="card slim">
+    <div class="cardhead"><span class="when">${esc(t.label)}</span>${ikTime(t.time)}<span class="chip">${esc(t.status)}</span></div>
+    <div>${ikName(t.route)}</div>${note('', t.how)}</div>`).join('');
   $('#screen-moves').innerHTML = html;
 }
 
@@ -947,15 +1252,24 @@ function renderStays() {
   if (!F) return;                                    // hidden before unlock: lockVault() calls this with nothing to draw
   const pins = {};
   if (S.vault) for (const p of S.vault.stay_pins) pins[p.conf] = p.pin;
-  $('#screen-stays').innerHTML = `<h1 class="h1">Stays</h1>` + F.stays.map((s) => `<div class="card">
-    <div><b>${esc(s.city)}</b> · ${esc(s.property)} <span class="chip">${esc(s.nights)} nights</span></div>
-    <div>${esc(s.address)}</div>${s.address_ja ? `<div class="ja">${esc(s.address_ja)}</div>` : ''}
-    ${kv([['Check-in', `${fmtDate(s.checkin_date)}, ${s.checkin_from}`], ['Check-out', `${fmtDate(s.checkout_date)} by ${s.checkout_by}`],
-      ['You arrive', s.arrive], ['You leave', s.leave], ['Phone', s.phone],
-      ['Confirmation', s.conf + (pins[s.conf] ? ` · PIN <b>${esc(pins[s.conf])}</b>` : ' · PIN in the vault'), true],
-      ['Where', coordLine(s.coord) ? coordLine(s.coord) : ''], ['Notes', s.notes]])}
-    ${s.coord && s.coord.lat != null ? mapsLink(s.coord.lat, s.coord.lon, s.property) : ''}
-  </div>`).join('');
+  const today = currentContext().date;
+  /* the one that matters now: the bed for tonight, else the next one */
+  const now = F.stays.find((s) => s.checkin_date <= today && today < s.checkout_date) || F.stays.find((s) => s.checkin_date > today) || null;
+  const body = (s, open) =>
+    ikAddr(s.address) + (s.address_ja ? `<div class="ja ik-addr">${esc(s.address_ja)}</div>` : '') +
+    fact('🕒', lbl('In') + ikTime(`${fmtDate(s.checkin_date)} · from ${s.checkin_from}`)) +
+    fact('🕒', lbl('Out') + ikTime(`${fmtDate(s.checkout_date)} · by ${s.checkout_by}`)) +
+    ikPhone(s.phone) +
+    fact('🔖', (s.conf ? lbl('Confirmation') + ikCode(s.conf) + ' ' : '') + (pins[s.conf] ? lbl('PIN') + ikCode(pins[s.conf]) : '<span class="muted small">PIN in the vault</span>')) +
+    fold('Getting there, leaving and notes', note('You arrive', s.arrive) + note('You leave', s.leave) + note('Notes', s.notes) + (coordLine(s.coord) ? `<div class="ik-note"><b>Where</b><span class="mono">${coordLine(s.coord)}</span></div>` : ''), open) +
+    (s.coord && s.coord.lat != null ? mapsLink(s.coord.lat, s.coord.lon, s.property) : '');
+  $('#screen-stays').innerHTML = `<h1 class="h1">Stays</h1>` + F.stays.map((s) => {
+    if (s.checkout_date <= today) return `<details class="card past" id="stay-${esc(s.n)}"><summary>${cityTag(s.city)}${ikName(s.property)}<span class="muted small">${esc(fmtDate(s.checkin_date))} → ${esc(fmtDate(s.checkout_date))}</span></summary>${body(s)}</details>`;
+    const mark = s === now ? (s.checkin_date <= today ? 'now' : 'next') : '';
+    return `<div class="card${mark ? ' today-now' : ''}" id="stay-${esc(s.n)}"${mark ? ' data-now' : ''}>
+      <div class="cardhead">${cityTag(s.city)}<span class="chip">${esc(s.nights)} night${String(s.nights) === '1' ? '' : 's'}</span>${mark ? `<span class="chip red">${mark}</span>` : ''}</div>
+      <div class="cardtitle">${ikName(s.property)}</div>${body(s)}</div>`;
+  }).join('');
 }
 
 function currentTheme() { const t = settings.theme; if (t !== 'auto') return t; return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; }
@@ -979,7 +1293,7 @@ function renderMap() {
       <div id="map-card" class="hidden"></div></div>
     <div class="row" id="map-filter"><button class="pill" id="map-packs-toggle">Offline maps</button></div>
     <div id="map-packs" class="card hidden"></div>
-    <p class="tiny muted">Directions and search: use the Organic Maps or Google Maps buttons on a place. Location is used only on this screen and never stored.</p>
+    <p class="tiny muted">Directions and search: use the map button on a place. It opens Google Maps while there is internet and Organic Maps when there is not. Location is used only on this screen and never stored.</p>
     <h2 class="h2">All places as a list</h2>`;
   for (const layer of ['stays', 'moves', 'venues', 'emergency', 'rally']) {
     if (!layers[layer]) continue;
@@ -999,9 +1313,9 @@ function renderTaxi() {
   const BASE_LABEL = { vancouver: 'Vancouver', whistler: 'Whistler', toronto: 'Toronto', 'new york': 'New York', newyork: 'New York', 'montréal': 'Montréal', montreal: 'Montréal', tokyo: 'Tokyo', nagoya: 'Nagoya' };
   const bases = [...new Set(F.taxi_cards.map((c) => c.base))].filter((b) => BASE_LABEL[b]);
   let html = `<h1 class="h1">Taxi cards</h1><div class="pill-row" id="taxi-pills"><button class="pill active" data-base="all">All</button>${bases.map((b) => `<button class="pill" data-base="${esc(b)}">${esc(BASE_LABEL[b])}</button>`).join('')}</div>`;
-  html += `<ul class="list" id="taxi-list">` + F.taxi_cards.map((c, i) => `<li data-base="${esc(c.base)}"><a href="#" data-card="${i}"><b>${esc(c.title_en)}</b></a>${c.name_ja ? `<div class="ja">${esc(c.name_ja)}</div>` : ''}${c.name_fr ? `<div class="fr">${esc(c.name_fr)}</div>` : ''}<div class="small muted">${esc(c.address_en)}</div></li>`).join('') + `</ul>`;
+  html += `<ul class="list" id="taxi-list">` + F.taxi_cards.map((c, i) => `<li data-base="${esc(c.base)}"><a href="#" data-card="${i}" class="taxi-go">${ikName(c.title_en)}<span class="chev">›</span></a>${c.name_ja ? `<div class="ja">${esc(c.name_ja)}</div>` : ''}${c.name_fr ? `<div class="fr">${esc(c.name_fr)}</div>` : ''}${ikAddr(c.address_en)}</li>`).join('') + `</ul>`;
   const lang0 = isMontreal(currentContext().city) ? 'fr' : 'ja';
-  html += `<h2 class="h2">Phrases</h2><div class="pill-row" id="phrase-pills"><button class="pill${lang0 === 'ja' ? ' active' : ''}" data-lang="ja">Japanese</button><button class="pill${lang0 === 'fr' ? ' active' : ''}" data-lang="fr">French · Montréal</button></div>`;
+  html += `<h2 class="h2" id="phrases">Phrases</h2><div class="pill-row" id="phrase-pills"><button class="pill${lang0 === 'ja' ? ' active' : ''}" data-lang="ja">Japanese</button><button class="pill${lang0 === 'fr' ? ' active' : ''}" data-lang="fr">French · Montréal</button></div>`;
   html += (F.phrases || []).map((p) => phraseCard(p, lang0)).join('');
   $('#screen-taxi').innerHTML = html;
   $('#phrase-pills').onclick = (e) => { const b = e.target.closest('.pill'); if (!b) return; document.querySelectorAll('#phrase-pills .pill').forEach((p) => p.classList.toggle('active', p === b)); document.querySelectorAll('#screen-taxi .phrase').forEach((c) => c.classList.toggle('hidden', c.dataset.lang !== b.dataset.lang)); };
@@ -1018,7 +1332,7 @@ function renderProtocols() {
   html += `<div class="card"><div class="h2">Lost kid</div>${stepsList(lk.steps, currentContext())}<div><b>Say:</b> ${esc(lk.say_en || '')}</div>${lk.say_ja ? `<div class="ja">${esc(lk.say_ja)}</div>` : ''}${lk.say_romaji ? `<div class="tiny muted">${esc(lk.say_romaji)}</div>` : ''}${lk.say_fr ? `<div class="fr">${esc(lk.say_fr)} <span class="tiny muted">Montréal</span></div>` : ''}<div class="red">${esc(lk.morning_photo || '')}</div></div>`;
   html += `<div class="card small muted">Sick or hurt, the kids' own "I'm lost" card, disasters and the say-it lines are under SOS.</div>`;
   html += `<div class="card"><div class="h2">PACE</div>${kv([['Primary', pace.primary], ['Alternate', pace.alternate], ['Contingency', pace.contingency], ['Emergency', pace.emergency]])}</div>`;
-  html += `<div class="card"><div class="h2">Phone stolen</div><div class="h3">iPhone (Sarah)</div><ol class="steps">${(ps.ios || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol><div class="h3">Android (Andy)</div><ol class="steps">${(ps.android || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol>${kv([['SIM / eSIM', ps.sim], ['Wallet cards', ps.wallet_lock], ['Sign out everywhere', ps.sign_out_everywhere]])}${(ps.carriers || []).some((c) => c && (c.carrier || c.lost_sim)) ? `<div class="h3">Carriers: suspend the SIM or eSIM</div>${kv((ps.carriers || []).filter((c) => c && (c.carrier || c.lost_sim)).map((c) => [c.who || 'Carrier', [c.carrier, c.lost_sim].filter(Boolean).join(' · ') + (c.note ? ' — ' + c.note : '')]))}` : ''}<div class="small muted">Card-lock list: in the vault.</div></div>`;
+  html += `<div class="card"><div class="h2">Phone stolen</div>${fold('iPhone (Sarah)', (ps.ios || []).length ? `<ol class="steps">${ps.ios.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>` : '')}${fold('Android (Andy)', (ps.android || []).length ? `<ol class="steps">${ps.android.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>` : '')}${kv([['SIM / eSIM', ps.sim], ['Wallet cards', ps.wallet_lock], ['Sign out everywhere', ps.sign_out_everywhere]])}${(ps.carriers || []).some((c) => c && (c.carrier || c.lost_sim)) ? `<div class="h3">Carriers: suspend the SIM or eSIM</div>${kv((ps.carriers || []).filter((c) => c && (c.carrier || c.lost_sim)).map((c) => [c.who || 'Carrier', [c.carrier, c.lost_sim].filter(Boolean).join(' · ') + (c.note ? ' — ' + c.note : '')]))}` : ''}<div class="small muted">Card-lock list: in the vault.</div></div>`;
   $('#screen-protocols').innerHTML = html;
 }
 
@@ -1115,7 +1429,7 @@ function renderSettings() {
     <div class="card"><div class="h3">Home screen</div>${isInstalled() ? '<div class="small">✓ Running from its own Home screen icon.</div>' : Install.done ? '<div class="small">✓ Added. Open it from the Home screen icon from now on.</div>' : Install.evt ? '<button class="btn primary block" id="opt-install">📲 Add World Adventure to the Home screen</button>' : installHelpHtml()}</div>
     ${grand ? '' : `<div class="card"><div class="h3">Confetti, animations and sounds</div><p class="small muted">Auto follows the phone's reduce-motion setting.</p><div class="row">${['auto', 'on', 'off'].map((t) => `<button class="pill${FX.pref() === t ? ' active' : ''}" data-fx="${t}">${t}</button>`).join('')}<button class="btn small-btn" id="opt-fx-demo">Show me a level-up</button></div>${switchRow('sound', 'Sound effects: ticks, badges and level-ups')}<p class="tiny muted">Sounds start after the first tap on the phone; the ring/silent switch still wins.</p></div>`}
     ${Quests.settingsCard()}
-    <div class="card"><div class="h3">Photos and postcards</div><div class="small" id="media-msg">…</div>${Media.canSaveOriginals() ? `<div class="small" id="orig-msg"></div>` : ''}<div class="row"><button class="btn" id="opt-media-dl">Download all pictures (Wi-Fi)</button>${Quests.isParentDevice() || Quests.isGrandDevice() ? `<button class="btn" id="opt-media-clear">Clear downloaded pictures here</button>` : ''}${Media.canSaveOriginals() ? `<button class="btn" id="opt-orig-save">Save originals to Photos</button><button class="btn" id="opt-orig-clear">Clear saved originals</button>` : ''}</div>${Media.origHint() ? `<p class="tiny muted">${esc(Media.origHint())}</p>` : ''}${Quests.isParentDevice() ? `<div class="row"><button class="btn danger" id="opt-stories-wipe">🗑️ Delete all postcards and photos (everyone)</button></div>` : ''}<div class="tiny mono" id="diag" style="margin-top:8px;white-space:pre-wrap"></div><div class="row"><button class="btn" id="opt-errlog-clear">Clear error log</button></div><p class="tiny muted">Pictures and pages are encrypted on this device and in the cloud; only an unlocked device can open them, so the PIN and the phone's own lock are the gate.</p></div>
+    <div class="card"><div class="h3">Photos and postcards</div><div class="small" id="media-msg">…</div>${grand ? '' : `<div class="tripbook"><button class="btn" id="opt-book">📕 Make the trip book</button><div class="small muted" id="book-msg">Every postcard, picture and score in one file to keep. It opens in any browser and prints as a book.</div></div>`}${Media.canSaveOriginals() ? `<div class="small" id="orig-msg"></div>` : ''}<div class="row"><button class="btn" id="opt-media-dl">Download all pictures (Wi-Fi)</button>${Quests.isParentDevice() || Quests.isGrandDevice() ? `<button class="btn" id="opt-media-clear">Clear downloaded pictures here</button>` : ''}${Media.canSaveOriginals() ? `<button class="btn" id="opt-orig-save">Save originals to Photos</button><button class="btn" id="opt-orig-clear">Clear saved originals</button>` : ''}</div>${Media.origHint() ? `<p class="tiny muted">${esc(Media.origHint())}</p>` : ''}${Quests.isParentDevice() ? `<div class="row"><button class="btn danger" id="opt-stories-wipe">🗑️ Delete all postcards and photos (everyone)</button></div>` : ''}<div class="tiny mono" id="diag" style="margin-top:8px;white-space:pre-wrap"></div><div class="row"><button class="btn" id="opt-errlog-clear">Clear error log</button></div><p class="tiny muted">Pictures and pages are encrypted on this device and in the cloud; only an unlocked device can open them, so the PIN and the phone's own lock are the gate.</p></div>
     ${Quests.isGrandDevice() ? '' : `<div class="card"><div class="h3">Preview a trip day</div><p class="small muted">Shows the app as it will look on that day: for testing and the dry run. Tap a day; tap Now to come back.</p>${previewPicker()}</div>`}
     ${grand && !setup ? `<div class="card"><div class="h3">Set-up</div><p class="small muted">Whose phone this is, opening without a PIN, and forgetting the device sit behind the device PIN, so nothing changes by accident.</p><div class="row"><button class="btn" id="opt-setup">Open set-up (asks for the PIN)</button></div></div>` : ''}
     ${setup ? Quests.roleCard() : ''}
@@ -1162,6 +1476,7 @@ function renderSettings() {
   const usage = Media.enabled ? Media.usage().catch(() => null) : Promise.resolve(null);   // read once for the line here and the readout below
   if (!Media.enabled) mm.textContent = 'This build has no picture key: pages and photos need a full rebuild of the app.';
   else usage.then((u) => { if (u && mm.isConnected !== false) mm.textContent = `${u.count} picture${u.count === 1 ? '' : 's'} on this device · ${u.bytes < 1048576 ? Math.round(u.bytes / 1024) + ' KB' : (u.bytes / 1048576).toFixed(1) + ' MB'}${u.pending ? ` · ${u.pending} waiting to upload` : ''}`; });
+  const ob = $('#opt-book'); if (ob) ob.onclick = makeTripBook;
   const dl = $('#opt-media-dl'); if (dl) dl.onclick = () => { dl.disabled = true; Journal.downloadAll((done, total) => { mm.textContent = `Downloading ${done} of ${total}…`; }).then(() => { dl.disabled = false; renderSettings(); }); };
   const om = $('#orig-msg');
   if (om) { const o = Media.originalsSummary(), mb = (n) => (n / 1048576).toFixed(1) + ' MB'; om.textContent = `${o.waiting} full-size original${o.waiting === 1 ? '' : 's'} not yet in Photos (${mb(o.waitingBytes)})${o.saved ? ` · ${o.saved} already saved (${mb(o.savedBytes)}) can be cleared` : ''}`; if (o.waiting) Media.prepareOriginals(); }   // made ready now, so the button's tap can open the share sheet itself (iOS refuses it after a wait)

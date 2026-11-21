@@ -190,7 +190,7 @@ window.Quests = (() => {
     { id: 'maple-cookie', e: '🍪', t: 'Try a maple cookie', pts: 10, where: 'Vancouver', kind: 'food' },
     { id: 'toboggan', e: '🛷', t: 'Toboggan run', pts: 15, where: 'Whistler', kind: 'explore' },
     { id: 'magic-castle', e: '🏰', t: 'Magic Castle play area', pts: 10, where: 'Whistler', kind: 'explore' },
-    { id: 'bear-sign', e: '🐻', t: 'Spot a bear sign while the bears sleep', pts: 10, where: 'Whistler', kind: 'explore' },
+    { id: 'bear-sign', e: '🐻', t: 'Find a bear warning sign (the bears are asleep for winter)', pts: 10, where: 'Whistler', kind: 'explore' },
     { id: 'fondue', e: '🫕', t: 'Fondue or raclette dinner', pts: 15, where: 'Whistler', kind: 'food' },
     { id: 'sharks', e: '🦈', t: "Ripley's shark tunnel", pts: 15, where: 'Toronto', kind: 'explore' },
     { id: 'xmas-market', e: '🎄', t: 'Christmas market', pts: 15, where: 'Toronto', kind: 'explore' },

@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
 <link rel="stylesheet" href="styles.css">
 </head>
-<body data-version="v53" data-built="21 Nov 2026">
+<body data-version="v54" data-built="21 Nov 2026">
 
 <header class="top" id="top">
   <div class="brand"><span class="logo" aria-hidden="true">🌏</span><span class="stamp">World Adventure<span class="edition" id="top-edition"> · Family</span></span></div>
@@ -40,7 +40,7 @@
         <input id="pp" type="password" inputmode="text" autocapitalize="none" autocorrect="off" spellcheck="false" class="input" required>
         <button class="btn primary" type="submit">Unlock</button>
         <p class="tiny muted" id="pp-note">Typed once per device. After this, the 4-digit PIN.</p>
-        <p class="tiny guest-door"><button type="button" class="linkish" id="guest-open">Looking around as a guest? Open the guest file</button><input type="file" id="guest-file" class="hidden" aria-hidden="true" tabindex="-1"></p>
+        <p class="tiny guest-door"><button type="button" class="linkish" id="guest-open">Looking around as a guest?</button> <button type="button" class="linkish hidden" id="guest-pick">Have a guest file instead? Choose it</button><input type="file" id="guest-file" class="hidden" aria-hidden="true" tabindex="-1"></p>
       </form>
       <form id="form-setpin" class="hidden" autocomplete="off">
         <label class="label" for="pin1">Choose a 4-digit PIN for this device</label>

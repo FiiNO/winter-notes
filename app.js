@@ -169,6 +169,74 @@ const note = (label, text) => (text ? `<div class="ik-note">${label ? `<b>${esc(
 const fold = (label, inner, open) => (inner ? `<details class="fold"${open ? ' open' : ''}><summary>${esc(label)}</summary><div class="fold-in">${inner}</div></details>` : '');
 const cityTag = (city) => `<span class="citytag" style="background: var(--c-${Quests.CITY_KEY[city] || 'home'})">${Quests.CITY_EMOJI[city] || '📍'} ${esc(city)}</span>`;
 const inkKey = () => `<div class="inkkey" aria-hidden="true"><span class="ik-name">Names</span><span class="ik-addr">📍 Addresses</span><span class="ik-time">🕒 Dates and times</span><span>📞 <a>Phones</a></span><span>🔖 <span class="ik-code">Codes</span></span></div>`;
+/* A booking code is typed into airline and hotel sites again and again: a tap on one copies it (21 Nov 2026). */
+function copyText(t) {
+  const old = () => { try { const ta = document.createElement('textarea'); ta.value = t; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove(); return ok; } catch (e) { return false; } };
+  if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(t).then(() => true, old);
+  return Promise.resolve(old());
+}
+document.addEventListener('click', (e) => {
+  const c = e.target && e.target.closest ? e.target.closest('.ik-code') : null;
+  if (!c || c.closest('.inkkey') || c.dataset.busy) return;
+  const text = c.textContent;
+  copyText(text).then((ok) => {
+    if (!ok) return;
+    c.dataset.busy = '1'; c.classList.add('copied'); c.textContent = '✓ copied';
+    setTimeout(() => { c.textContent = text; c.classList.remove('copied'); delete c.dataset.busy; }, 1100);
+  });
+});
+/* open a list at one entry (a search result, the "next up" tile): the screen, then that card, opened if it is folded */
+function jumpTo(screen, id) {
+  show(screen);
+  const t = id ? document.getElementById(id) : null;
+  if (!t) return;
+  if (t.tagName === 'DETAILS') t.open = true;
+  let y = 0; for (let n = t; n && n !== document.body; n = n.offsetParent) y += n.offsetTop;
+  const top = $('#top');
+  window.scrollTo(0, Math.max(0, y - (top ? top.offsetHeight : 0) - 10));
+  t.classList.add('found'); setTimeout(() => t.classList.remove('found'), 1600);
+}
+/* ---- search the Book (21 Nov 2026): one box for "pharmacy", a hotel's name, a booking code
+   Everything the Book shows goes into one list of entries (built when the box is first used, from the trip data that
+   is already open): what it is, a title, a line under it, the words to match, and where a tap goes. Every word typed
+   must be in the entry; accents and capitals do not matter. The Vault is not searched: it is locked. */
+const plain = (t) => String(t == null ? '' : t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+let bookIndex = null, bookIndexFor = null;
+function buildBookIndex() {
+  const F = S.family, out = [];
+  const add = (kind, icon, title, sub, words, go) => out.push({ kind, icon, title: String(title || ''), sub: String(sub || ''), hay: plain([kind, title, sub].concat(words).join(' ')), go });
+  F.days.forEach((d) => add('Day', '📅', `${d.label} · ${d.where}`, String(d.plan || '').split('\n')[0], [d.sleep, d.plan, d.travel, d.heads_up], () => jumpTo('days', 'day-' + d.date)));
+  (F.events || []).forEach((e) => add('Event', '🎟️', e.event, `${fmtDate(e.date)} · ${e.time || ''}`, [e.venue, e.who, e.seats], () => jumpTo('days', 'day-' + e.date)));
+  F.stays.forEach((st) => add('Stay', '🛏️', st.property, `${st.city} · ${fmtDate(st.checkin_date)} → ${fmtDate(st.checkout_date)}`, [st.address, st.address_ja, st.phone, st.conf, st.notes, st.arrive, st.leave], () => jumpTo('stays', 'stay-' + st.n)));
+  F.moves.forEach((m, i) => add('Move', moveGlyph(m.mode), `${m.frm} → ${m.to}`, `${m.label} · ${m.depart} · ${m.carrier}`, [m.ref, m.seats, m.notes, m.check, m.status], () => jumpTo('moves', 'move-' + i)));
+  (F.transfers || []).forEach((t) => add('Transfer', '🚆', t.route, `${t.label} · ${t.time || ''}`, [t.how, t.status], () => jumpTo('moves', 'transfers')));
+  (F.taxi_cards || []).forEach((c) => add('Taxi card', '🚕', c.title_en, c.address_en, [c.name_ja, c.name_fr, c.address_ja, c.notes, c.base], () => openTaxiCard(c)));
+  (F.phrases || []).forEach((ph) => add('Phrase', '🗣️', ph.en, ph.ja || ph.fr || '', [ph.romaji, ph.say], () => jumpTo('taxi', 'phrases')));
+  (F.gates || []).forEach((g) => add('To do', '✅', g.what, [g.label, g.when].filter(Boolean).join(' · '), [g.where, g.need, g.priority, g.status], () => show('gates')));
+  for (const [cc, E] of Object.entries(F.emergency || {})) {
+    const where = COUNTRY_LABEL[cc] || E.name || cc, num = () => openNumbers();
+    (E.numbers || []).forEach((n) => add('Number', '📞', n.who, `${n.phone} · ${where}`, [n.ref], num));
+    (E.hospitals || []).forEach((h) => add('Hospital', '🏥', h.name, h.address_en, [h.phone, h.notes, h.base, where, 'doctor emergency sick'], num));
+    (E.pharmacies || []).forEach((h) => add('Pharmacy', '💊', h.name, h.address_en, [h.phone, h.hours, h.notes, h.base, where, 'chemist medicine'], num));
+    (E.health_lines || []).forEach((h) => add('Health line', '📞', h.name, `${h.number} · ${h.region || where}`, [h.hours, 'nurse advice'], num));
+    (E.consulates_verified || []).concat(E.consulates || []).forEach((c) => add('Consulate', '🏛️', c.who || c.name, c.address_en || c.phone, [c.phone, c.ref, c.hours, where, 'embassy australian'], num));
+    (E.insurers || []).forEach((c) => add('Insurance', '🛡️', c.who, c.phone, [c.ref, 'insurer claim'], num));
+  }
+  const P = F.protocols || {};
+  for (const [id, title, words] of [['lost_kid', 'Lost kid', 'missing child'], ['sick', 'Sick or hurt', 'ill injured doctor'], ['phone_stolen', 'Phone stolen', 'lost phone sim'], ['pace', 'PACE: how we find each other', 'contact plan']]) if (P[id]) add('Protocol', '📋', title, 'Protocols', [words, JSON.stringify(P[id])], () => show(id === 'sick' ? 'sos' : 'protocols'));
+  (P.disasters || []).forEach((d) => add('Protocol', '⚠️', d.title, 'SOS · disasters', [(d.steps || []).join(' ')], () => show('sos')));
+  return out;
+}
+function searchBook(q) {
+  if (!bookIndex || bookIndexFor !== S.family) { bookIndex = buildBookIndex(); bookIndexFor = S.family; }
+  const words = plain(q).split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const hits = bookIndex.filter((e) => words.every((w) => e.hay.indexOf(w) >= 0));
+  /* best first: the more of the words are in the title the better, and a place to sleep or a way to travel before a day that mentions it */
+  const WEIGHT = { Stay: 5, Move: 5, 'Taxi card': 4, Event: 4, Hospital: 4, Pharmacy: 4, Day: 1 };
+  const score = (e) => { const t = plain(e.title); return words.filter((w) => t.indexOf(w) >= 0).length * 10 + (WEIGHT[e.kind] || 3); };
+  return hits.map((e, i) => [score(e), i, e]).sort((a, b) => b[0] - a[0] || a[1] - b[1]).slice(0, 40).map((x) => x[2]);
+}
 /* the list scrolls to the entry marked data-now, just under the header (Andy: "users need to scroll a long way to find the current dates entry") */
 function scrollToNow(root) {
   const t = root && root.querySelector('[data-now]');
@@ -588,7 +656,7 @@ function applyRoleChrome() {                         // 2 Nov 2026: the chrome f
   document.documentElement.dataset.nomap = hasMap() ? '0' : '1';       // 6 Nov 2026: the nav's Map and the globe entries go where they cannot run
   document.documentElement.dataset.noglobe = hasGlobe() ? '0' : '1';
   document.documentElement.dataset.guest = S.guest ? '1' : '0';
-  const ed = $('#top-edition'); if (ed) ed.textContent = S.guest ? ' · Guest' : Quests.isGrandDevice() ? ' · Grandparents' : ' · Family';
+  const ed = $('#top-edition'); if (ed) ed.textContent = S.guest ? 'Guest' : Quests.isGrandDevice() ? 'Grandparents' : 'Family';   // the dot between the two is the stylesheet's (wide screens only)
 }
 window.addEventListener('load', () => { if (S.family) { applyRoleChrome(); if (S.screen === 'home') renderHome(); } });   // the map modules finish loading after app.js; a quick unlock must not hide them by mistake
 let entered = false;
@@ -746,6 +814,10 @@ function renderHome() {
   html += `<div class="tiles">`;
   const landed = Quests.stampsReady(ctx);        // we have landed somewhere and nobody has stamped the passport yet
   if (landed.length) html += `<button class="tile ht wide stampt" data-go="passport"><span class="ico">${Quests.CITY_EMOJI[landed[0]] || '🛬'}</span><span class="tt">We made it to ${esc(landed.join(' and '))}!</span><span class="ts">Tap to stamp the passport${Quests.isParentDevice() ? '' : ' (Mum or Dad say yes)'}</span></button>`;
+  const nu = nextUp(ctx);
+  if (nu) html += `<button class="tile ht wide nextup${nu.mins <= 90 ? ' soon' : ''}" data-next="${esc(nu.screen)}" data-next-id="${esc(nu.id)}"><span class="ico">${nu.icon}</span><span class="tt">Next up · ${esc(untilText(nu.mins))}</span><span class="ts">${esc(nu.title)}</span><span class="ts small">${esc(nu.sub)}</span></button>`;
+  const fly = flyingSoon();
+  if (fly && parentish) html += `<button class="tile ht wide t8" data-fly="1"><span class="ico">🛫</span><span class="tt">Flying ${esc(fly)}: ready for airplane mode?</span><span class="ts small">Check what this phone has saved</span></button>`;
   if (ctx.stay) {
     html += `<button class="tile ht t1" data-go="stays"><span class="ico">🛏️</span><span class="tt">Tonight</span><span class="ts">${esc(ctx.stay.property)}</span><span class="ts small">${esc(ctx.stay.address)}</span></button>`;
   } else if (!ctx.before) {
@@ -774,9 +846,120 @@ function renderHome() {
   el.querySelectorAll('[data-day]').forEach((b) => b.onclick = () => openDay(b.dataset.day));
   el.querySelectorAll('[data-taxi]').forEach((b) => b.onclick = () => { if (b.dataset.taxi) openTaxiById(b.dataset.taxi); else show('taxi'); });
   el.querySelectorAll('[data-kid]').forEach((b) => b.onclick = () => openKidCard());
+  el.querySelectorAll('[data-next]').forEach((b) => b.onclick = () => jumpTo(b.dataset.next, b.dataset.nextId));
+  el.querySelectorAll('[data-fly]').forEach((b) => b.onclick = () => openFlyCheck());
   el.querySelectorAll('[data-call]').forEach((b) => b.onclick = () => openCalls(calls));
   wireGo(el);
   Journal.fill(el);                                // the little print on the Postcards tile (17 Nov 2026)
+}
+/* ---- "next up" on Home (21 Nov 2026): the next thing with a clock on it, and how long until then
+   A check-out or a check-in today, the next move, an event today: the soonest of them, if it is within two days. Times
+   are read on the clock of the place they happen in. The tile is redrawn with Home every minute (clockTick). */
+function minutesUntil(date, hhmm, tz) {
+  const t = String(hhmm || '').match(/(\d{1,2}):(\d{2})/), now = String(localTime(tz)).match(/(\d{1,2}):(\d{2})/);
+  if (!t || !now) return null;
+  return Quests.daysBetween(localDate(tz), date) * 1440 + (+t[1] * 60 + +t[2]) - (+now[1] * 60 + +now[2]);
+}
+function untilText(m) {
+  if (m <= 0) return 'now';
+  if (m < 60) return `in ${m} min`;
+  if (m < 1440) { const h = Math.floor(m / 60), r = m % 60; return `in ${h} h${r ? ' ' + r + ' min' : ''}`; }
+  return m < 2880 ? 'tomorrow' : `in ${Math.floor(m / 1440)} days`;
+}
+function nextUp(ctx) {
+  const F = S.family, out = [];
+  const add = (mins, icon, title, sub, screen, id) => { if (mins !== null && mins >= -5) out.push({ mins, icon, title, sub, screen, id }); };
+  for (const s of F.stays) {
+    const tz = tzOf(s.city), ld = localDate(tz);
+    if (s.checkout_date === ld) add(minutesUntil(ld, s.checkout_by, tz), '🧳', `Check out of ${s.property}`, `by ${s.checkout_by}`, 'stays', 'stay-' + s.n);
+    if (s.checkin_date === ld) add(minutesUntil(ld, s.checkin_from, tz), '🛏️', `Check in at ${s.property}`, `from ${s.checkin_from}`, 'stays', 'stay-' + s.n);
+  }
+  const nm = nextMove();
+  if (nm) add(minutesUntil(nm.date, nm.depart, tzOf(placeCity(nm.frm))), moveGlyph(nm.mode), `${nm.carrier.split('·')[0].trim()} to ${nm.to}`, `leaves ${nm.frm} at ${nm.depart}`, 'moves', 'move-' + F.moves.indexOf(nm));
+  for (const e of eventsOn(ctx.date)) add(minutesUntil(ctx.date, e.time, ctx.tz), '🎟️', e.event, `at ${e.time}${e.venue ? ' · ' + e.venue : ''}`, 'days', 'day-' + ctx.date);
+  out.sort((a, b) => a.mins - b.mins);
+  return out.length && out[0].mins <= 2880 ? out[0] : null;
+}
+/* ---- "Ready to fly?" (21 Nov 2026): what this phone has saved, looked at while there is still internet
+   The Book has it always; Home offers it when the next move is a flight within a day and a half. Each line is a check
+   this phone can make for itself: the app's own files, a newer build waiting, changes and pictures not yet sent or
+   fetched, the map of where we are going, and whether the phone has promised to keep the data. */
+function flyingSoon() {
+  const nm = nextMove();
+  if (!nm || moveGlyph(nm.mode) !== '✈️') return '';
+  const tz = tzOf(placeCity(nm.frm)), m = minutesUntil(nm.date, nm.depart, tz);
+  if (m === null || m > 36 * 60) return '';
+  const d = Quests.daysBetween(localDate(tz), nm.date);
+  return d <= 0 ? 'today' : d === 1 ? 'tomorrow' : 'soon';
+}
+async function flyChecks() {
+  const out = [], add = (state, title, detail, act, label) => out.push({ state, title, detail: detail || '', act: act || '', label: label || '' });
+  /* 1. the app itself */
+  let shell = false;
+  try {
+    if (window.caches && navigator.serviceWorker && navigator.serviceWorker.controller) {
+      const c = await caches.open('dossier-' + VERSION);
+      shell = true;
+      for (const u of ['./index.html', './app.js', './styles.css', './quests.js', './journal.js', './postcard.js', './media.js', './sync.js', './family.enc', './vault.enc']) if (!(await c.match(u))) { shell = false; break; }
+    }
+  } catch (e) { shell = false; }
+  if (shell) add('ok', 'The app is saved on this phone', 'It opens with no signal at all.');
+  else add('bad', 'The app is not saved on this phone yet', 'With internet: close it, open it again and give it a minute. Opening it from its Home screen icon helps the phone keep it.');
+  /* 2. a newer build */
+  const online = await Net.ask();
+  if (online) {
+    try { const v = await (await fetch('./version.json?probe=' + Date.now(), { cache: 'no-store' })).json(); if (v.label !== VERSION) add('warn', `A newer build (${v.label}) is waiting`, 'Update before you fly: the banner at the top of Home.'); else add('ok', 'This is the latest build', VERSION); }
+    catch (e) { add('info', 'Could not check for a newer build'); }
+  } else add('info', 'No internet right now', 'The lines below show what is already on the phone. Look again with internet to be sure nothing is waiting.');
+  /* 3. what has not been sent or fetched */
+  const sy = Sync.status();
+  if (sy.enabled) {
+    const up = Media.pendingCount();
+    if (sy.dirty || up) add('warn', `${[sy.dirty ? 'Scores and postcards' : '', up ? `${up} picture${up === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ')} not sent yet`, 'They are safe on this phone, but the others cannot see them until it syncs.', 'sync', 'Sync now');
+    else add('ok', 'Everything from this phone has been sent', sy.last ? 'Last sync ' + new Date(sy.last).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+    let missing = 0;
+    try { for (const m of Journal.index()) if (!(await Media.has(m.id))) missing++; } catch (e) { missing = 0; }
+    if (missing) add('warn', `${missing} picture${missing === 1 ? '' : 's'} from the others not on this phone`, 'Postcards show a grey box for them until they are fetched.', 'pics', 'Fetch them now');
+    else if (Media.enabled) add('ok', 'Every picture is on this phone');
+  } else add('info', 'This phone does not sync', 'What is written here stays here.');
+  /* 4. the map of where we are and where we are going */
+  const nm = nextMove(), ctx = currentContext(), want = [];
+  for (const c of [ctx.city, nm ? placeCity(nm.to) : null]) if (c && c !== 'Home' && COUNTRY[c] && COUNTRY[c] !== 'AU' && want.indexOf(c) < 0) want.push(c);
+  if (hasMap() && window.DossierMap.packReport) {
+    const packs = await window.DossierMap.packReport().catch(() => null);
+    if (packs) for (const city of want) {
+      const mine = packs.filter((k) => k.city === city);
+      if (!mine.length) continue;
+      const lack = mine.filter((k) => !k.have);
+      if (lack.length) add('warn', `The ${city} map is not on this phone`, `${lack.map((k) => k.title).join(', ')}: ${(lack.reduce((n, k) => n + (k.size || 0), 0) / 1e6).toFixed(0)} MB, best on Wi-Fi.`, 'map', 'Open the Map to download');
+      else add('ok', `The ${city} map is on this phone`);
+    }
+  }
+  if (want.length) add('info', 'Organic Maps is its own app', `Check in Organic Maps that ${want.join(' and ')} ${want.length === 1 ? 'is' : 'are'} downloaded: this app cannot look inside it.`);
+  /* 5. will the phone keep it? */
+  try { if (navigator.storage && navigator.storage.persisted) { if (await navigator.storage.persisted()) add('ok', 'The phone has promised to keep this data'); else add('warn', 'The phone may clear this data if it runs low on space', 'Adding the app to the Home screen (Settings) makes the phone keep it.'); } } catch (e) { /* cannot tell */ }
+  return out;
+}
+async function openFlyCheck() {
+  const ICON = { ok: '✅', warn: '⚠️', bad: '❌', info: 'ℹ️' };
+  openModal(`<h1 class="h1">🛫 Ready to fly?</h1><div id="fly-body"><div class="card">Checking this phone…</div></div>`);
+  const run = async () => {
+    const rows = await flyChecks(), body = $('#fly-body');
+    if (!body) return;                               // closed meanwhile
+    const todo = rows.filter((r) => r.state === 'warn' || r.state === 'bad').length;
+    body.innerHTML = `<div class="card flysum ${todo ? 'todo' : 'good'}">${todo ? `${todo} thing${todo === 1 ? '' : 's'} to sort out while there is still internet` : 'All set for airplane mode'}</div>` +
+      rows.map((r) => `<div class="flyrow ${r.state}"><span class="fi" aria-hidden="true">${ICON[r.state]}</span><div class="fv"><div class="ft">${esc(r.title)}</div>${r.detail ? `<div class="small muted">${esc(r.detail)}</div>` : ''}${r.act ? `<button class="btn small-btn" data-fly-act="${r.act}">${esc(r.label)}</button>` : ''}</div></div>`).join('') +
+      `<div class="row"><button class="btn" id="fly-again">Check again</button></div>`;
+    $('#fly-again').onclick = () => { body.innerHTML = '<div class="card">Checking this phone…</div>'; run(); };
+    body.querySelectorAll('[data-fly-act]').forEach((b) => b.onclick = async () => {
+      const a = b.dataset.flyAct;
+      if (a === 'map') { closeModal(); show('map'); return; }
+      b.disabled = true; b.textContent = 'Working…';
+      try { if (a === 'sync') await Sync.sync(); if (a === 'pics') await Journal.downloadAll((done, total) => { b.textContent = `Fetching ${done} of ${total}…`; }); } catch (e) { /* the next check says what is left */ }
+      run();
+    });
+  };
+  run();
 }
 function openCalls(calls) {
   let html = `<h1 class="h1">📞 Call</h1>`;
@@ -789,9 +972,27 @@ function openCalls(calls) {
 function renderBook() {                              // 3 Nov 2026: the reference shelf only, one screen of compact rows (Map, Quests, Passport and Settings live in the nav and the header)
   const items = [['days', '📅', 'Days', 'The plan, day by day'], ['moves', '✈️', 'Moves', 'Flights, trains, buses, taxis'], ['stays', '🛏️', 'Stays', 'Every bed, check-in times'],
     ['taxi', '🚕', 'Taxi cards', 'Japanese and French, phrases'], ['protocols', '📋', 'Protocols', 'Lost kid, PACE, phone stolen'], ['gates', '✅', 'Before we go', "Mum and Dad's to-do list"],
+    ['fly', '🛫', 'Ready to fly?', 'What this phone has saved for airplane mode'],
     ['where', '🌏', 'Where are we', 'The globe and the route'], ['vault', '🔒', 'Vault', 'PINs and document numbers']];
-  $('#screen-book').innerHTML = `<h1 class="h1">📖 Book</h1>${inkKey()}<div class="booklist">` + items.filter((i) => !(i[0] === 'vault' && settings.readerMode) && !(i[0] === 'where' && !hasGlobe())).map((i, k) => `<button class="bkrow c${k % 8}" data-go="${i[0]}"><span class="ico">${i[1]}</span><span class="bt"><span class="tt">${esc(i[2])}</span><span class="ts">${esc(i[3])}</span></span><span class="chev">›</span></button>`).join('') + `</div>`;
-  wireGo($('#screen-book'));
+  const shelf = items.filter((i) => !(i[0] === 'vault' && settings.readerMode) && !(i[0] === 'where' && !hasGlobe()) && !(i[0] === 'fly' && Quests.isGrandDevice())).map((i, k) => `<button class="bkrow c${k % 8}" data-go="${i[0]}"><span class="ico">${i[1]}</span><span class="bt"><span class="tt">${esc(i[2])}</span><span class="ts">${esc(i[3])}</span></span><span class="chev">›</span></button>`).join('');
+  $('#screen-book').innerHTML = `<h1 class="h1">📖 Book</h1>
+    <div class="booksearch"><input id="book-q" class="input" type="search" placeholder="Search: a hotel, a booking code, pharmacy…" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="search" aria-label="Search the Book" value="${esc(S.bookQ || '')}"></div>
+    <div id="book-hits"></div><div id="book-shelf">${inkKey()}<div class="booklist">${shelf}</div></div>`;
+  const q = $('#book-q'), hitsEl = $('#book-hits'), shelfEl = $('#book-shelf');
+  let hits = [];
+  const draw = () => {
+    S.bookQ = q.value;
+    const typed = q.value.trim().length > 0;
+    hits = typed ? searchBook(q.value) : [];
+    shelfEl.classList.toggle('hidden', typed);
+    hitsEl.innerHTML = !typed ? '' : hits.length ? `<div class="small muted hitcount">${hits.length === 40 ? 'The first 40 matches' : hits.length + (hits.length === 1 ? ' match' : ' matches')}</div>` + hits.map((h, i) => `<button class="bkrow hit" data-hit="${i}"><span class="ico">${h.icon}</span><span class="bt"><span class="tk">${esc(h.kind)}</span><span class="tt ik-name">${esc(h.title)}</span><span class="ts">${esc(h.sub)}</span></span><span class="chev">›</span></button>`).join('')
+      : `<div class="card">Nothing in the Book matches "${esc(q.value.trim())}". The Vault is not searched: it is locked.</div>`;
+  };
+  q.oninput = draw;
+  q.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); q.blur(); } };
+  hitsEl.onclick = (e) => { const b = e.target.closest('[data-hit]'); if (b && hits[+b.dataset.hit]) hits[+b.dataset.hit].go(); };
+  draw();
+  $('#screen-book').querySelectorAll('[data-go]').forEach((a) => a.onclick = (e) => { e.preventDefault(); if (a.dataset.go === 'fly') openFlyCheck(); else show(a.dataset.go); });
 }
 function renderGates() {
   const g = S.family.gates || [];
@@ -979,17 +1180,24 @@ function openTaxiById(id) { const c = (S.family.taxi_cards || []).find((x) => x.
 $('#btn-sos').onclick = () => { if (S.family) show('sos'); };
 
 function renderDays() {
-  const ctx = currentContext();
+  /* 21 Nov 2026: an agenda. One line per day under a heading per place; a tap opens the day. Today is open. */
+  const ctx = currentContext(), days = S.family.days;
   const body = (d) => fact('🛏️', lbl('Sleep') + ikName(d.sleep)) + `<div class="plan">${nl(d.plan)}</div>` +
+    eventsOn(d.date).map((e) => fact('🎟️', (e.time ? ikTime(e.time) + ' ' : '') + ikName(e.event) + (e.venue ? ` <span class="muted">· ${esc(e.venue)}</span>` : ''))).join('') +
     fact('🕒', d.travel ? ikTime(d.travel) : '') + fact('⚠️', d.heads_up ? nl(d.heads_up) : '', 'ik-warn');
-  $('#screen-days').innerHTML = `<h1 class="h1">Days</h1>` + S.family.days.map((d) => {
+  let html = `<h1 class="h1">Days</h1>`, leg = null;
+  days.forEach((d, i) => {
     const city = Quests.dayCity(d);
-    if (d.date < ctx.date) return `<details class="card past" id="day-${d.date}"><summary><span class="when">${esc(d.label)}</span>${ikName(d.where)}</summary>${body(d)}</details>`;
-    const today = d.date === ctx.date;
-    return `<div class="card${today ? ' today-now' : ''}" id="day-${d.date}"${today ? ' data-now' : ''}>
-      <div class="cardhead"><span class="when">${esc(d.label)}</span>${cityTag(city)}${today ? '<span class="chip red">today</span>' : ''}</div>
-      <div class="cardtitle">${ikName(d.where)}</div>${body(d)}</div>`;
-  }).join('');
+    if (city !== leg) {
+      let j = i; while (j + 1 < days.length && Quests.dayCity(days[j + 1]) === city) j++;
+      html += `<div class="leghead">${cityTag(city)}<span class="muted small">${esc(fmtDate(d.date))}${j > i ? ' → ' + esc(fmtDate(days[j].date)) : ''}</span></div>`;
+      leg = city;
+    }
+    const today = d.date === ctx.date, past = d.date < ctx.date;
+    html += `<details class="card dayrow${past ? ' past' : ''}${today ? ' today-now' : ''}" id="day-${d.date}"${today ? ' data-now open' : ''}>
+      <summary><span class="when">${esc(d.label)}</span>${today ? '<span class="chip red">today</span>' : ''}${d.where !== city ? ikName(d.where) : ''}${eventsOn(d.date).length ? '<span class="dayflag">🎟️</span>' : ''}${d.heads_up ? '<span class="dayflag">⚠️</span>' : ''}<span class="daypeek">${esc(String(d.plan || '').split('\n')[0])}</span></summary>${body(d)}</details>`;
+  });
+  $('#screen-days').innerHTML = html;
 }
 
 function renderMoves() {
@@ -1007,13 +1215,13 @@ function renderMoves() {
   let html = `<h1 class="h1">Moves</h1><p class="small muted">All times local. Clock times only; check the boarding pass where it says "check".</p>`;
   html += F.moves.map((m, i) => {
     const who = `${moveGlyph(m.mode)} ${esc(m.carrier.split('·')[0].trim())}`, route = `${ikName(m.frm)} <span class="arrow">→</span> ${ikName(m.to)}`;
-    if (i < iNext) return `<details class="card past"><summary><span class="when">${esc(m.label)}</span><span class="muted">${moveGlyph(m.mode)}</span>${route}</summary>${body(m)}</details>`;
+    if (i < iNext) return `<details class="card past" id="move-${i}"><summary><span class="when">${esc(m.label)}</span><span class="muted">${moveGlyph(m.mode)}</span>${route}</summary>${body(m)}</details>`;
     const next = m === nm;
-    return `<div class="card${next ? ' today-now' : ''}"${next ? ' data-now' : ''}>
+    return `<div class="card${next ? ' today-now' : ''}" id="move-${i}"${next ? ' data-now' : ''}>
       <div class="cardhead"><span class="when">${esc(m.label)}</span><span class="muted">${who}</span><span class="chip">${esc(m.status)}</span>${next ? '<span class="chip red">next</span>' : ''}</div>
       <div class="cardtitle">${route}</div>${body(m)}</div>`;
   }).join('');
-  html += `<h2 class="h2">Getting between airports, stations and beds</h2>` + F.transfers.map((t) => `<div class="card slim">
+  html += `<h2 class="h2" id="transfers">Getting between airports, stations and beds</h2>` + F.transfers.map((t) => `<div class="card slim">
     <div class="cardhead"><span class="when">${esc(t.label)}</span>${ikTime(t.time)}<span class="chip">${esc(t.status)}</span></div>
     <div>${ikName(t.route)}</div>${note('', t.how)}</div>`).join('');
   $('#screen-moves').innerHTML = html;
@@ -1036,9 +1244,9 @@ function renderStays() {
     fold('Getting there, leaving and notes', note('You arrive', s.arrive) + note('You leave', s.leave) + note('Notes', s.notes) + (coordLine(s.coord) ? `<div class="ik-note"><b>Where</b><span class="mono">${coordLine(s.coord)}</span></div>` : ''), open) +
     (s.coord && s.coord.lat != null ? mapsLink(s.coord.lat, s.coord.lon, s.property) : '');
   $('#screen-stays').innerHTML = `<h1 class="h1">Stays</h1>` + F.stays.map((s) => {
-    if (s.checkout_date <= today) return `<details class="card past"><summary>${cityTag(s.city)}${ikName(s.property)}<span class="muted small">${esc(fmtDate(s.checkin_date))} → ${esc(fmtDate(s.checkout_date))}</span></summary>${body(s)}</details>`;
+    if (s.checkout_date <= today) return `<details class="card past" id="stay-${esc(s.n)}"><summary>${cityTag(s.city)}${ikName(s.property)}<span class="muted small">${esc(fmtDate(s.checkin_date))} → ${esc(fmtDate(s.checkout_date))}</span></summary>${body(s)}</details>`;
     const mark = s === now ? (s.checkin_date <= today ? 'now' : 'next') : '';
-    return `<div class="card${mark ? ' today-now' : ''}"${mark ? ' data-now' : ''}>
+    return `<div class="card${mark ? ' today-now' : ''}" id="stay-${esc(s.n)}"${mark ? ' data-now' : ''}>
       <div class="cardhead">${cityTag(s.city)}<span class="chip">${esc(s.nights)} night${String(s.nights) === '1' ? '' : 's'}</span>${mark ? `<span class="chip red">${mark}</span>` : ''}</div>
       <div class="cardtitle">${ikName(s.property)}</div>${body(s)}</div>`;
   }).join('');
@@ -1087,7 +1295,7 @@ function renderTaxi() {
   let html = `<h1 class="h1">Taxi cards</h1><div class="pill-row" id="taxi-pills"><button class="pill active" data-base="all">All</button>${bases.map((b) => `<button class="pill" data-base="${esc(b)}">${esc(BASE_LABEL[b])}</button>`).join('')}</div>`;
   html += `<ul class="list" id="taxi-list">` + F.taxi_cards.map((c, i) => `<li data-base="${esc(c.base)}"><a href="#" data-card="${i}" class="taxi-go">${ikName(c.title_en)}<span class="chev">›</span></a>${c.name_ja ? `<div class="ja">${esc(c.name_ja)}</div>` : ''}${c.name_fr ? `<div class="fr">${esc(c.name_fr)}</div>` : ''}${ikAddr(c.address_en)}</li>`).join('') + `</ul>`;
   const lang0 = isMontreal(currentContext().city) ? 'fr' : 'ja';
-  html += `<h2 class="h2">Phrases</h2><div class="pill-row" id="phrase-pills"><button class="pill${lang0 === 'ja' ? ' active' : ''}" data-lang="ja">Japanese</button><button class="pill${lang0 === 'fr' ? ' active' : ''}" data-lang="fr">French · Montréal</button></div>`;
+  html += `<h2 class="h2" id="phrases">Phrases</h2><div class="pill-row" id="phrase-pills"><button class="pill${lang0 === 'ja' ? ' active' : ''}" data-lang="ja">Japanese</button><button class="pill${lang0 === 'fr' ? ' active' : ''}" data-lang="fr">French · Montréal</button></div>`;
   html += (F.phrases || []).map((p) => phraseCard(p, lang0)).join('');
   $('#screen-taxi').innerHTML = html;
   $('#phrase-pills').onclick = (e) => { const b = e.target.closest('.pill'); if (!b) return; document.querySelectorAll('#phrase-pills .pill').forEach((p) => p.classList.toggle('active', p === b)); document.querySelectorAll('#screen-taxi .phrase').forEach((c) => c.classList.toggle('hidden', c.dataset.lang !== b.dataset.lang)); };

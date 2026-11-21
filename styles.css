@@ -953,3 +953,45 @@ details.card.past[open] > summary { margin-bottom: 8px; }
 .taxi-go .ik-name { flex: 1 1 auto; min-width: 0; }
 .taxi-go .chev { color: var(--muted); font-size: 1.4em; padding-left: 8px; }
 
+/* ---- 21 Nov 2026: the header on a phone, tap-to-copy, the Days agenda, "next up", search, Ready to fly? */
+.stamp { display: flex; flex-direction: column; justify-content: center; line-height: 1.12; }
+.stamp-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.edition { font-size: 0.74em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 480px) { .stamp .w1 { display: none; } .edition { display: block; } }   /* "Adventure" over "Family": the whole of both, on any phone (the second word used to be hidden there) */
+@media (min-width: 700px) { .stamp { display: block; white-space: nowrap; } .stamp-name { display: inline; } .edition { display: inline; font-size: 0.85em; } .edition::before { content: ' · '; } }
+.ik-code { cursor: pointer; }
+.ik-code.copied { background: var(--ik-name); color: #fff; }
+.found { box-shadow: 0 0 0 4px var(--city); }
+.leghead { display: flex; flex-wrap: wrap; align-items: center; margin: 18px 0 2px; }
+.leghead > * { margin: 0 8px 4px 0; }
+details.card.dayrow { padding-top: 6px; padding-bottom: 6px; margin: 6px 0; }
+details.card.dayrow > summary { list-style: none; display: flex; align-items: center; min-height: 34px; }
+details.card.dayrow > summary::-webkit-details-marker { display: none; }
+details.card.dayrow > summary > * { margin: 0 8px 0 0; flex: 0 0 auto; }
+details.card.dayrow > summary .when { min-width: 5.6em; }
+details.card.dayrow > summary .ik-name { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
+details.card.dayrow > summary .daypeek { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 0.88em; font-weight: 500; margin-right: 0; }
+details.card.dayrow[open] > summary { flex-wrap: wrap; }
+details.card.dayrow[open] > summary .daypeek { display: none; }
+details.card.dayrow[open] > summary .ik-name { max-width: none; white-space: normal; flex: 1 1 100%; font-size: 1.15em; margin-top: 4px; }
+details.card.dayrow[open] { padding-bottom: 12px; }
+details.card.dayrow[open] > summary { margin-bottom: 4px; }
+details.card.dayrow.past > summary::before { margin-right: 8px; }
+.dayflag { font-size: 0.9em; }
+.tile.nextup { background: var(--card); border: 3px solid var(--city); color: var(--text); }
+.tile.nextup.soon { background: var(--red); border-color: var(--red); color: #fff; }
+.booksearch { margin: 0 0 12px; }
+.booksearch .input { width: 100%; }
+.hitcount { margin: 0 0 8px; }
+.bkrow.hit { margin-bottom: 8px; border: 2px solid var(--border); }
+.bkrow.hit .ico { background: var(--pale); }
+.bkrow.hit .tk { display: block; font-size: 0.68em; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.bkrow.hit .tt, .bkrow.hit .ts { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flysum { font-weight: 800; text-align: center; }
+.flysum.good { border-color: #2A9D8F; }
+.flysum.todo { border-color: var(--red); }
+.flyrow { display: flex; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.flyrow .fi { flex: 0 0 2em; font-size: 1.15em; }
+.flyrow .fv { flex: 1 1 auto; min-width: 0; }
+.flyrow .ft { font-weight: 700; }
+

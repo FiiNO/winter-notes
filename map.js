@@ -87,10 +87,29 @@ async function sourceUrlFor(pack) {
 function inBbox(b, lon, lat) { return lon >= b[0] && lon <= b[2] && lat >= b[1] && lat <= b[3]; }
 function detailPacks() { return (S.manifest ? S.manifest.packs : []).filter((p) => !p.always); }
 function overviewFor(lon) { const ps = (S.manifest ? S.manifest.packs : []).filter((p) => p.always); return ps.find((p) => inBbox(p.bbox, lon, (p.bbox[1] + p.bbox[3]) / 2)) || ps.find((p) => lon > 100 ? p.name.endsWith('jp') : p.name.endsWith('na')) || ps[0] || null; }
-function packForToday(today) { return detailPacks().find((p) => p.dates && p.dates.length === 2 && p.dates[0] <= today && today <= p.dates[1] && !p.name.includes('corridor') && !p.name.includes('narita') && !p.name.includes('sea-to-sky')) || null; }
-function firstStop() {                            // the first city pack of the trip by date (3 Nov 2026: before the trip the map opens here on purpose; home has no tiles)
-  return detailPacks().filter((p) => p.dates && p.dates.length === 2 && !p.name.includes('corridor') && !p.name.includes('narita') && !p.name.includes('sea-to-sky')).sort((a, b) => a.dates[0].localeCompare(b.dates[0]))[0] || detailPacks()[0] || null;
+/* Which days a pack is for is worked out from the trip itself (21 Nov 2026). The dates used to sit in tiles/manifest.json,
+   a file anyone on the internet can read: city by city, when the family is where. The manifest now only says which place
+   a pack covers (city), and the days come from the plan once it is unlocked. A manifest that still carries dates (an
+   older build, another trip) is used as it is when the plan names no day for that place. */
+const PACK_CITY = { vancouver: 'Vancouver', whistler: 'Whistler', 'sea-to-sky': 'Whistler', toronto: 'Toronto', nyc: 'New York', montreal: 'Montréal', tokyo: 'Tokyo', 'tokyo-narita': 'Tokyo', narita: 'Tokyo', nagoya: 'Nagoya' };
+const packCity = (p) => p.city || PACK_CITY[p.name] || '';
+const isCorridor = (p) => p.name.includes('corridor') || p.name.includes('narita') || p.name.includes('sea-to-sky');
+function cityOfDay(date) { const d = ((S.family || {}).days || []).find((x) => x.date === date); return d && window.Quests ? Quests.dayCity(d) : ''; }
+function packDates(p) {
+  if (p.always) return [];
+  const city = packCity(p), days = ((S.family || {}).days || []);
+  const mine = city && window.Quests ? days.filter((d) => Quests.dayCity(d) === city).map((d) => d.date) : [];
+  if (mine.length) return [mine[0], mine[mine.length - 1]];
+  return p.dates && p.dates.length === 2 ? p.dates : [];
 }
+function packForToday(today) {
+  const city = cityOfDay(today), mains = detailPacks().filter((p) => !isCorridor(p));
+  return (city && mains.find((p) => packCity(p) === city)) || mains.find((p) => { const r = packDates(p); return r.length === 2 && r[0] <= today && today <= r[1]; }) || null;
+}
+function firstStop() {                            // the first city pack of the trip by date (3 Nov 2026: before the trip the map opens here on purpose; home has no tiles)
+  return detailPacks().filter((p) => !isCorridor(p) && packDates(p).length === 2).sort((x, y) => packDates(x)[0].localeCompare(packDates(y)[0]))[0] || detailPacks()[0] || null;
+}
+
 function packAt(lon, lat) { const cands = detailPacks().filter((p) => inBbox(p.bbox, lon, lat)); cands.sort((a, b) => b.maxzoom - a.maxzoom); return cands[0] || null; }
 
 /* ------------------------------------------------------------------ style assembly */
@@ -263,7 +282,7 @@ async function renderPacks() {
     const have = st.have, whole = !have || !p.size || st.size == null || st.size === p.size;
     const status = !have ? '<span class="chip">online only</span>' : whole ? `<span class="chip">offline ✓</span>` : `<span class="chip red">incomplete</span><br><span class="tiny muted">${fmtMB(st.size)} stored</span>`;
     const action = have && whole ? `<button class="btn" data-del="${esc(p.name)}">Delete</button>` : `<button class="btn" data-get="${esc(p.name)}">${have ? 'Download again' : 'Download'}</button>`;
-    rows.push(`<tr data-pack="${esc(p.name)}"><td><b>${esc(p.title)}</b><br><span class="tiny muted">z${p.maxzoom} · ${p.dates && p.dates.length ? esc(p.dates.join(' to ')) : 'always'}</span></td><td>${fmtMB(p.size)}</td><td class="pack-status">${status}</td><td>${action}</td></tr>`);
+    rows.push(`<tr data-pack="${esc(p.name)}"><td><b>${esc(p.title)}</b><br><span class="tiny muted">z${p.maxzoom} · ${p.always ? 'always' : packDates(p).length ? esc(packDates(p).join(' to ')) : 'for the trip'}</span></td><td>${fmtMB(p.size)}</td><td class="pack-status">${status}</td><td>${action}</td></tr>`);
   }
   const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate() : null;
   const persisted = navigator.storage && navigator.storage.persisted ? await navigator.storage.persisted() : null;
@@ -305,7 +324,7 @@ window.DossierMap = {
     S.today = opts.today; S.onTaxi = opts.onTaxi || null;
     if (!S.manifest) { try { S.manifest = await (await fetch('tiles/manifest.json')).json(); } catch (e) { S.manifest = null; } }
     const first = firstStop();
-    S.firstStopName = first ? first.name : null; S.preTrip = !!(first && !packForToday(S.today) && S.today < first.dates[0]);
+    S.firstStopName = first ? first.name : null; S.preTrip = !!(first && !packForToday(S.today) && packDates(first).length === 2 && S.today < packDates(first)[0]);
     S.activePack = S.activePack || packForToday(S.today) || first;
     S.overview = S.activePack ? overviewFor((S.activePack.bbox[0] + S.activePack.bbox[2]) / 2) : overviewFor(139);
     S.container.querySelector('#map-me').onclick = centreOnMe;
@@ -333,5 +352,13 @@ window.DossierMap = {
   },
   focusPlace(id) { const f = ((S.family.overlay || {}).features || []).find((x) => x.properties.id === id); if (f) { const [lon, lat] = f.geometry.coordinates; this.focus(lat, lon); openCard(f); } },
   hasPacks() { return !!(S.manifest && S.manifest.packs.length); },
+  packForDay(date) { const p = packForToday(date); return p ? p.name : null; },   // which city pack a day of the trip opens on (tests)
+  /* for "Ready to fly?" (app.js): which packs are on this phone, whole. Works before the Map has ever been opened. */
+  async packReport() {
+    if (!S.manifest) { try { S.manifest = await (await fetch('tiles/manifest.json')).json(); } catch (e) { return null; } }
+    const out = [];
+    for (const p of S.manifest.packs) { const st = await packState(p.name); out.push({ name: p.name, title: p.title, city: packCity(p), always: !!p.always, size: p.size || 0, have: st.have && (!p.size || st.size == null || st.size === p.size) }); }
+    return out;
+  },
   get map() { return S.map; },                     // tests
 };

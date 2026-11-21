@@ -780,5 +780,6 @@ window.Journal = (() => {
 
   return { init, warm, page, promptFor, index, storiesTileHtml, morningHtml, fill, thumb: pic, renderStory, openComposer, openDraw, openViewer, onLeave, addPhoto, addPhotos, downloadAll, refreshBadge, post, cityOf,
     media: (id) => J.media[id] || null, timeOf,
+    book: () => ({ posts: ordered().slice().reverse(), cmts: J.cmts }),   // every postcard, oldest first, and the replies by postcard (book.js: the trip book)
     overlayOpen: () => !!J.overlay, overlayBack: () => (J.overlay ? J.overlay.back() : true), diag, scrollToDate, cityStats };
 })();

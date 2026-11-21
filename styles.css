@@ -994,4 +994,6 @@ details.card.dayrow.past > summary::before { margin-right: 8px; }
 .flyrow .fi { flex: 0 0 2em; font-size: 1.15em; }
 .flyrow .fv { flex: 1 1 auto; min-width: 0; }
 .flyrow .ft { font-weight: 700; }
+.tripbook { margin: 10px 0 4px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.tripbook .btn { margin-bottom: 6px; }
 

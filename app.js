@@ -498,6 +498,26 @@ async function makeGuestCopy() {                     // a parent phone, behind t
     } catch (e) { if (!e || e.name !== 'AbortError') Media.saveDownload(file, file.name); }
   };
 }
+/* The trip book (book.js): made here, then handed over by a tap of its own, because the share sheet only opens straight
+   after a tap and collecting the pictures takes a while. */
+async function makeTripBook() {
+  const b = $('#opt-book'), msg = $('#book-msg');
+  if (!b || !window.TripBook || b.disabled) return;
+  b.disabled = true; msg.textContent = 'Collecting the postcards…';
+  let file = null;
+  try { file = await TripBook.make((done, total) => { const m = $('#book-msg'); if (m) m.textContent = `Collecting pictures: ${done} of ${total}…`; }); }
+  catch (e) { const m = $('#book-msg'); if (m) m.textContent = 'Could not make the book: ' + ((e && e.message) || e); const bb = $('#opt-book'); if (bb) bb.disabled = false; return; }
+  const box = $('#book-msg'); if (!box) return;
+  const mb = file.size / 1048576;
+  box.innerHTML = `<div>Ready: ${mb < 1 ? Math.round(file.size / 1024) + ' KB' : mb.toFixed(1) + ' MB'}.</div><button class="btn primary block" id="book-save">📤 Save the trip book</button><div class="tiny muted">Keep it somewhere safe (Files, Drive, email to yourself). Open it in a browser and use Print, then Save as PDF, for a printable book.</div>`;
+  const bb = $('#opt-book'); if (bb) bb.disabled = false;
+  $('#book-save').onclick = async () => {
+    try {
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: 'World Adventure trip book' });
+      else Media.saveDownload(file, file.name);
+    } catch (e) { if (!e || e.name !== 'AbortError') Media.saveDownload(file, file.name); }
+  };
+}
 function forgetQuestion() {                          // says what would be lost for good (15 Nov 2026)
   const up = Media.pendingCount(), orig = Media.originalsSummary().waiting, lost = [];
   if (up) lost.push(`${up} picture${up === 1 ? ' has' : 's have'} not been uploaded yet`);
@@ -1409,7 +1429,7 @@ function renderSettings() {
     <div class="card"><div class="h3">Home screen</div>${isInstalled() ? '<div class="small">✓ Running from its own Home screen icon.</div>' : Install.done ? '<div class="small">✓ Added. Open it from the Home screen icon from now on.</div>' : Install.evt ? '<button class="btn primary block" id="opt-install">📲 Add World Adventure to the Home screen</button>' : installHelpHtml()}</div>
     ${grand ? '' : `<div class="card"><div class="h3">Confetti, animations and sounds</div><p class="small muted">Auto follows the phone's reduce-motion setting.</p><div class="row">${['auto', 'on', 'off'].map((t) => `<button class="pill${FX.pref() === t ? ' active' : ''}" data-fx="${t}">${t}</button>`).join('')}<button class="btn small-btn" id="opt-fx-demo">Show me a level-up</button></div>${switchRow('sound', 'Sound effects: ticks, badges and level-ups')}<p class="tiny muted">Sounds start after the first tap on the phone; the ring/silent switch still wins.</p></div>`}
     ${Quests.settingsCard()}
-    <div class="card"><div class="h3">Photos and postcards</div><div class="small" id="media-msg">…</div>${Media.canSaveOriginals() ? `<div class="small" id="orig-msg"></div>` : ''}<div class="row"><button class="btn" id="opt-media-dl">Download all pictures (Wi-Fi)</button>${Quests.isParentDevice() || Quests.isGrandDevice() ? `<button class="btn" id="opt-media-clear">Clear downloaded pictures here</button>` : ''}${Media.canSaveOriginals() ? `<button class="btn" id="opt-orig-save">Save originals to Photos</button><button class="btn" id="opt-orig-clear">Clear saved originals</button>` : ''}</div>${Media.origHint() ? `<p class="tiny muted">${esc(Media.origHint())}</p>` : ''}${Quests.isParentDevice() ? `<div class="row"><button class="btn danger" id="opt-stories-wipe">🗑️ Delete all postcards and photos (everyone)</button></div>` : ''}<div class="tiny mono" id="diag" style="margin-top:8px;white-space:pre-wrap"></div><div class="row"><button class="btn" id="opt-errlog-clear">Clear error log</button></div><p class="tiny muted">Pictures and pages are encrypted on this device and in the cloud; only an unlocked device can open them, so the PIN and the phone's own lock are the gate.</p></div>
+    <div class="card"><div class="h3">Photos and postcards</div><div class="small" id="media-msg">…</div>${grand ? '' : `<div class="tripbook"><button class="btn" id="opt-book">📕 Make the trip book</button><div class="small muted" id="book-msg">Every postcard, picture and score in one file to keep. It opens in any browser and prints as a book.</div></div>`}${Media.canSaveOriginals() ? `<div class="small" id="orig-msg"></div>` : ''}<div class="row"><button class="btn" id="opt-media-dl">Download all pictures (Wi-Fi)</button>${Quests.isParentDevice() || Quests.isGrandDevice() ? `<button class="btn" id="opt-media-clear">Clear downloaded pictures here</button>` : ''}${Media.canSaveOriginals() ? `<button class="btn" id="opt-orig-save">Save originals to Photos</button><button class="btn" id="opt-orig-clear">Clear saved originals</button>` : ''}</div>${Media.origHint() ? `<p class="tiny muted">${esc(Media.origHint())}</p>` : ''}${Quests.isParentDevice() ? `<div class="row"><button class="btn danger" id="opt-stories-wipe">🗑️ Delete all postcards and photos (everyone)</button></div>` : ''}<div class="tiny mono" id="diag" style="margin-top:8px;white-space:pre-wrap"></div><div class="row"><button class="btn" id="opt-errlog-clear">Clear error log</button></div><p class="tiny muted">Pictures and pages are encrypted on this device and in the cloud; only an unlocked device can open them, so the PIN and the phone's own lock are the gate.</p></div>
     ${Quests.isGrandDevice() ? '' : `<div class="card"><div class="h3">Preview a trip day</div><p class="small muted">Shows the app as it will look on that day: for testing and the dry run. Tap a day; tap Now to come back.</p>${previewPicker()}</div>`}
     ${grand && !setup ? `<div class="card"><div class="h3">Set-up</div><p class="small muted">Whose phone this is, opening without a PIN, and forgetting the device sit behind the device PIN, so nothing changes by accident.</p><div class="row"><button class="btn" id="opt-setup">Open set-up (asks for the PIN)</button></div></div>` : ''}
     ${setup ? Quests.roleCard() : ''}
@@ -1456,6 +1476,7 @@ function renderSettings() {
   const usage = Media.enabled ? Media.usage().catch(() => null) : Promise.resolve(null);   // read once for the line here and the readout below
   if (!Media.enabled) mm.textContent = 'This build has no picture key: pages and photos need a full rebuild of the app.';
   else usage.then((u) => { if (u && mm.isConnected !== false) mm.textContent = `${u.count} picture${u.count === 1 ? '' : 's'} on this device · ${u.bytes < 1048576 ? Math.round(u.bytes / 1024) + ' KB' : (u.bytes / 1048576).toFixed(1) + ' MB'}${u.pending ? ` · ${u.pending} waiting to upload` : ''}`; });
+  const ob = $('#opt-book'); if (ob) ob.onclick = makeTripBook;
   const dl = $('#opt-media-dl'); if (dl) dl.onclick = () => { dl.disabled = true; Journal.downloadAll((done, total) => { mm.textContent = `Downloading ${done} of ${total}…`; }).then(() => { dl.disabled = false; renderSettings(); }); };
   const om = $('#orig-msg');
   if (om) { const o = Media.originalsSummary(), mb = (n) => (n / 1048576).toFixed(1) + ' MB'; om.textContent = `${o.waiting} full-size original${o.waiting === 1 ? '' : 's'} not yet in Photos (${mb(o.waitingBytes)})${o.saved ? ` · ${o.saved} already saved (${mb(o.savedBytes)}) can be cleared` : ''}`; if (o.waiting) Media.prepareOriginals(); }   // made ready now, so the button's tap can open the share sheet itself (iOS refuses it after a wait)

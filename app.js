@@ -165,7 +165,7 @@ function show(screen, fromHistory) {
   document.querySelectorAll('.screen').forEach((el) => el.classList.add('hidden'));
   const el = $('#screen-' + screen);
   if (el) { el.classList.remove('hidden'); if (S.screen !== screen) { el.classList.add('enter'); clearTimeout(el._enter); el._enter = setTimeout(() => el.classList.remove('enter'), 1100); } }
-  const BOOK = ['days', 'moves', 'stays', 'taxi', 'protocols', 'vault', 'settings', 'gates', 'where'], QUEST = ['quests', 'passport'];
+  const BOOK = ['days', 'moves', 'stays', 'taxi', 'protocols', 'vault', 'tickets', 'settings', 'gates', 'where'], QUEST = ['quests', 'passport'];
   document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.screen === screen || (b.dataset.screen === 'book' && BOOK.includes(screen)) || (b.dataset.screen === 'quests' && QUEST.includes(screen))));
   S.screen = screen;
   if (screen !== 'settings') S.setupOpen = false;    // the grandparents' PIN-gated set-up closes with Settings
@@ -177,6 +177,7 @@ function show(screen, fromHistory) {
   if (screen === 'book') renderBook();
   if (screen === 'gates') renderGates();
   if (screen === 'vault') renderVault();
+  if (screen === 'tickets') Tickets.render();
   if (screen === 'settings') renderSettings();
   if (screen === 'story') Journal.renderStory();
   if (screen === 'map') mountMap();
@@ -591,7 +592,8 @@ function renderHome() {
   if (parentish) quick.push(`<button class="tile ht sm t4" data-taxi="${esc(ctx.stay ? (ctx.stay.ja_id || 'stay-' + ctx.stay.n) : '')}"><span class="ico">🚕</span><span class="tt">Taxi card</span></button>`);
   quick.push(`<button class="tile ht sm t5" data-call="1"><span class="ico">📞</span><span class="tt">Call</span></button>`);
   quick.push(`<button class="tile ht sm t6" data-kid="1"><span class="ico">🙋</span><span class="tt">I'm lost</span></button>`);
-  html += `<div class="tiles quick${quick.length === 2 ? ' two' : ''}">${quick.join('')}</div>`;
+  if (Tickets.visible()) quick.push(`<button class="tile ht sm t7" data-go="tickets"><span class="ico">🎟️</span><span class="tt">Tickets</span></button>`);   // 22 Nov 2026: the codes to scan, behind the Vault PIN
+  html += `<div class="tiles quick${quick.length === 2 ? ' two' : quick.length === 4 ? ' four' : ''}">${quick.join('')}</div>`;
   html += `<div class="tiles">${Journal.storiesTileHtml(ctx)}${hasGlobe() ? `<button class="tile ht wide t2" data-go="where"><span class="ico">🌏</span><span class="tt">Where are we</span><span class="ts">${esc(ctx.before ? "The globe, the route and today's dot" : whereLine(ctx, "The globe, the route and today's dot"))}</span></button>` : ''}</div>`;   // back on Home (Andy, 3 Nov 2026); not where the globe cannot run
   if (S.preview) html += `<p class="tiny muted">Previewing ${esc(S.preview)} · clear it in Settings</p>`;
   const el = $('#screen-home'); el.innerHTML = html;
@@ -615,8 +617,8 @@ function openCalls(calls) {
 function renderBook() {                              // 3 Nov 2026: the reference shelf only, one screen of compact rows (Map, Quests, Passport and Settings live in the nav and the header)
   const items = [['days', '📅', 'Days', 'The plan, day by day'], ['moves', '✈️', 'Moves', 'Flights, trains, buses, taxis'], ['stays', '🛏️', 'Stays', 'Every bed, check-in times'],
     ['taxi', '🚕', 'Taxi cards', 'Japanese and French, phrases'], ['protocols', '📋', 'Protocols', 'Lost kid, PACE, phone stolen'], ['gates', '✅', 'Before we go', "Mum and Dad's to-do list"],
-    ['where', '🌏', 'Where are we', 'The globe and the route'], ['vault', '🔒', 'Vault', 'PINs and document numbers']];
-  $('#screen-book').innerHTML = `<h1 class="h1">📖 Book</h1><div class="booklist">` + items.filter((i) => !(i[0] === 'vault' && settings.readerMode) && !(i[0] === 'where' && !hasGlobe())).map((i, k) => `<button class="bkrow c${k % 8}" data-go="${i[0]}"><span class="ico">${i[1]}</span><span class="bt"><span class="tt">${esc(i[2])}</span><span class="ts">${esc(i[3])}</span></span><span class="chev">›</span></button>`).join('') + `</div>`;
+    ['where', '🌏', 'Where are we', 'The globe and the route'], ['tickets', '🎟️', 'Tickets', 'The codes to scan at the gate'], ['vault', '🔒', 'Vault', 'PINs and document numbers']];
+  $('#screen-book').innerHTML = `<h1 class="h1">📖 Book</h1><div class="booklist">` + items.filter((i) => !(i[0] === 'vault' && settings.readerMode) && !(i[0] === 'tickets' && !Tickets.visible()) && !(i[0] === 'where' && !hasGlobe())).map((i, k) => `<button class="bkrow c${k % 8}" data-go="${i[0]}"><span class="ico">${i[1]}</span><span class="bt"><span class="tt">${esc(i[2])}</span><span class="ts">${esc(i[3])}</span></span><span class="chev">›</span></button>`).join('') + `</div>`;
   wireGo($('#screen-book'));
 }
 function renderGates() {
@@ -921,6 +923,7 @@ function lockVault() {
   S.vault = null; clearTimeout(S.vaultTimer);
   $('#screen-vault').innerHTML = '';                 // never leave decrypted vault text in the DOM, even hidden
   if (S.screen === 'vault') renderVault();
+  Tickets.lock();                                    // the ticket pack opens with the same key, so it closes with it too
   renderStays();                                     // inline PINs disappear again
   if (window.DossierMap) window.DossierMap.setVaultFeatures([]);
 }
@@ -943,37 +946,46 @@ async function renderVault() {
     $('#vault-lock').onclick = lockVault;
     return;
   }
+  return vaultGate(el, 'Vault', 'Open vault', '', renderVault);
+}
+/* The Vault's lock as a form any screen behind it can show (22 Nov 2026: Tickets opens with the Vault's key and PIN).
+   `done` runs once S.vault is open. Everything is looked up inside `el`: two of these forms can be in the page at once. */
+async function vaultGate(el, title, button, note, done) {
   const key = await kvGet('key:vault'), pinRec = await kvGet('pin:vault');
   const mode = key && pinRec ? 'pin' : 'passphrase';
-  el.innerHTML = `<h1 class="h1">Vault</h1><div class="card centre">
-    <p class="muted">${mode === 'pin' ? 'Vault PIN' : 'First time on this device: the Vault passphrase, then choose a Vault PIN.'}</p>
-    <form id="vault-form" autocomplete="off">
-      ${mode === 'pin' ? `<input id="vpin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" class="input pin" required>`
-      : `<input id="vpp" type="password" autocapitalize="none" autocorrect="off" spellcheck="false" class="input" placeholder="Vault passphrase" required>
-         <input id="vpin1" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" class="input pin" placeholder="PIN" required>
-         <input id="vpin2" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" class="input pin" placeholder="PIN again" required>`}
-      <button class="btn primary" type="submit">Open vault</button>
-    </form><p class="error hidden" id="vault-err"></p></div>`;
-  $('#vault-form').onsubmit = async (e) => {
+  const q = (sel) => el.querySelector(sel);
+  el.innerHTML = `<h1 class="h1">${title}</h1><div class="card centre">
+    ${note ? `<p class="small">${esc(note)}</p>` : ''}
+    <p class="muted vg-msg">${mode === 'pin' ? 'Vault PIN' : 'First time on this device: the Vault passphrase, then choose a Vault PIN.'}</p>
+    <form class="vg-form" autocomplete="off">
+      ${mode === 'pin' ? `<input type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" class="input pin vg-pin" required>`
+      : `<input type="password" autocapitalize="none" autocorrect="off" spellcheck="false" class="input vg-pp" placeholder="Vault passphrase" required>
+         <input type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" class="input pin vg-pin1" placeholder="PIN" required>
+         <input type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" class="input pin vg-pin2" placeholder="PIN again" required>`}
+      <button class="btn primary" type="submit">${esc(button)}</button>
+    </form><p class="error hidden vg-err"></p></div>`;
+  q('.vg-form').onsubmit = async (e) => {
     e.preventDefault();
-    const err = $('#vault-err'); err.classList.add('hidden');
+    const err = q('.vg-err'); err.classList.add('hidden');
     try {
       const env = S.vaultEnv || (S.vaultEnv = await loadEnvelope('vault'));
       if (mode === 'pin') {
-        const r = await checkPin('vault', $('#vpin').value); $('#vpin').value = '';
-        if (r === 'wiped') return renderVault();
+        const r = await checkPin('vault', q('.vg-pin').value); q('.vg-pin').value = '';
+        if (r === 'wiped') return vaultGate(el, title, button, note, done);
         if (r !== 'ok') { err.textContent = `Wrong PIN. ${r.split(':')[1] || 0} tries left.`; return err.classList.remove('hidden'); }
         try { S.vault = await decryptWith(await kvGet('key:vault'), env); }
-        catch (mismatch) { await kvDel('key:vault'); await kvDel('pin:vault'); S.vaultEnv = null; renderVault(); setTimeout(() => { const p = $('#screen-vault .muted'); if (p) p.textContent = 'The stored key no longer matches this build. Vault passphrase again, then a new PIN.'; }, 0); return; }
+        catch (mismatch) { await kvDel('key:vault'); await kvDel('pin:vault'); S.vaultEnv = null; await vaultGate(el, title, button, note, done); const p = q('.vg-msg'); if (p) p.textContent = 'The stored key no longer matches this build. Vault passphrase again, then a new PIN.'; return; }
       } else {
-        const a = $('#vpin1').value, b = $('#vpin2').value;
+        const a = q('.vg-pin1').value, b = q('.vg-pin2').value;
         if (!/^\d{4}$/.test(a) || a !== b) { err.textContent = 'PIN must be four digits, typed twice the same.'; return err.classList.remove('hidden'); }
-        const k = await deriveKey($('#vpp').value, env);
+        const k = await deriveKey(q('.vg-pp').value, env);
         S.vault = await decryptWith(k, env);
         await kvSet('key:vault', k); await setPin('vault', a);
       }
-      renderVault(); renderStays();
+      armVaultLock();
+      renderStays();
       if (window.DossierMap) window.DossierMap.setVaultFeatures(vaultPins());
+      done();
     } catch (ex) { err.textContent = 'That did not open the vault.'; err.classList.remove('hidden'); }
   };
 }

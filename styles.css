@@ -161,6 +161,7 @@ table.t td { padding: 6px 6px 6px 0; border-top: 1px solid var(--border); vertic
    morning-photo strip; the Book is a one-screen list of compact rows with a coloured icon */
 .tiles.quick { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 0; }
 .tiles.quick.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tiles.quick.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }   /* parent phones, 22 Nov 2026: Taxi, Call, I'm lost, Tickets */
 .tile.ht.sm { min-height: 0; flex-direction: row; align-items: center; gap: 8px; padding: 10px 12px; }
 .tile.ht.sm .ico { font-size: 1.5em; margin: 0; }
 .tile.ht.sm .tt { font-size: 0.95em; }
@@ -742,3 +743,32 @@ html.no-gap .tile.ht > *:not(:last-child) { margin-bottom: 3px; }
 html.no-gap .tile.wide > *:not(:last-child) { margin-right: 14px; margin-bottom: 0; }
 html.no-gap .tile.ht.wide > *:not(:last-child) { margin-right: 0; margin-bottom: 3px; }
 html.no-gap .tile.ht.sm > *:not(:last-child) { margin-right: 8px; margin-bottom: 0; }
+
+/* ------------------------------------------------------------------ Tickets (22 Nov 2026): parents' phones, behind the Vault PIN */
+.card.tix { padding-top: 12px; }
+.card.tix.past { opacity: 0.6; }
+.tix-head { display: flex; gap: 12px; align-items: flex-start; }
+.tix-ico { font-size: 2em; line-height: 1.1; flex: 0 0 auto; }
+.tix-tt { min-width: 0; }
+.tix-title { font-size: 1.1em; font-weight: 900; color: var(--accent); overflow-wrap: anywhere; }
+.tix-codes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin: 12px 0 4px; }
+.tix-codes.one { grid-template-columns: minmax(0, 1fr); }
+.tix-code { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 10px; align-items: center; text-align: left; min-height: 60px; padding: 8px 12px; border: 0; border-radius: 16px; background: var(--city); color: #fff; font-size: 1em; cursor: pointer; }
+.tix-code:active { transform: scale(0.97); }
+.tix-code .tc-ico { grid-row: 1 / span 2; font-size: 1.7em; line-height: 1; }
+.tix-code .tc-who { font-weight: 900; overflow-wrap: anywhere; }
+.tix-code .tc-sub { grid-column: 2; font-size: 0.78em; font-weight: 600; opacity: 0.9; }
+.tix-none { margin: 10px 0 2px; padding: 8px 12px; border-radius: 12px; background: var(--pale); color: var(--muted); font-size: 0.85em; font-weight: 700; }
+.tix-lines li { padding: 6px 0; }
+.tix-view { clear: both; }
+.tix-vh { padding-right: 88px; min-height: 48px; }
+.tix-who { margin: 10px 0 8px; font-size: 1.35em; text-align: center; }
+.tix-who span { display: block; font-size: 0.7em; font-weight: 700; color: var(--muted); }
+.tix-panel { background: #fff; border-radius: 18px; padding: 14px; text-align: center; border: 2px solid var(--border); }
+.tix-panel img { display: block; margin: 0 auto; width: 100%; max-width: 62vh; height: auto; image-rendering: crisp-edges; image-rendering: pixelated; }
+.tix-panel.whole { padding: 4px; overflow: auto; }
+.tix-panel.whole img { max-width: none; image-rendering: auto; }
+.tix-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.tix-nav .btn { min-width: 84px; }
+.tix-count { font-weight: 900; font-size: 1.1em; }
+.tix-view .centre { text-align: center; }

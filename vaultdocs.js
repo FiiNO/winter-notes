@@ -132,7 +132,7 @@ window.VaultDocs = (() => {
     if (!el) return;
     const k = await key();
     if (!k) {
-      el.innerHTML = `<div class="card"><div class="h2">🎫 Tickets and documents</div><p class="small muted">Boarding passes, tickets and QR codes, kept sealed in the Vault and shared between the phones that know the Vault passphrase. To turn this on for this phone, type the Vault passphrase once.</p>
+      el.innerHTML = `<div class="card"><div class="h2">➕ Added on the phone</div><p class="small muted">A boarding pass screenshot at check-in, a photo of a ticket, a PDF: added here from a phone, sealed, and shared with the other phone that knows the Vault passphrase. To turn this on for this phone, type the Vault passphrase once.</p>
         <form id="vdoc-on" autocomplete="off"><input id="vdoc-pp" type="password" autocapitalize="none" autocorrect="off" spellcheck="false" class="input" placeholder="Vault passphrase" required><button class="btn primary" type="submit">Turn on</button></form><p class="error hidden" id="vdoc-err"></p></div>`;
       el.querySelector('#vdoc-on').onsubmit = async (e) => {
         e.preventDefault();
@@ -146,8 +146,8 @@ window.VaultDocs = (() => {
     const rank = (d) => (d.date === today ? 0 : d.date > today ? 1 : d.date ? 3 : 2);          // today · coming up · no day · earlier
     docs.sort((a, b) => rank(a) - rank(b) || (rank(a) === 3 ? (a.date < b.date ? 1 : -1) : a.date < b.date ? -1 : a.date > b.date ? 1 : a.t - b.t));
     const HEAD = ['Today', 'Coming up', 'No day set', 'Earlier'];
-    let html = `<div class="card"><div class="h2">🎫 Tickets and documents</div>`, last = -1;
-    if (!docs.length) html += `<p class="small muted">Nothing here yet. Add a screenshot of a boarding pass, a photo of a ticket or a PDF: it is sealed on this phone and shared with the other phones that know the Vault passphrase.</p>`;
+    let html = `<div class="card"><div class="h2">➕ Added on the phone</div>`, last = -1;
+    if (!docs.length) html += `<p class="small muted">Nothing added yet. A boarding pass screenshot at check-in, a photo of a ticket or a PDF can be added here from this phone: it is sealed and shared with the other phone that knows the Vault passphrase.</p>`;
     for (const d of docs) {
       const r = rank(d); if (r !== last) { html += `<div class="h3">${HEAD[r]}</div>`; last = r; }
       html += `<button class="vdoc-row" data-vdoc="${esc(d.id)}"><span class="ico">${isPicture(d.type) ? '🖼️' : '📄'}</span><span class="bt"><span class="ik-name">${esc(d.name)}</span><span class="small muted">${d.date ? `<span class="ik-time">${esc(dayLabel(d.date))}</span> · ` : ''}${esc(sizeText(d.size))}${!d.here ? ' · <span class="red">not on this phone yet</span>' : !d.sent && Sync.endpoint().enabled ? ' · waiting to send' : ''}</span>${d.note ? `<span class="small muted">${esc(d.note)}</span>` : ''}</span><span class="chev">›</span></button>`;

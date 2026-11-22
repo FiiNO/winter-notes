@@ -1,16 +1,16 @@
 {
- "version": 57,
- "label": "v57",
- "built": "21 Nov 2026",
+ "version": 58,
+ "label": "v58",
+ "built": "22 Nov 2026",
  "counts": {
   "days": 39,
   "moves": 15,
   "stays": 9,
-  "events": 8,
+  "events": 9,
   "taxi_cards": 29,
   "hospitals": 14,
   "places": 86,
-  "vault_items": 69
+  "vault_items": 70
  },
  "test": false
 }

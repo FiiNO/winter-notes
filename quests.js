@@ -79,7 +79,7 @@ window.Quests = (() => {
   const QUESTS = [
     // before we go
     { id: 'pack-case', e: '🧳', t: 'Help pack your own suitcase', pts: 20, where: 'home', kind: 'helper' },
-    { id: 'flu-shot', e: '💉', t: 'Brave the flu shot', pts: 30, where: 'home', kind: 'helper' },
+    { id: 'flu-shot', e: '💉', t: 'Brave the flu shot', pts: 30, where: 'home', kind: 'helper', retired: true },   // taken off the list (22 Nov 2026, Andy). retired: no longer offered anywhere, but a tick made before still counts, so nobody loses points
     { id: 'learn-ja', e: '🇯🇵', t: 'Learn three Japanese words', pts: 20, where: 'home', kind: 'words' },
     { id: 'learn-fr', e: '🇫🇷', t: 'Learn three French words', pts: 20, where: 'home', kind: 'words' },
     { id: 'know-numbers', e: '📱', t: "Know Mum and Dad's numbers by heart, and that we are from Australia", pts: 50, where: 'any', kind: 'helper' },
@@ -778,7 +778,7 @@ window.Quests = (() => {
     const diaryDays = (pl.done.diary || []).length;
     out.push({ id: 'story-master', e: '📚', t: 'Story master', kind: 'skill', pts: 40, earned: diaryDays >= 20, hint: `${Math.min(diaryDays, 20)} of 20 pages` });
     for (const c of CHAMPION_CITIES) {
-      const qs = QUESTS.filter((q) => q.where === c), done = qs.filter((q) => doneCount(pl, q.id)).length;
+      const qs = QUESTS.filter((q) => q.where === c && !q.retired), done = qs.filter((q) => doneCount(pl, q.id)).length;
       out.push({ id: 'champ-' + CITY_KEY[c], e: '🏆', t: `${c} champion`, kind: 'skill', pts: 40, earned: qs.length > 0 && done === qs.length, hint: `${done} of ${qs.length} ${c} quests` });
     }
     const distinct = Object.keys(pl.done).filter((id) => byId[id] && !byId[id].daily).length;
@@ -823,7 +823,7 @@ window.Quests = (() => {
   /* ---------------------------------------------------------------- views */
   function available(ctx, pl) {
     const here = citiesForDay(ctx);
-    return QUESTS.filter((q) => (q.where === 'any' || here.has(q.where) || (ctx.before && q.where === 'home')) && !(q.parents && !isParentDevice()))
+    return QUESTS.filter((q) => !q.retired && (q.where === 'any' || here.has(q.where) || (ctx.before && q.where === 'home')) && !(q.parents && !isParentDevice()))
       .map((q) => ({ ...q, done: q.daily ? doneToday(pl, q.id, ctx.date) : doneCount(pl, q.id) > 0 }));
   }
   function playerChips(st, ctx) {
@@ -876,7 +876,7 @@ window.Quests = (() => {
     html += `<h2 class="h2">Every day</h2>` + dailies.map((q) => questCard(q, ctx, player, pl)).join('');
     if (helpers.length) html += `<h2 class="h2">Any time</h2>` + helpers.map((q) => questCard(q, ctx, player, pl)).join('');
     const others = CITIES.filter((c) => !citiesForDay(ctx).has(c));
-    html += `<h2 class="h2">Coming up</h2>` + others.map((c) => { const qs = QUESTS.filter((q) => q.where === c); return qs.length ? `<details data-d="${CITY_KEY[c]}"><summary>${CITY_EMOJI[c]} ${esc(c)} <span class="chip">${qs.filter((q) => doneCount(pl, q.id)).length} / ${qs.length}</span></summary>${qs.map((q) => questCard(q, ctx, player, pl)).join('')}</details>` : ''; }).join('');
+    html += `<h2 class="h2">Coming up</h2>` + others.map((c) => { const qs = QUESTS.filter((q) => q.where === c && !q.retired); return qs.length ? `<details data-d="${CITY_KEY[c]}"><summary>${CITY_EMOJI[c]} ${esc(c)} <span class="chip">${qs.filter((q) => doneCount(pl, q.id)).length} / ${qs.length}</span></summary>${qs.map((q) => questCard(q, ctx, player, pl)).join('')}</details>` : ''; }).join('');
     const foodItems = pl.items.filter((it) => it.kind === 'food');
     if (foodItems.length) html += `<details data-d="foods"><summary>🍽️ New foods tried <span class="chip">${pl.foods.length}</span></summary><ul class="list">${foodItems.map((it) => `<li>${esc(it.what || 'Something new')} <span class="muted small">· ${esc(fmtDate(it.date))}${it.pending ? ' · ⏳ waiting' : it.rejected ? ' · ✗ not this time' : ''}</span> <button class="qbtn undo small-undo" data-food-undo="${esc(it.key)}">Undo</button></li>`).join('')}</ul></details>`;
     html += `<p class="tiny muted" id="sync-line">${esc(syncText())}</p>`;

@@ -33,7 +33,7 @@ if (!m) fail('could not find the SHELL list in sw.js');
 else { try { shell = JSON.parse(m[1]); } catch (e) { fail('the SHELL list in sw.js is not a plain list of quoted paths: ' + e.message); } }
 /* not part of the offline shell on purpose: the worker itself, map packs (fetched on demand), the guest copy (kept in the
    phone's own store once opened), and everything that is about the repository and not the app */
-const SKIP = [/^sw\.js$/, /^vendor\/LICENSE/, /^tiles\/.*\.pmtiles$/, /^guest\.enc$/, /^tools\//, /^README/i, /^HANDOVER/i, /^\.github\//, /^\.git\//, /^\.nojekyll$/, /^\.gitignore$/, /^node_modules\//];
+const SKIP = [/^sw\.js$/, /^vendor\/LICENSE/, /\.apk$/, /^tiles\/.*\.pmtiles$/, /^guest\.enc$/, /^tools\//, /^README/i, /^HANDOVER/i, /^\.github\//, /^\.git\//, /^\.nojekyll$/, /^\.gitignore$/, /^node_modules\//];
 const walk = (dir, out) => { for (const e of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) { const rel = (dir ? dir + '/' : '') + e.name; if (e.name === '.git' || e.name === 'node_modules') continue; if (e.isDirectory()) walk(rel, out); else out.push(rel); } return out; };
 const files = walk('', []).filter((f) => !SKIP.some((re) => re.test(f)));
 const listed = new Set(shell.map((s) => s.replace(/^\.\//, '')));

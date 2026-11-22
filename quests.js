@@ -190,7 +190,7 @@ window.Quests = (() => {
     { id: 'maple-cookie', e: '🍪', t: 'Try a maple cookie', pts: 10, where: 'Vancouver', kind: 'food' },
     { id: 'toboggan', e: '🛷', t: 'Toboggan run', pts: 15, where: 'Whistler', kind: 'explore' },
     { id: 'magic-castle', e: '🏰', t: 'Magic Castle play area', pts: 10, where: 'Whistler', kind: 'explore' },
-    { id: 'bear-sign', e: '🐻', t: 'Spot a bear sign while the bears sleep', pts: 10, where: 'Whistler', kind: 'explore' },
+    { id: 'bear-sign', e: '🐻', t: 'Find a bear warning sign (the bears are asleep for winter)', pts: 10, where: 'Whistler', kind: 'explore' },
     { id: 'fondue', e: '🫕', t: 'Fondue or raclette dinner', pts: 15, where: 'Whistler', kind: 'food' },
     { id: 'sharks', e: '🦈', t: "Ripley's shark tunnel", pts: 15, where: 'Toronto', kind: 'explore' },
     { id: 'xmas-market', e: '🎄', t: 'Christmas market', pts: 15, where: 'Toronto', kind: 'explore' },
@@ -341,7 +341,7 @@ window.Quests = (() => {
     for (const [k, f] of Object.entries(st.facts)) {
       if (k === 'wipe' || k === 'swipe') continue;
       /* stories outlive a quest reset (only the stories wipe takes them), and so do the faces people chose (15 Nov 2026) */
-      if (STORY_KEY.test(k) ? f.t >= sw : (f.t >= w || k.startsWith('avatar|'))) out[k] = f;
+      if (STORY_KEY.test(k) ? f.t >= sw : (f.t >= w || k.startsWith('avatar|') || k.startsWith('vdoc|'))) out[k] = f;   // nor does a quest reset touch the Vault's tickets (tickets.js)
     }
     effMemo = { st, rev, out };
     return out;
@@ -552,7 +552,7 @@ window.Quests = (() => {
     for (const [id, blob] of Object.entries(devices || {})) {
       if (id === st.device) continue;
       for (const [k, f] of Object.entries((blob && blob.facts) || {})) {
-        if (!f || typeof f.t !== 'number' || !/^(tick|food|ok|avatar|wipe|swipe|page|media|stamp|post|cmt|card)\|?/.test(k)) continue;
+        if (!f || typeof f.t !== 'number' || !/^(tick|food|ok|avatar|wipe|swipe|page|media|stamp|post|cmt|card|vdoc)\|?/.test(k)) continue;
         const cur = merged[k];
         if (!cur || f.t > cur.t || (f.t === cur.t && String(f.d || id) > String(cur.d))) { merged[k] = Object.assign({}, f, { d: f.d || id }); changed = true; }
       }
@@ -594,7 +594,7 @@ window.Quests = (() => {
     const sy = (S.family && S.family.trip && S.family.trip.sync) || {};
     const st = state();
     Sync.onStatus(() => { const el = $('#sync-line'); if (el) el.textContent = syncText(); });   // the line only: the header and the screens are redrawn by afterChange when facts actually change
-    Sync.start({ url: sy.url, token: sy.token, device: st.device, mine, apply: mergeRemote, meta: () => ({ role: role() || 'kids', name: deviceName() }), work: () => (window.Media ? Media.flush() : null) });
+    Sync.start({ url: sy.url, token: sy.token, device: st.device, mine, apply: mergeRemote, meta: () => ({ role: role() || 'kids', name: deviceName() }), work: () => Promise.resolve(window.Media ? Media.flush() : null).then(() => (window.VaultDocs ? VaultDocs.sync() : null)) });
   }
   function syncText() {
     const s = Sync.status();

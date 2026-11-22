@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- World Adventure's Home screen icon: one screenless activity that opens the web app in Chrome (Open.java). No permissions. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="io.github.fiino.winternotes"
+    android:versionCode="1"
+    android:versionName="1.0">
+  <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="33" />
+  <application android:label="World Adventure" android:icon="@mipmap/icon" android:allowBackup="false">
+    <activity android:name=".Open" android:exported="true" android:theme="@android:style/Theme.NoDisplay"
+        android:excludeFromRecents="true" android:noHistory="true">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>

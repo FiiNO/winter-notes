@@ -997,3 +997,19 @@ details.card.dayrow.past > summary::before { margin-right: 8px; }
 .tripbook { margin: 10px 0 4px; padding-top: 10px; border-top: 1px dashed var(--border); }
 .tripbook .btn { margin-bottom: 6px; }
 
+/* ---- tickets and documents in the Vault (tickets.js, 21 Nov 2026) */
+#vdoc-on .input { margin-bottom: 8px; }
+.vdoc-row { display: flex; align-items: center; width: 100%; text-align: left; background: var(--pale); color: var(--text); border: 0; border-radius: 14px; padding: 10px 12px; margin: 6px 0; min-height: 56px; cursor: pointer; font: inherit; }
+.vdoc-row .ico { flex: 0 0 auto; font-size: 1.5em; margin-right: 12px; }
+.vdoc-row .bt { flex: 1 1 auto; min-width: 0; }
+.vdoc-row .bt > span { display: block; overflow-wrap: anywhere; }
+.vdoc-row .chev { flex: 0 0 auto; color: var(--muted); font-size: 1.4em; padding-left: 8px; }
+.vdoc-head { margin: 0 0 10px; padding-right: 96px; }
+.vdoc-head .ik-name { font-size: 1.2em; }
+.vdoc-body { overflow: auto; -webkit-overflow-scrolling: touch; background: #fff; border-radius: 12px; }
+.vdoc-body .card { margin: 0; }
+.vdoc-body .tiny { padding: 6px 10px; }
+.vdoc-img { display: block; width: 100%; height: auto; background: #fff; }
+.vdoc-img.zoom { width: 240%; max-width: none; }
+.vdoc select.input { width: 100%; }
+

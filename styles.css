@@ -1013,3 +1013,8 @@ details.card.dayrow.past > summary::before { margin-right: 8px; }
 .vdoc-img.zoom { width: 240%; max-width: none; }
 .vdoc select.input { width: 100%; }
 
+/* ---- Quests: what is done sits in one fold at the bottom (22 Nov 2026) */
+.alldone { margin: 4px 0 10px; }
+details.donebox { margin-top: 18px; }
+details.donebox .h3 { margin-top: 12px; }
+

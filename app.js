@@ -1488,7 +1488,10 @@ function renderSettings() {
   if (pvp) pvp.onclick = () => setPreview(pi < 0 ? dates[dates.length - 1] : pi === 0 ? '' : dates[pi - 1]);
   if (pvn) pvn.onclick = () => setPreview(pi < 0 ? dates[0] : pi >= dates.length - 1 ? '' : dates[pi + 1]);
   if (pvc) pvc.onclick = () => setPreview('');
-  const cur = $('#pv-strip .day.today'); if (cur) cur.scrollIntoView({ inline: 'center', block: 'nearest' });
+  /* the strip of days slides sideways to the chosen day. It used to be brought into view as a whole (scrollIntoView), which
+     also dragged the page down to this card near the bottom every time Settings was opened (22 Nov 2026, Andy). */
+  const cur = $('#pv-strip .day.today'), strip = $('#pv-strip');
+  if (cur && strip) strip.scrollLeft += cur.getBoundingClientRect().left - strip.getBoundingClientRect().left - (strip.clientWidth - cur.offsetWidth) / 2;
   Quests.wireSettings($('#screen-settings'));
   const mm = $('#media-msg');
   const usage = Media.enabled ? Media.usage().catch(() => null) : Promise.resolve(null);   // read once for the line here and the readout below

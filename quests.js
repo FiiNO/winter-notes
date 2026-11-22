@@ -341,7 +341,7 @@ window.Quests = (() => {
     for (const [k, f] of Object.entries(st.facts)) {
       if (k === 'wipe' || k === 'swipe') continue;
       /* stories outlive a quest reset (only the stories wipe takes them), and so do the faces people chose (15 Nov 2026) */
-      if (STORY_KEY.test(k) ? f.t >= sw : (f.t >= w || k.startsWith('avatar|') || k.startsWith('vdoc|'))) out[k] = f;   // nor does a quest reset touch the Vault's tickets (tickets.js)
+      if (STORY_KEY.test(k) ? f.t >= sw : (f.t >= w || k.startsWith('avatar|') || k.startsWith('vdoc|'))) out[k] = f;   // nor does a quest reset touch the Vault's tickets (vaultdocs.js)
     }
     effMemo = { st, rev, out };
     return out;

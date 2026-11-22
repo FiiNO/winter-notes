@@ -444,7 +444,7 @@ function kvDo(mode, fn) { return idbRun('kv', mode, (t) => new Promise((res, rej
 const kvGet = (k) => kvDo('readonly', (s) => s.get(k));
 const kvSet = (k, v) => kvDo('readwrite', (s) => s.put(v, k)).then(() => {});
 const kvDel = (k) => kvDo('readwrite', (s) => s.delete(k)).then(() => {});
-const kvKeys = () => kvDo('readonly', (s) => s.getAllKeys());   // tickets.js: the sealed documents kept under "vdoc:<id>"
+const kvKeys = () => kvDo('readonly', (s) => s.getAllKeys());   // vaultdocs.js: the sealed documents kept under "vdoc:<id>"
 
 /* ------------------------------------------------------------------ crypto */
 const b64d = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -1362,7 +1362,7 @@ function lockVault() {
   renderStays();                                     // inline PINs disappear again
   if (window.DossierMap) window.DossierMap.setVaultFeatures([]);
 }
-/* choosing a file to add (tickets.js) sends the app to the background for a moment: the Vault stays open for that, up to three minutes */
+/* choosing a file to add (vaultdocs.js) sends the app to the background for a moment: the Vault stays open for that, up to three minutes */
 document.addEventListener('visibilitychange', () => { if (document.hidden && !(S.vaultHold && Date.now() - S.vaultHold < 180000)) lockVault(); });
 ['click', 'touchstart', 'keydown'].forEach((ev) => document.addEventListener(ev, () => { if (S.vault) armVaultLock(); }, { passive: true }));
 
@@ -1381,7 +1381,7 @@ async function renderVault() {
       <div class="card"><div class="h2">5 January: the plan</div>${kv(V.surprise.filter((r) => r.text).map((r) => [r.label || '·', r.text + (r.note ? ' — ' + r.note : '')]))}</div>
       <div class="card"><div class="h2">Card-lock list</div>${(V.card_lock || []).length ? kv(V.card_lock.map((r) => [r.label || '·', r.text + (r.note ? ' — ' + r.note : '')])) : `<div class="small">${esc(V.card_lock_note || '')}</div>`}</div>`;
     $('#vault-lock').onclick = lockVault;
-    if (window.VaultDocs) VaultDocs.render($('#vault-docs'));     // tickets and documents (tickets.js)
+    if (window.VaultDocs) VaultDocs.render($('#vault-docs'));     // tickets and documents (vaultdocs.js)
     return;
   }
   const key = await kvGet('key:vault'), pinRec = await kvGet('pin:vault');

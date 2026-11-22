@@ -79,7 +79,7 @@ window.Quests = (() => {
   const QUESTS = [
     // before we go
     { id: 'pack-case', e: '🧳', t: 'Help pack your own suitcase', pts: 20, where: 'home', kind: 'helper' },
-    { id: 'flu-shot', e: '💉', t: 'Brave the flu shot', pts: 30, where: 'home', kind: 'helper' },
+    { id: 'flu-shot', e: '💉', t: 'Brave the flu shot', pts: 30, where: 'home', kind: 'helper', retired: true },   // taken off the list (22 Nov 2026, Andy). retired: no longer offered anywhere, but a tick made before still counts, so nobody loses points
     { id: 'learn-ja', e: '🇯🇵', t: 'Learn three Japanese words', pts: 20, where: 'home', kind: 'words' },
     { id: 'learn-fr', e: '🇫🇷', t: 'Learn three French words', pts: 20, where: 'home', kind: 'words' },
     { id: 'know-numbers', e: '📱', t: "Know Mum and Dad's numbers by heart, and that we are from Australia", pts: 50, where: 'any', kind: 'helper' },
@@ -341,7 +341,7 @@ window.Quests = (() => {
     for (const [k, f] of Object.entries(st.facts)) {
       if (k === 'wipe' || k === 'swipe') continue;
       /* stories outlive a quest reset (only the stories wipe takes them), and so do the faces people chose (15 Nov 2026) */
-      if (STORY_KEY.test(k) ? f.t >= sw : (f.t >= w || k.startsWith('avatar|') || k.startsWith('vdoc|'))) out[k] = f;   // nor does a quest reset touch the Vault's tickets (tickets.js)
+      if (STORY_KEY.test(k) ? f.t >= sw : (f.t >= w || k.startsWith('avatar|') || k.startsWith('vdoc|'))) out[k] = f;   // nor does a quest reset touch the Vault's tickets (vaultdocs.js)
     }
     effMemo = { st, rev, out };
     return out;
@@ -778,7 +778,7 @@ window.Quests = (() => {
     const diaryDays = (pl.done.diary || []).length;
     out.push({ id: 'story-master', e: '📚', t: 'Story master', kind: 'skill', pts: 40, earned: diaryDays >= 20, hint: `${Math.min(diaryDays, 20)} of 20 pages` });
     for (const c of CHAMPION_CITIES) {
-      const qs = QUESTS.filter((q) => q.where === c), done = qs.filter((q) => doneCount(pl, q.id)).length;
+      const qs = QUESTS.filter((q) => q.where === c && !q.retired), done = qs.filter((q) => doneCount(pl, q.id)).length;
       out.push({ id: 'champ-' + CITY_KEY[c], e: '🏆', t: `${c} champion`, kind: 'skill', pts: 40, earned: qs.length > 0 && done === qs.length, hint: `${done} of ${qs.length} ${c} quests` });
     }
     const distinct = Object.keys(pl.done).filter((id) => byId[id] && !byId[id].daily).length;
@@ -823,7 +823,7 @@ window.Quests = (() => {
   /* ---------------------------------------------------------------- views */
   function available(ctx, pl) {
     const here = citiesForDay(ctx);
-    return QUESTS.filter((q) => (q.where === 'any' || here.has(q.where) || (ctx.before && q.where === 'home')) && !(q.parents && !isParentDevice()))
+    return QUESTS.filter((q) => !q.retired && (q.where === 'any' || here.has(q.where) || (ctx.before && q.where === 'home')) && !(q.parents && !isParentDevice()))
       .map((q) => ({ ...q, done: q.daily ? doneToday(pl, q.id, ctx.date) : doneCount(pl, q.id) > 0 }));
   }
   function playerChips(st, ctx) {
@@ -872,11 +872,25 @@ window.Quests = (() => {
     if (!isParentDevice()) html += `<p class="small muted kidnote">📨 Every tick on this device goes to Mum and Dad for a ✓ before the points count.</p>`;
     html += `<div class="row"><button class="btn block" data-go-passport>📘 Passport and badges</button></div>`;
     html += `<div class="foodcard" data-key="food"><span class="qe">🍽️</span><div class="qt"><div class="qn">Tried a new food?</div><div class="qp">${FOOD_PTS} pts each · ${pl.foods.length} so far</div></div><button class="qbtn go" id="food-add">+1</button></div>`;
-    if (todays.length) html += `<h2 class="h2">${esc(here)}</h2>` + todays.map((q) => questCard(q, ctx, player, pl)).join('');
-    html += `<h2 class="h2">Every day</h2>` + dailies.map((q) => questCard(q, ctx, player, pl)).join('');
-    if (helpers.length) html += `<h2 class="h2">Any time</h2>` + helpers.map((q) => questCard(q, ctx, player, pl)).join('');
+    /* 22 Nov 2026 (Andy: "completed quests take up a lot of page space... only outstanding challenges show at the top"): a
+       quest that is done and counted leaves its list and sits in one fold at the bottom, "Completed", with its Undo. One
+       still waiting for Mum or Dad stays where it is. The quest ticked a moment ago stays put for this one drawing, so its
+       pop and its points are seen where the finger was. */
+    const just = fx ? fx.key : null;
+    const finished = (q) => { const it = itemState(pl, q, ctx.date); return !!(it && it.counted) && tickKey(player, q.id, q.daily ? ctx.date : null) !== just; };
+    const cards = (list) => list.map((q) => questCard(q, ctx, player, pl)).join('');
+    const section = (title, list, allDone) => { const left = list.filter((q) => !finished(q)); return list.length ? `<h2 class="h2">${esc(title)}</h2>` + (left.length ? cards(left) : `<p class="small muted alldone">✓ ${esc(allDone)}</p>`) : ''; };
+    html += section(here, todays, 'Everything here is done');
+    html += section('Every day', dailies, 'All done for today');
+    html += section('Any time', helpers, 'All done');
     const others = CITIES.filter((c) => !citiesForDay(ctx).has(c));
-    html += `<h2 class="h2">Coming up</h2>` + others.map((c) => { const qs = QUESTS.filter((q) => q.where === c); return qs.length ? `<details data-d="${CITY_KEY[c]}"><summary>${CITY_EMOJI[c]} ${esc(c)} <span class="chip">${qs.filter((q) => doneCount(pl, q.id)).length} / ${qs.length}</span></summary>${qs.map((q) => questCard(q, ctx, player, pl)).join('')}</details>` : ''; }).join('');
+    html += `<h2 class="h2">Coming up</h2>` + others.map((c) => { const qs = QUESTS.filter((q) => q.where === c && !q.retired), left = qs.filter((q) => !finished(q)); return qs.length ? `<details data-d="${CITY_KEY[c]}"><summary>${CITY_EMOJI[c]} ${esc(c)} <span class="chip">${qs.length - left.length} / ${qs.length}</span></summary>${left.length ? cards(left) : '<p class="small muted alldone">✓ Everything here is done</p>'}</details>` : ''; }).join('');
+    const done = QUESTS.filter((q) => finished(q) && !(q.parents && !isParentDevice()));
+    if (done.length) {
+      const where = (q) => (q.where === 'any' ? (q.daily ? 'Every day (today)' : 'Any time') : q.where === 'home' ? 'Before we go' : q.where);
+      const groups = []; for (const q of done) { const w = where(q); let g = groups.find((x) => x[0] === w); if (!g) groups.push(g = [w, []]); g[1].push(q); }
+      html += `<details data-d="done" class="donebox"><summary>✅ Completed <span class="chip">${done.length}</span></summary>${groups.map((g) => `<div class="h3">${CITY_EMOJI[g[0]] ? CITY_EMOJI[g[0]] + ' ' : ''}${esc(g[0])}</div>${cards(g[1])}`).join('')}</details>`;
+    }
     const foodItems = pl.items.filter((it) => it.kind === 'food');
     if (foodItems.length) html += `<details data-d="foods"><summary>🍽️ New foods tried <span class="chip">${pl.foods.length}</span></summary><ul class="list">${foodItems.map((it) => `<li>${esc(it.what || 'Something new')} <span class="muted small">· ${esc(fmtDate(it.date))}${it.pending ? ' · ⏳ waiting' : it.rejected ? ' · ✗ not this time' : ''}</span> <button class="qbtn undo small-undo" data-food-undo="${esc(it.key)}">Undo</button></li>`).join('')}</ul></details>`;
     html += `<p class="tiny muted" id="sync-line">${esc(syncText())}</p>`;

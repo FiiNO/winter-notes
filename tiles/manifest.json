@@ -173,6 +173,25 @@
    "rev": 2
   },
   {
+   "name": "newark",
+   "title": "Newark airport and the way in",
+   "file": "tiles/newark.pmtiles",
+   "bbox": [
+    -74.2,
+    40.64,
+    -74.05,
+    40.79
+   ],
+   "maxzoom": 15,
+   "dates": [],
+   "city": "New York",
+   "side": true,
+   "size": 9383662,
+   "sha256": "4ee548ddc449fc42e44a81ed075abfd1c5f8e9755568c9706f56f9e709edb95a",
+   "built": "2026-11-23",
+   "planet": "20261123"
+  },
+  {
    "name": "montreal",
    "title": "Montréal island",
    "file": "tiles/montreal-wide.pmtiles",

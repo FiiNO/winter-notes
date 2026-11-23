@@ -37,6 +37,24 @@
    "planet": "20261006"
   },
   {
+   "name": "overview-au",
+   "title": "Australia (east) overview",
+   "file": "tiles/overview-au.pmtiles",
+   "bbox": [
+    137.0,
+    -30.0,
+    155.0,
+    -9.0
+   ],
+   "maxzoom": 7,
+   "dates": [],
+   "size": 1646122,
+   "sha256": "64ec766f51fe416797c00d743c376753661f6e5c1d99de1b673cf55cee8ee364",
+   "always": true,
+   "built": "2026-11-23",
+   "planet": "20261123"
+  },
+  {
    "name": "vancouver",
    "title": "Vancouver",
    "file": "tiles/vancouver.pmtiles",
@@ -225,6 +243,25 @@
    "built": "2026-10-06",
    "planet": "20261006",
    "city": "Nagoya"
+  },
+  {
+   "name": "townsville",
+   "title": "Townsville (home)",
+   "file": "tiles/townsville.pmtiles",
+   "bbox": [
+    146.6,
+    -19.38,
+    146.9,
+    -19.1
+   ],
+   "maxzoom": 15,
+   "dates": [],
+   "size": 3841844,
+   "sha256": "abb7b0076ac8867b5ea4e1152e0ef0e1e03bb1c95ec21126f3d8bf6c9a91e78a",
+   "city": "Townsville",
+   "home": true,
+   "built": "2026-11-23",
+   "planet": "20261123"
   }
  ],
  "attribution": "© OpenStreetMap contributors · Protomaps"

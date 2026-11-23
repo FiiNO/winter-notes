@@ -965,8 +965,8 @@ async function flyChecks() {
     if (packs) for (const city of want) {
       const mine = packs.filter((k) => k.city === city);
       if (!mine.length) continue;
-      const lack = mine.filter((k) => !k.have);
-      if (lack.length) add('warn', `The ${city} map is not on this phone`, `${lack.map((k) => k.title).join(', ')}: ${(lack.reduce((n, k) => n + (k.size || 0), 0) / 1e6).toFixed(0)} MB, best on Wi-Fi.`, 'map', 'Open the Map to download');
+      const lack = mine.filter((k) => !k.have), old = lack.length > 0 && lack.every((k) => k.old);   // old: the smaller map from before 23 Nov 2026 is on the phone and still works
+      if (lack.length) add('warn', old ? `A bigger ${city} map is ready` : `The ${city} map is not on this phone`, `${lack.map((k) => k.title).join(', ')}: ${(lack.reduce((n, k) => n + (k.size || 0), 0) / 1e6).toFixed(0)} MB, best on Wi-Fi.${old ? ' The smaller map already on this phone still works.' : ''}`, 'map', 'Open the Map to download');
       else add('ok', `The ${city} map is on this phone`);
     }
   }

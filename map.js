@@ -2,7 +2,8 @@
    - MapLibre GL JS + pmtiles, vendored and pinned. No network requests except this origin (tiles stream from the host
      over range requests when online) and never any analytics.
    - Basemap packs: Protomaps PMTiles cut per area. Downloaded packs live in the Origin Private File System, or in
-     Cache Storage where OPFS writing is unavailable (Safari). Tiles are public OSM data and are not encrypted.
+     Cache Storage where OPFS writing is unavailable (Safari before 26), there cut into 4 MB parts. Tiles are public
+     OSM data and are not encrypted.
    - Overlays come from the decrypted family content (and the vault when it is open); they are never fetched.
    - GPS: watchPosition only while the Map screen is visible; nothing is stored or sent. */
 import * as maplibregl from './vendor/maplibre-gl.mjs';
@@ -18,19 +19,62 @@ const S = { map: null, container: null, family: null, vaultFeatures: [], manifes
 
 /* ------------------------------------------------------------------ pack storage */
 async function opfsRoot() { try { return navigator.storage && navigator.storage.getDirectory ? await navigator.storage.getDirectory() : null; } catch (e) { return null; } }
-async function packFile(name) {
+/* A pack kept in Cache Storage is cut into parts (23 Nov 2026, when the city packs grew to the whole city: Tokyo is 78 MB).
+   Cache Storage is where packs go when the browser cannot write a file of its own (Safari before 26). It hands a stored
+   answer back whole, so one entry per pack meant the whole pack in memory to draw one tile. Now each part is 4 MB, a list
+   ("?parts") says which parts make the pack, and the map reads only the parts it needs. The list is written last, so a
+   pack is either all there or not there, and an older copy keeps working until the new one is complete. A pack stored
+   whole by an earlier build is still read the old way. */
+const PART = 4 * 1048576, HELD = 4;
+const wholeKey = (name) => 'tiles/' + name + '.pmtiles';
+const partsKey = (name) => wholeKey(name) + '?parts';
+const partKey = (name, gen, i) => wholeKey(name) + '?part=' + gen + '-' + i;
+async function tileCache() { try { return await caches.open(TILE_CACHE); } catch (e) { return null; } }
+async function partsOf(name) { const c = await tileCache(); if (!c) return null; try { const r = await c.match(partsKey(name)); const m = r ? await r.json() : null; return m && m.n > 0 && m.size > 0 ? m : null; } catch (e) { return null; } }
+async function dropParts(c, name, keep) {         // every part of this pack except the ones the list in use names (keep)
+  const tail = '/' + wholeKey(name);
+  for (const k of await c.keys()) { const u = new URL(k.url); if (u.pathname.slice(-tail.length) === tail && u.search.indexOf('?part=') === 0 && (keep == null || u.search.indexOf('?part=' + keep + '-') !== 0)) await c.delete(k); }
+}
+class PartSource {                                 // what pmtiles asks of a source: a key, and bytes from here to there
+  constructor(name, meta) { this.name = name; this.meta = meta; this.held = []; }
+  getKey() { return localKey(this.name); }
+  part(i) {
+    const hit = this.held.find((h) => h.i === i);
+    if (hit) return hit.p;
+    const p = tileCache().then((c) => c.match(partKey(this.name, this.meta.gen, i))).then((r) => { if (!r) throw new Error('Invalid map pack: a part of ' + this.name + ' is missing, download it again'); return r.arrayBuffer(); });
+    this.held.push({ i, p }); if (this.held.length > HELD) this.held.shift();
+    p.catch(() => { this.held = this.held.filter((h) => h.p !== p); });
+    return p;
+  }
+  async getBytes(offset, length) {
+    const size = this.meta.size, step = this.meta.part, want = Math.max(0, Math.min(length, size - offset)), out = new Uint8Array(want);
+    let done = 0;
+    while (done < want) {
+      const at = offset + done, i = Math.floor(at / step), from = at - i * step, buf = await this.part(i), n = Math.min(want - done, buf.byteLength - from);
+      if (n <= 0) throw new Error('Invalid map pack: ' + this.name + ' is cut short, download it again');
+      out.set(new Uint8Array(buf, from, n), done); done += n;
+    }
+    return { data: out.buffer };
+  }
+}
+async function packSource(name) {
   const root = await opfsRoot();
-  if (root) { try { const h = await root.getFileHandle(name + '.pmtiles'); const f = await h.getFile(); if (f.size > 0) return f; } catch (e) { /* not in OPFS */ } }
-  try { const c = await caches.open(TILE_CACHE); const r = await c.match('tiles/' + name + '.pmtiles'); if (r) return new File([await r.blob()], name + '.pmtiles'); } catch (e) { /* no cache */ }
+  if (root) { try { const h = await root.getFileHandle(name + '.pmtiles'); const f = await h.getFile(); if (f.size > 0) return new pmtiles.FileSource(f); } catch (e) { /* not in OPFS */ } }
+  const meta = await partsOf(name);
+  if (meta) return new PartSource(name, meta);
+  try { const c = await caches.open(TILE_CACHE); const r = await c.match(wholeKey(name)); if (r) return new pmtiles.FileSource(new File([await r.blob()], name + '.pmtiles')); } catch (e) { /* no cache */ }
   return null;
 }
 /* Is a pack on the device, and how big, without reading it (15 Nov 2026). The panel used to open every pack to ask: where
-   packs live in Cache Storage (Safari) that pulled each one, tens of megabytes, into memory just to list them. A pack in
-   Cache Storage was checked against the manifest when it was stored, so its size is not asked for again (null). */
+   packs live in Cache Storage (Safari) that pulled each one, tens of megabytes, into memory just to list them. A pack
+   stored whole in Cache Storage was checked against the manifest when it was stored, so its size is not asked for again
+   (null). */
 async function packState(name) {
   const root = await opfsRoot();
   if (root) { try { const f = await (await root.getFileHandle(name + '.pmtiles')).getFile(); if (f.size > 0) return { have: true, size: f.size }; } catch (e) { /* not in OPFS */ } }
-  try { const c = await caches.open(TILE_CACHE); if (await c.match('tiles/' + name + '.pmtiles')) return { have: true, size: null }; } catch (e) { /* no cache */ }
+  const meta = await partsOf(name);
+  if (meta) return { have: true, size: meta.size };
+  try { const c = await caches.open(TILE_CACHE); if (await c.match(wholeKey(name))) return { have: true, size: null }; } catch (e) { /* no cache */ }
   return { have: false, size: 0 };
 }
 async function packDownloaded(name) { return (await packState(name)).have; }
@@ -44,7 +88,7 @@ async function downloadPack(pack, onProgress) {
      only stands in when the manifest has none and the body is not encoded. */
   const expected = pack.size || 0, encoded = !!resp.headers.get('content-encoding');
   const total = expected || (encoded ? 0 : +resp.headers.get('content-length') || 0);
-  const check = async (size) => { if (expected && size !== expected) { await deletePack(pack.name); throw new Error(`incomplete (${fmtMB(size)} of ${fmtMB(expected)}), try again`); } };
+  const short = (size) => new Error(`incomplete (${fmtMB(size)} of ${fmtMB(expected)}), try again`);
   let got = 0;
   const counted = new TransformStream({ transform(chunk, ctl) { got += chunk.byteLength; if (onProgress) onProgress(got, total); ctl.enqueue(chunk); } });
   const stream = resp.body.pipeThrough(counted);
@@ -55,27 +99,44 @@ async function downloadPack(pack, onProgress) {
     await stream.pipeTo(w);
     S.storageKind = 'OPFS';
     const f = await h.getFile();
-    await check(f.size);
+    if (expected && f.size !== expected) { await deletePack(pack.name); throw short(f.size); }
   } else {
-    const c = await caches.open(TILE_CACHE);
-    await c.put('tiles/' + pack.name + '.pmtiles', new Response(stream, { headers: { 'content-type': 'application/octet-stream' } }));
+    const c = await caches.open(TILE_CACHE), gen = Date.now().toString(36), reader = stream.getReader(), old = await partsOf(pack.name);
+    await dropParts(c, pack.name, old ? old.gen : '-');             // what a download that was cut off left behind
+    const buf = new Uint8Array(PART); let fill = 0, n = 0;
+    const flush = async () => { await c.put(partKey(pack.name, gen, n), new Response(buf.slice(0, fill), { headers: { 'content-type': 'application/octet-stream' } })); n += 1; fill = 0; };
+    for (;;) {
+      const r = await reader.read(); if (r.done) break;
+      for (let at = 0; at < r.value.byteLength;) { const take = Math.min(PART - fill, r.value.byteLength - at); buf.set(r.value.subarray(at, at + take), fill); fill += take; at += take; if (fill === PART) await flush(); }
+    }
+    if (fill) await flush();
     S.storageKind = 'Cache Storage';
-    await check(got);
+    if (expected && got !== expected) { await dropParts(c, pack.name, old ? old.gen : '-'); throw short(got); }   // the copy from before, if there is one, stays
+    await c.put(partsKey(pack.name), new Response(JSON.stringify({ gen, n, size: got, part: PART }), { headers: { 'content-type': 'application/json' } }));
+    await dropParts(c, pack.name, gen);
+    await c.delete(wholeKey(pack.name));                             // the copy an earlier build stored whole
   }
+  notePack(pack.name, pack.sha256 || 'fetched');
 }
+/* Which copy of a pack is on the phone (23 Nov 2026: the city packs grew from the centre to the whole city under the same
+   names). The pack's sha256 is noted when a download finishes. A pack the list marks "rev" that was fetched before this
+   note existed is an older, smaller copy: it keeps working, and the list offers the new one. */
+function packNotes() { try { return JSON.parse(localStorage.getItem('packRev') || '{}') || {}; } catch (e) { return {}; } }
+function notePack(name, sha) { try { const n = packNotes(); if (sha) n[name] = sha; else delete n[name]; localStorage.setItem('packRev', JSON.stringify(n)); } catch (e) { /* storage blocked */ } }
+function packStale(p) { const had = packNotes()[p.name]; return had ? !!p.sha256 && had !== p.sha256 : !!p.rev; }
 async function deletePack(name) {
+  notePack(name, null);
   const root = await opfsRoot();
   if (root) { try { await root.removeEntry(name + '.pmtiles'); } catch (e) { /* absent */ } }
-  try { const c = await caches.open(TILE_CACHE); await c.delete('tiles/' + name + '.pmtiles'); } catch (e) { /* absent */ }
+  try { const c = await caches.open(TILE_CACHE); await c.delete(wholeKey(name)); await c.delete(partsKey(name)); await dropParts(c, name, null); } catch (e) { /* absent */ }
 }
 /* The vendored pmtiles FileSource keys itself by the File's name and ignores a second constructor argument, so the
    style must ask the protocol for exactly that key. Asking for anything else ("local-vancouver", until 31 Oct) made
    the protocol fetch that name from the host, get a 404 and draw nothing: downloaded packs never rendered. */
 function localKey(name) { return name + '.pmtiles'; }
 async function sourceUrlFor(pack) {
-  const f = await packFile(pack.name);
-  if (f) {
-    const src = new pmtiles.FileSource(f);
+  const src = await packSource(pack.name);
+  if (src) {
     const key = src.getKey();
     if (!S.loadedSources.has(key)) { protocol.add(new pmtiles.PMTiles(src)); S.loadedSources.add(key); }
     return 'pmtiles://' + key;
@@ -91,9 +152,9 @@ function overviewFor(lon) { const ps = (S.manifest ? S.manifest.packs : []).filt
    a file anyone on the internet can read: city by city, when the family is where. The manifest now only says which place
    a pack covers (city), and the days come from the plan once it is unlocked. A manifest that still carries dates (an
    older build, another trip) is used as it is when the plan names no day for that place. */
-const PACK_CITY = { vancouver: 'Vancouver', whistler: 'Whistler', 'sea-to-sky': 'Whistler', toronto: 'Toronto', nyc: 'New York', montreal: 'Montréal', tokyo: 'Tokyo', 'tokyo-narita': 'Tokyo', narita: 'Tokyo', nagoya: 'Nagoya' };
+const PACK_CITY = { townsville: 'Townsville', vancouver: 'Vancouver', whistler: 'Whistler', 'sea-to-sky': 'Whistler', toronto: 'Toronto', nyc: 'New York', montreal: 'Montréal', tokyo: 'Tokyo', 'tokyo-narita': 'Tokyo', narita: 'Tokyo', nagoya: 'Nagoya' };
 const packCity = (p) => p.city || PACK_CITY[p.name] || '';
-const isCorridor = (p) => p.name.includes('corridor') || p.name.includes('narita') || p.name.includes('sea-to-sky');
+const isCorridor = (p) => !!p.side || p.name.includes('corridor') || p.name.includes('narita') || p.name.includes('sea-to-sky');   // side: a day trip's pack (Niagara), never the pack a day opens on
 function cityOfDay(date) { const d = ((S.family || {}).days || []).find((x) => x.date === date); return d && window.Quests ? Quests.dayCity(d) : ''; }
 function packDates(p) {
   if (p.always) return [];
@@ -106,8 +167,14 @@ function packForToday(today) {
   const city = cityOfDay(today), mains = detailPacks().filter((p) => !isCorridor(p));
   return (city && mains.find((p) => packCity(p) === city)) || mains.find((p) => { const r = packDates(p); return r.length === 2 && r[0] <= today && today <= r[1]; }) || null;
 }
-function firstStop() {                            // the first city pack of the trip by date (3 Nov 2026: before the trip the map opens here on purpose; home has no tiles)
-  return detailPacks().filter((p) => !isCorridor(p) && packDates(p).length === 2).sort((x, y) => packDates(x)[0].localeCompare(packDates(y)[0]))[0] || detailPacks()[0] || null;
+/* The pack for home (the pack list marks it "home": true), on any day that is not a day of the plan: before we leave and
+   once we are back (23 Nov 2026, Andy: "I don't have home maps loaded"). Until then the map opened on the first stop. */
+function homePack(today) {
+  const days = ((S.family || {}).days || []), h = detailPacks().filter((p) => p.home)[0];
+  return h && (!days.length || today < days[0].date || today > days[days.length - 1].date) ? h : null;
+}
+function firstStop() {                            // the first city pack of the trip by date (3 Nov 2026: before the trip the map opened here on purpose, while home had no tiles)
+  return detailPacks().filter((p) => !p.home && !isCorridor(p) && packDates(p).length === 2).sort((x, y) => packDates(x)[0].localeCompare(packDates(y)[0]))[0] || detailPacks()[0] || null;
 }
 
 function packAt(lon, lat) { const cands = detailPacks().filter((p) => inBbox(p.bbox, lon, lat)); cands.sort((a, b) => b.maxzoom - a.maxzoom); return cands[0] || null; }
@@ -171,6 +238,7 @@ async function ensureMap() {
   S.map.on('error', (e) => {
     const m = String((e && e.error && e.error.message) || '');
     if (!/404|40[0-9]|50[0-9]|Bad response|Failed to fetch|NetworkError|HTTP|range|Invalid/i.test(m)) return;
+    if (/\/style\/fonts\//.test(m)) return;         // a block of label letters this build does not carry (curly quotes, Cyrillic): the label is drawn without them, the tiles are fine (23 Nov 2026: it used to put "Map tiles failed" on the bar)
     S.lastError = m.slice(0, 160);
     const b = S.container.querySelector('#map-packbar'); if (b) b.textContent = '⚠ Map tiles failed: ' + S.lastError.slice(0, 60);
   });
@@ -276,25 +344,26 @@ function fmtMB(b) { return (b / 1e6).toFixed(b > 1e8 ? 0 : 1) + ' MB'; }
 async function renderPacks() {
   const el = S.container.querySelector('#map-packs');
   if (!S.manifest) { el.innerHTML = '<div class="small muted">No tile packs in this build yet.</div>'; return; }
-  const rows = [];
+  const rows = []; let todo = 0;                   // todo: bytes "Download all" would fetch
   for (const p of S.manifest.packs) {
     const st = await packState(p.name);
-    const have = st.have, whole = !have || !p.size || st.size == null || st.size === p.size;
-    const status = !have ? '<span class="chip">online only</span>' : whole ? `<span class="chip">offline ✓</span>` : `<span class="chip red">incomplete</span><br><span class="tiny muted">${fmtMB(st.size)} stored</span>`;
-    const action = have && whole ? `<button class="btn" data-del="${esc(p.name)}">Delete</button>` : `<button class="btn" data-get="${esc(p.name)}">${have ? 'Download again' : 'Download'}</button>`;
-    rows.push(`<tr data-pack="${esc(p.name)}"><td><b>${esc(p.title)}</b><br><span class="tiny muted">z${p.maxzoom} · ${p.always ? 'always' : packDates(p).length ? esc(packDates(p).join(' to ')) : 'for the trip'}</span></td><td>${fmtMB(p.size)}</td><td class="pack-status">${status}</td><td>${action}</td></tr>`);
+    const have = st.have, stale = have && packStale(p), whole = !have || stale || !p.size || st.size == null || st.size === p.size;
+    if (!have || stale) todo += p.size || 0;
+    const status = !have ? '<span class="chip">online only</span>' : stale ? '<span class="chip red">bigger map ready</span><br><span class="tiny muted">the old one still works</span>' : whole ? `<span class="chip">offline ✓</span>` : `<span class="chip red">incomplete</span><br><span class="tiny muted">${fmtMB(st.size)} stored</span>`;
+    const action = have && whole && !stale ? `<button class="btn" data-del="${esc(p.name)}">Delete</button>` : `<button class="btn" data-get="${esc(p.name)}">${stale ? 'Get the bigger map' : have ? 'Download again' : 'Download'}</button>`;
+    rows.push(`<tr data-pack="${esc(p.name)}"><td><b>${esc(p.title)}</b><br><span class="tiny muted">z${p.maxzoom} · ${p.always ? 'always' : p.home ? 'home' : packDates(p).length ? esc(packDates(p).join(' to ')) : 'for the trip'}</span></td><td>${fmtMB(p.size)}</td><td class="pack-status">${status}</td><td>${action}</td></tr>`);
   }
   const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate() : null;
   const persisted = navigator.storage && navigator.storage.persisted ? await navigator.storage.persisted() : null;
   el.innerHTML = `<table class="t"><tr><th>Pack</th><th>Size</th><th>Status</th><th></th></tr>${rows.join('')}</table>
-    <div class="row"><button class="btn primary" id="packs-all">Download all for the trip (on Wi-Fi)</button></div>
+    <div class="row"><button class="btn primary" id="packs-all"${todo ? '' : ' disabled'}>${todo ? `Download all for the trip (${fmtMB(todo)}, on Wi-Fi)` : 'Every map is on this phone ✓'}</button></div>
     <div class="tiny muted">${est ? `Storage: ${fmtMB(est.usage || 0)} used of ${fmtMB(est.quota || 0)}.` : ''} ${persisted === true ? 'Persistent storage granted.' : persisted === false ? 'Persistent storage not granted yet.' : ''} ${S.storageKind ? 'Packs kept in ' + S.storageKind + '.' : ''} Built ${esc((S.manifest.packs[0] || {}).built || '')}, planet ${esc((S.manifest.packs[0] || {}).planet || '')}.</div>
     ${S.lastError ? `<div class="tiny" style="color:var(--red)">Last map error: ${esc(S.lastError)}</div>` : ''}`;
   el.querySelectorAll('[data-get]').forEach((b) => b.onclick = () => getPack(b.dataset.get));
   el.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => { await deletePack(b.dataset.del); S.loadedSources.delete(localKey(b.dataset.del)); renderPacks(); });
   el.querySelector('#packs-all').onclick = async (e) => {
     const b = e.currentTarget; b.disabled = true;                    // one run at a time: a second tap used to start every download again alongside the first
-    for (const p of S.manifest.packs) if (!(await packDownloaded(p.name))) await getPack(p.name);
+    for (const p of S.manifest.packs) if (!(await packDownloaded(p.name)) || packStale(p)) await getPack(p.name);
   };
 }
 async function getPack(name) {
@@ -324,8 +393,9 @@ window.DossierMap = {
     S.today = opts.today; S.onTaxi = opts.onTaxi || null;
     if (!S.manifest) { try { S.manifest = await (await fetch('tiles/manifest.json')).json(); } catch (e) { S.manifest = null; } }
     const first = firstStop();
-    S.firstStopName = first ? first.name : null; S.preTrip = !!(first && !packForToday(S.today) && packDates(first).length === 2 && S.today < packDates(first)[0]);
-    S.activePack = S.activePack || packForToday(S.today) || first;
+    const home = homePack(S.today);
+    S.firstStopName = first ? first.name : null; S.preTrip = !!(!home && first && !packForToday(S.today) && packDates(first).length === 2 && S.today < packDates(first)[0]);
+    S.activePack = S.activePack || packForToday(S.today) || home || first;
     S.overview = S.activePack ? overviewFor((S.activePack.bbox[0] + S.activePack.bbox[2]) / 2) : overviewFor(139);
     S.container.querySelector('#map-me').onclick = centreOnMe;
     S.container.querySelector('#map-packs-toggle').onclick = () => { const p = S.container.querySelector('#map-packs'); p.classList.toggle('hidden'); if (!p.classList.contains('hidden')) renderPacks(); };
@@ -352,12 +422,12 @@ window.DossierMap = {
   },
   focusPlace(id) { const f = ((S.family.overlay || {}).features || []).find((x) => x.properties.id === id); if (f) { const [lon, lat] = f.geometry.coordinates; this.focus(lat, lon); openCard(f); } },
   hasPacks() { return !!(S.manifest && S.manifest.packs.length); },
-  packForDay(date) { const p = packForToday(date); return p ? p.name : null; },   // which city pack a day of the trip opens on (tests)
+  packForDay(date) { const p = packForToday(date) || homePack(date); return p ? p.name : null; },   // which city pack a day of the trip opens on (tests)
   /* for "Ready to fly?" (app.js): which packs are on this phone, whole. Works before the Map has ever been opened. */
   async packReport() {
     if (!S.manifest) { try { S.manifest = await (await fetch('tiles/manifest.json')).json(); } catch (e) { return null; } }
     const out = [];
-    for (const p of S.manifest.packs) { const st = await packState(p.name); out.push({ name: p.name, title: p.title, city: packCity(p), always: !!p.always, size: p.size || 0, have: st.have && (!p.size || st.size == null || st.size === p.size) }); }
+    for (const p of S.manifest.packs) { const st = await packState(p.name); out.push({ name: p.name, title: p.title, city: packCity(p), always: !!p.always, size: p.size || 0, old: st.have && packStale(p), have: st.have && !packStale(p) && (!p.size || st.size == null || st.size === p.size) }); }
     return out;
   },
   get map() { return S.map; },                     // tests

@@ -56,41 +56,43 @@
   },
   {
    "name": "vancouver",
-   "title": "Vancouver",
-   "file": "tiles/vancouver.pmtiles",
+   "title": "Vancouver and around",
+   "file": "tiles/vancouver-wide.pmtiles",
    "bbox": [
-    -123.2105,
-    49.1748,
-    -123.0936,
-    49.3038
+    -123.3,
+    49.08,
+    -122.72,
+    49.42
    ],
    "maxzoom": 15,
    "dates": [],
-   "size": 8002983,
-   "sha256": "6a1cb0c96625b3caa87ddfe8768b8656b5db1be94c80ca840a3fda1b470a8e13",
+   "size": 45817776,
+   "sha256": "87736ff11b0a86431406fd5ad308601c0430242dd3af509637f8ca09d290a57b",
    "always": false,
-   "built": "2026-10-06",
-   "planet": "20261006",
-   "city": "Vancouver"
+   "built": "2026-11-23",
+   "planet": "20261123",
+   "city": "Vancouver",
+   "rev": 2
   },
   {
    "name": "whistler",
-   "title": "Whistler village",
-   "file": "tiles/whistler.pmtiles",
+   "title": "Whistler valley",
+   "file": "tiles/whistler-wide.pmtiles",
    "bbox": [
-    -122.985,
-    50.096,
-    -122.925,
-    50.138
+    -123.12,
+    50.04,
+    -122.84,
+    50.22
    ],
    "maxzoom": 15,
    "dates": [],
-   "size": 1581479,
-   "sha256": "af12411cb2a0053a1e487d48e80182b5cef3fd337e334c567ddf2d2e2584d62e",
+   "size": 3824550,
+   "sha256": "911557f8b06a13cd9cdffccc92122d5128eedf328b739a1cdf64cfa6563b735d",
    "always": false,
-   "built": "2026-10-06",
-   "planet": "20261006",
-   "city": "Whistler"
+   "built": "2026-11-23",
+   "planet": "20261123",
+   "city": "Whistler",
+   "rev": 2
   },
   {
    "name": "sea-to-sky",
@@ -113,79 +115,102 @@
   },
   {
    "name": "toronto",
-   "title": "Toronto",
-   "file": "tiles/toronto.pmtiles",
+   "title": "Toronto and around",
+   "file": "tiles/toronto-wide.pmtiles",
    "bbox": [
-    -79.6537,
-    43.6187,
-    -79.3529,
-    43.6962
+    -79.65,
+    43.58,
+    -79.11,
+    43.86
    ],
    "maxzoom": 15,
    "dates": [],
-   "size": 17432105,
-   "sha256": "b3c9918bcf69267db0dc399800dfee19a220654cae00ba906686f4e83c1d2bed",
+   "size": 55062732,
+   "sha256": "15eedb33093cad587c09c9aeff5529a5f4cf15772004862701d258a7d0d22ac8",
    "always": false,
-   "built": "2026-10-06",
-   "planet": "20261006",
-   "city": "Toronto"
+   "built": "2026-11-23",
+   "planet": "20261123",
+   "city": "Toronto",
+   "rev": 2
+  },
+  {
+   "name": "niagara",
+   "title": "Niagara Falls",
+   "file": "tiles/niagara.pmtiles",
+   "bbox": [
+    -79.2,
+    43.03,
+    -78.98,
+    43.28
+   ],
+   "maxzoom": 15,
+   "dates": [],
+   "city": "Toronto",
+   "side": true,
+   "size": 8201465,
+   "sha256": "9a6371c436f3f958557f03ea34cd53e62902e04f28559e6793130b30bc4fbf87",
+   "built": "2026-11-23",
+   "planet": "20261123"
   },
   {
    "name": "nyc",
-   "title": "New York",
-   "file": "tiles/nyc.pmtiles",
+   "title": "New York City",
+   "file": "tiles/nyc-wide.pmtiles",
    "bbox": [
-    -74.0107,
-    40.7331,
-    -73.8496,
-    40.7937
+    -74.06,
+    40.57,
+    -73.75,
+    40.9
    ],
    "maxzoom": 15,
    "dates": [],
-   "size": 10914997,
-   "sha256": "507cdb083498a24a776def045e844db2f7f26db52f676411b3862655ff8de35b",
+   "size": 63319085,
+   "sha256": "9aff6994cd658e3583558edf9e768294134db0276fcb3585f6ac050c7668586b",
    "always": false,
-   "built": "2026-10-06",
-   "planet": "20261006",
-   "city": "New York"
+   "built": "2026-11-23",
+   "planet": "20261123",
+   "city": "New York",
+   "rev": 2
   },
   {
    "name": "montreal",
-   "title": "Montréal",
-   "file": "tiles/montreal.pmtiles",
+   "title": "Montréal island",
+   "file": "tiles/montreal-wide.pmtiles",
    "bbox": [
-    -73.65,
-    45.455,
-    -73.54,
-    45.53
+    -73.98,
+    45.4,
+    -73.47,
+    45.71
    ],
    "maxzoom": 15,
    "dates": [],
-   "size": 10947471,
-   "sha256": "cf09653a288afb16adba2ad4ce4f71d032b8c509ab5ee1476bf671018d391b0f",
+   "size": 55551174,
+   "sha256": "8740d4eab8976e28ba0ccf3a309c8dca1498fd030858a23edeea6d4ac438a1b4",
    "always": false,
-   "built": "2026-10-06",
-   "planet": "20261006",
-   "city": "Montréal"
+   "built": "2026-11-23",
+   "planet": "20261123",
+   "city": "Montréal",
+   "rev": 2
   },
   {
    "name": "tokyo",
-   "title": "Tokyo central",
-   "file": "tiles/tokyo.pmtiles",
+   "title": "Tokyo (the 23 wards)",
+   "file": "tiles/tokyo-wide.pmtiles",
    "bbox": [
-    139.717,
-    35.6314,
-    139.8409,
-    35.7334
+    139.6,
+    35.53,
+    139.92,
+    35.8
    ],
    "maxzoom": 15,
    "dates": [],
-   "size": 16988971,
-   "sha256": "c97275c3e8692f327cf67b72c468b1adb524d54cfdce0a6441454d9a0a47882a",
+   "size": 77797635,
+   "sha256": "d04c2d573e7f176925ecee081e1c7ff960383fc09fc3307b5e839d03ecaba6f4",
    "always": false,
-   "built": "2026-10-06",
-   "planet": "20261006",
-   "city": "Tokyo"
+   "built": "2026-11-23",
+   "planet": "20261123",
+   "city": "Tokyo",
+   "rev": 2
   },
   {
    "name": "tokyo-narita",
@@ -227,22 +252,23 @@
   },
   {
    "name": "nagoya",
-   "title": "Nagoya and LEGOLAND",
-   "file": "tiles/nagoya.pmtiles",
+   "title": "Nagoya and the port",
+   "file": "tiles/nagoya-wide.pmtiles",
    "bbox": [
-    136.82,
-    35.03,
-    136.9,
-    35.19
+    136.78,
+    35.0,
+    137.02,
+    35.24
    ],
-   "maxzoom": 14,
+   "maxzoom": 15,
    "dates": [],
-   "size": 4744448,
-   "sha256": "2ac78e2fd33820218ae3c148a8b3f02d746fffd1fba6bc0276c7ad8f04c2fdd4",
+   "size": 40036066,
+   "sha256": "3196c2003a5e12e8012a6d266e4a5d12635486f0d46e1399fb519f1c144dae05",
    "always": false,
-   "built": "2026-10-06",
-   "planet": "20261006",
-   "city": "Nagoya"
+   "built": "2026-11-23",
+   "planet": "20261123",
+   "city": "Nagoya",
+   "rev": 2
   },
   {
    "name": "townsville",

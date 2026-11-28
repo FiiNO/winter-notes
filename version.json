@@ -6,11 +6,11 @@
   "days": 39,
   "moves": 15,
   "stays": 9,
-  "events": 9,
+  "events": 11,
   "taxi_cards": 29,
   "hospitals": 14,
   "places": 86,
-  "vault_items": 70
+  "vault_items": 72
  },
  "test": false
 }

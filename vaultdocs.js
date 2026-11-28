@@ -8,7 +8,7 @@
    How it is kept safe: every document is sealed on the phone before it is stored (AES-256-GCM). The key comes from the
    VAULT passphrase (PBKDF2-SHA256, 600,000 rounds, a fixed salt), so it is the same on every phone that knows that
    passphrase and on no other; it is asked for once per phone and kept like the Vault's own key (never readable). The
-   kids' tablet and a guest copy never have it.
+   kids' tablet never has it.
 
    How the phones share them: the sealed bytes go to the family's sync room like a picture does (PUT /m/room/id), and a
    sealed line about each one (name, kind, size, day) travels as a fact, "vdoc|<id>". A deleted one leaves the plain

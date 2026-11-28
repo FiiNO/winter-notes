@@ -481,26 +481,6 @@ async function forgetDevice() {
   localStorage.clear();
   location.reload();
 }
-async function makeGuestCopy() {                     // a parent phone, behind the device PIN
-  const say = (t) => { const m = $('#guest-msg'); if (m) m.textContent = t; };
-  if (!(await askPin('Device PIN to make a guest copy'))) return;
-  const code = await askText('A code for the guest (6 or more letters or numbers)', { placeholder: 'e.g. snowtrip26', ok: 'Make the copy' });
-  if (code === null) return;
-  if (code.trim().length < 6) return say('The code needs 6 or more letters or numbers.');
-  say('Making the copy… (a few seconds)');
-  let file;
-  try { file = new File([JSON.stringify(await sealBlob(guestCopyOf(S.family), code.trim()))], 'world-adventure-guest.txt', { type: 'text/plain' }); }
-  catch (e) { return say('Could not make the copy: ' + ((e && e.message) || e)); }
-  /* handed over by a tap of its own: the share sheet only opens straight after a tap, and sealing takes a few seconds */
-  const m = $('#guest-msg'); if (!m) return;
-  m.innerHTML = `<div>Ready. Send your friend the file and, separately, the code <b>${esc(code.trim())}</b>.</div><button class="btn primary block" id="guest-send">📤 Send the guest file</button><div class="tiny muted">They open the app, tap "Looking around as a guest?" on the first screen, choose the file and type the code.</div>`;
-  $('#guest-send').onclick = async () => {
-    try {
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: 'World Adventure guest copy' });
-      else Media.saveDownload(file, file.name);       // no share sheet for files here: it goes to Downloads, to attach to a message
-    } catch (e) { if (!e || e.name !== 'AbortError') Media.saveDownload(file, file.name); }
-  };
-}
 /* The trip book (book.js): made here, then handed over by a tap of its own, because the share sheet only opens straight
    after a tap and collecting the pictures takes a while. */
 async function makeTripBook() {
@@ -540,17 +520,10 @@ function unlockMode(mode, msg) {
 }
 function unlockError(msg) { ui.err.textContent = msg; ui.err.classList.remove('hidden'); }
 
-/* ---- a guest copy (21 Nov 2026, Andy: "another log in with a new pin code for a guest... just leave my trip in")
-   A parent phone makes it (Settings): the trip as this phone holds it, WITHOUT the sync address and token, sealed with a
-   guest code of its own, as a file to hand over. The guest's phone opens the file here, on the first-unlock screen.
-   What a guest therefore never has: the family passphrase, the sync room (scores, postcards, photos) and the picture
-   key; the Vault stays behind its own passphrase. What they do in the app stays on their phone.
-   The file is kept in the phone's own key store ('guest:env'), not on the host: a short code on a public file would be
-   guessable. localStorage.edition = 'guest' marks the phone; "Leave" (forgetDevice) clears it with everything else.
-   A guest copy has no PIN: switching between the three kinds of device is the point of looking around. */
-const isGuest = () => localStorage.getItem('edition') === 'guest';
-/* a phone that already holds the family trip (a role chosen, scores kept) never turns into a guest copy, e.g. after five wrong PINs */
-const holdsFamilyTrip = () => !isGuest() && !!(localStorage.getItem('deviceRole') || localStorage.getItem('quests:v2'));
+/* ---- the guest copy is gone (28 Nov 2026, v60; Andy: "remove the guest login completely"). From 21 Nov a friend could
+   look around in a copy of the trip, opened with a code on the first screen and kept in this phone's own store
+   ('guest:env', localStorage.edition = 'guest'). A phone that opened one starts again as a new phone: everything it
+   kept is cleared and it asks for the family passphrase like any other. */
 async function wipeLocal() {                         // forgetDevice without the reload
   for (const k of ['key:family', 'key:vault', 'pin:family', 'pin:vault', 'guest:env']) await kvDel(k);
   if (window.VaultDocs) await VaultDocs.forget();
@@ -558,95 +531,37 @@ async function wipeLocal() {                         // forgetDevice without the
   localStorage.clear();
   S.preview = null; Quests.reload();
 }
-async function sealBlob(obj, code) {                 // the same envelope build.py writes, so decryptWith opens it
-  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12)), iter = 600000;
-  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveKey']);
-  const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: iter }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(obj)));
-  return { v: 1, kdf: 'PBKDF2-SHA256', iter, salt: b64e(salt), iv: b64e(iv), ct: b64e(ct), guest: 1 };
-}
-function guestCopyOf(family) {                       // the trip, minus what a guest must not hold
-  const g = JSON.parse(JSON.stringify(family));
-  g.trip = g.trip || {};
-  g.trip.sync = { media: b64e(crypto.getRandomValues(new Uint8Array(32))) };   // no address, no token; a picture key of its own, so postcards work on that phone
-  (g.moves || []).forEach((m) => { delete m.ref; });                           // a booking reference and a surname are enough to change a booking
-  (g.stays || []).forEach((st) => { delete st.conf; });
-  return g;
-}
-const validEnvelope = (env) => !!(env && typeof env === 'object' && env.salt && env.iv && env.ct && env.iter > 0 && env.iter <= 5000000);
 async function startFamily() {
-  if (isGuest()) {
-    /* a guest copy opens by itself. If it cannot be opened (the store was cleared) the phone is a new phone again. */
-    try {
-      const genv = await kvGet('guest:env');
-      if (!validEnvelope(genv)) throw new Error('no guest copy');
-      S.family = await decryptWith(await kvGet('key:family'), genv); S.familyEnv = genv;
-      return enterApp();
-    } catch (e) { S.family = null; await wipeLocal(); }
-  }
+  const wasGuest = localStorage.getItem('edition') === 'guest';
+  if (wasGuest) await wipeLocal();
   const env = await loadEnvelope('family');
   S.familyEnv = env;
   const key = await kvGet('key:family');
   const pinRec = await kvGet('pin:family');
   if (key && (settings.autoFamily || !pinRec)) {
-    try { S.family = await decryptWith(key, env); return enterApp(); } catch (e) { await kvDel('key:family'); }
+    try { S.family = await decryptWith(key, env); return enterApp(); } catch (e) { await kvDel('key:family'); await kvDel('guest:env'); }
   }
   if (key && pinRec) { unlockMode('pin', 'Family view'); $('#pin-hint').textContent = ''; return; }
-  unlockMode('passphrase', 'First unlock on this device');
+  unlockMode('passphrase', wasGuest ? 'The guest copy has ended. The app now needs the family passphrase.' : 'First unlock on this device');
 }
 let ppBusy = false;                                   // one check at a time: each takes seconds, and a second tap used to start a second one whose answer landed on top of the first
 ui.fpp.onsubmit = async (e) => {
   e.preventDefault();
   if (ppBusy) return;
   ppBusy = true; ui.err.classList.add('hidden');      // the last answer goes while the new one is worked out
-  const door = S.guestPending;                        // null: the family door · true: the guest door · an envelope: a guest file was chosen
-  const pp = door ? $('#pp').value.trim() : $('#pp').value;
+  const pp = $('#pp').value;
   ui.sub.textContent = 'Checking… (a few seconds)';
   try {
-    let key = null, data = null, genv = null;
-    if (!door) { try { key = await deriveKey(pp, S.familyEnv); data = await decryptWith(key, S.familyEnv); } catch (notFamily) { data = null; } }
-    if (!data && !holdsFamilyTrip()) {
-      /* not the family passphrase: perhaps a guest's PIN (21 Nov 2026, Andy: "I'll send him the address and a pin"). It
-         opens guest.enc, the guest copy this site carries, and nothing else; or the guest file that was chosen. */
-      genv = door && door !== true ? door : await loadEnvelope('guest').catch(() => null);
-      if (validEnvelope(genv)) { key = await deriveKey(pp.trim(), genv); data = await decryptWith(key, genv); }
-    }
-    if (!data) throw new Error('nothing opened');
-    S.family = data;
+    const key = await deriveKey(pp, S.familyEnv);
+    S.family = await decryptWith(key, S.familyEnv);
     await kvSet('key:family', key);
     $('#pp').value = '';
-    if (genv) { await kvSet('guest:env', genv); S.familyEnv = genv; S.guestPending = null; localStorage.setItem('edition', 'guest'); return enterApp(); }
     unlockMode('setpin', 'Passphrase accepted. Now a PIN for everyday use.');
   } catch (err) {
     S.family = null;
-    unlockMode('passphrase', door ? 'Guest: the PIN or code you were given.' : 'First unlock on this device');
-    unlockError(door ? 'That did not open the guest copy.' : 'That passphrase did not open the family data.');
+    unlockMode('passphrase', 'First unlock on this device');
+    unlockError('That passphrase did not open the family data.');
   } finally { ppBusy = false; }
-};
-/* the guest's way in: the PIN they were given (it also works typed straight into the family box), or a guest file a parent sent */
-function guestDoor(on) {
-  S.guestPending = on || null;
-  const file = !!on && on !== true;
-  $('#pp-label').textContent = on ? 'Guest PIN or code' : 'Family passphrase (first time on this device)';
-  $('#pp-note').textContent = file ? 'The code that came with the guest file.' : on ? 'The PIN or code the family gave you.' : 'Typed once per device. After this, the 4-digit PIN.';
-  $('#guest-open').textContent = on ? 'Not a guest? Back to the family passphrase' : 'Looking around as a guest?';
-  $('#guest-pick').classList.toggle('hidden', on !== true);
-  unlockMode('passphrase', file ? 'Guest file chosen. Now its code.' : on ? 'Guest: the PIN or code you were given.' : 'First unlock on this device');
-  setTimeout(() => { try { $('#pp').focus(); } catch (e) { /* no keyboard yet */ } }, 50);
-}
-$('#guest-open').onclick = () => {
-  if (ppBusy) return;                                 // not while a check is running
-  if (S.guestPending) return guestDoor(null);
-  if (holdsFamilyTrip()) return unlockError('This phone already holds the family trip, so it cannot open a guest copy.');
-  guestDoor(true);
-};
-$('#guest-pick').onclick = () => { $('#guest-file').value = ''; $('#guest-file').click(); };
-$('#guest-file').onchange = async () => {
-  const f = $('#guest-file').files[0]; if (!f) return;
-  let env = null;
-  try { if (f.size < 5000000) env = JSON.parse(await new Response(f).text()); } catch (e) { env = null; }
-  if (!validEnvelope(env)) return unlockError('That is not a guest file from this app.');
-  guestDoor(env);
 };
 let pinBusy = false;                                  // the PIN hash takes a second on a slow tablet: a second tap meanwhile is ignored
 ui.fset.onsubmit = async (e) => {
@@ -679,8 +594,7 @@ function applyRoleChrome() {                         // 2 Nov 2026: the chrome f
   document.documentElement.dataset.role = Quests.role() || 'none';
   document.documentElement.dataset.nomap = hasMap() ? '0' : '1';       // 6 Nov 2026: the nav's Map and the globe entries go where they cannot run
   document.documentElement.dataset.noglobe = hasGlobe() ? '0' : '1';
-  document.documentElement.dataset.guest = S.guest ? '1' : '0';
-  const ed = $('#top-edition'); if (ed) ed.textContent = S.guest ? 'Guest' : Quests.isGrandDevice() ? 'Grandparents' : 'Family';   // the dot between the two is the stylesheet's (wide screens only)
+  const ed = $('#top-edition'); if (ed) ed.textContent = Quests.isGrandDevice() ? 'Grandparents' : 'Family';   // the dot between the two is the stylesheet's (wide screens only)
 }
 window.addEventListener('load', () => { if (S.family) { applyRoleChrome(); if (S.screen === 'home') renderHome(); } });   // the map modules finish loading after app.js; a quick unlock must not hide them by mistake
 let entered = false;
@@ -688,8 +602,6 @@ async function enterApp() {
   if (entered) return;                               // once: a second run found the media key already removed and switched photos and stories off
   entered = true;
   const sy = (S.family.trip || {}).sync || {};
-  S.guest = isGuest();
-  if (S.guest) for (const k of Object.keys(sy)) if (k !== 'media') delete sy[k];   // a guest copy never syncs, whatever its file says
   await Media.init(sy.media); delete sy.media;       // the raw media key leaves the plaintext family object at once
   Journal.init();
   $('#screen-unlock').classList.add('hidden');
@@ -730,7 +642,6 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) cloc
    delete every story). Five wrong guesses close this gate for five minutes. */
 const pinGate = { wrong: 0, until: 0 };
 async function askPin(question) {
-  if (S.guest) return true;                          // a guest copy has no PIN: switching between the three kinds of device is the point of looking around
   if (Date.now() < pinGate.until) { alert('Too many wrong tries. Try again in a few minutes.'); return false; }
   const pin = await askText(question, { pin: true });
   if (pin === null) return false;
@@ -1398,7 +1309,6 @@ async function vaultGate(el, title, button, note, done) {
   el.innerHTML = `<h1 class="h1">${title}</h1><div class="card centre">
     ${note ? `<p class="small">${esc(note)}</p>` : ''}
     <p class="muted vg-msg">${mode === 'pin' ? 'Vault PIN' : 'First time on this device: the Vault passphrase, then choose a Vault PIN.'}</p>
-    ${S.guest ? '<p class="small guest-hint">🔒 Guest copy: the Vault holds the sensitive things (documents, tickets, door codes, insurance). It is encrypted on its own and needs the Vault passphrase, which is not part of a guest copy.</p>' : ''}
     <form class="vg-form" autocomplete="off">
       ${mode === 'pin' ? `<input type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" class="input pin vg-pin" required>`
       : `<input type="password" autocapitalize="none" autocorrect="off" spellcheck="false" class="input vg-pp" placeholder="Vault passphrase" required>
@@ -1453,7 +1363,6 @@ function renderSettings() {
      mode, and whose phone this is, PIN-less opening and Forget this device sit behind the device PIN (Set-up). */
   const grand = Quests.isGrandDevice(), setup = grand && S.setupOpen;
   $('#screen-settings').innerHTML = `<h1 class="h1">⚙️ Settings</h1>
-    ${S.guest ? `<div class="card guest-note"><div class="h3">👋 Guest copy</div><p class="small">${(S.family.trip || {}).sample ? 'This is a made-up sample trip, to look around in.' : 'This is the family\'s trip, to look around in.'} Everything works, and what you do here (quests, postcards, photos) stays on this phone: a guest copy does not sync with the family.</p><p class="small muted">The family uses three kinds of device: a parent's phone, the kids' tablet, and Grandma and Grandpa's phone. ${Quests.isGrandDevice() ? 'This is the grandparents\' one now; pick another here:' : 'Switch between them under "Whose device is this?" below, and jump to any day of the trip under "Preview a trip day".'}</p>${Quests.isGrandDevice() ? Quests.roleCard() : ''}<button class="btn block" id="opt-leave">Leave (clears the guest copy from this phone)</button></div>` : ''}
     <div class="card"><div class="h3">Theme</div><div class="row">${['auto', 'light', 'dark'].map((t) => `<button class="pill${settings.theme === t ? ' active' : ''}" data-theme="${t}">${t}</button>`).join('')}</div></div>
     <div class="card"><div class="h3">Text size</div>${switchRow('bigText', grand ? 'Big text' : 'Big text (for the kids and tired eyes)')}</div>
     <div class="card"><div class="h3">Home screen</div>${isInstalled() ? '<div class="small">✓ Running from its own Home screen icon.</div>' : Install.done ? '<div class="small">✓ Added. Open it from the Home screen icon from now on.</div>' : Install.evt ? '<button class="btn primary block" id="opt-install">📲 Add World Adventure to the Home screen</button>' : installHelpHtml()}</div>
@@ -1468,7 +1377,6 @@ function renderSettings() {
       ${switchRow('autoFamily', 'Open the family view without a PIN on this device')}
       ${switchRow('lite', 'Light mode: no animations, globe or map (older or small tablets)')}
       <button class="btn block" id="opt-forget">Forget this device (wipe stored keys, PINs and quest scores)</button></div>`}
-    ${!S.guest && Quests.isParentDevice() ? `<div class="card"><div class="h3">Show the app to a friend</div><p class="small muted">Makes a guest copy: the trip as it is on this phone, to look around in, with a code of its own. A guest cannot see or change the family's scores, postcards or photos (the copy does not sync), and the Vault stays locked. Booking references and confirmation numbers are left out.</p><button class="btn block" id="opt-guest">Make a guest copy…</button><div class="small muted" id="guest-msg"></div></div>` : ''}
     <div class="card"><div class="h3">Build</div><div>${esc(VERSION)} · built ${esc(BUILT)}</div><button class="btn block" id="opt-update">Check for a newer build</button><div class="small muted" id="update-msg"></div></div>
     <div class="card small muted">Storage: <span id="storage-msg">…</span></div>`;
   /* Every lookup below stays inside the Settings screen (15 Nov 2026). `[data-theme]` and `[data-fx]` are also attributes of
@@ -1485,8 +1393,6 @@ function renderSettings() {
     redraw();
   });
   const fg = $('#opt-forget'); if (fg) fg.onclick = () => { if (confirm(forgetQuestion())) forgetDevice(); };
-  const lv = $('#opt-leave'); if (lv) lv.onclick = () => { if (confirm('Leave? The guest copy and everything done in it are cleared from this phone. The guest file and its code open it again.')) forgetDevice(); };
-  const og = $('#opt-guest'); if (og) og.onclick = makeGuestCopy;
   const su = $('#opt-setup');
   if (su) su.onclick = async () => {                   // the grandparents' gate: the device PIN opens the role, PIN-less opening and Forget until Settings is left
     if (!(await askPin('Device PIN to open set-up'))) return;

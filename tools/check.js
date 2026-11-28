@@ -31,9 +31,9 @@ const m = sw.match(/const SHELL = \['\.\/'\]\.concat\((\[[\s\S]*?\])\);/);
 let shell = [];
 if (!m) fail('could not find the SHELL list in sw.js');
 else { try { shell = JSON.parse(m[1]); } catch (e) { fail('the SHELL list in sw.js is not a plain list of quoted paths: ' + e.message); } }
-/* not part of the offline shell on purpose: the worker itself, map packs (fetched on demand), the guest copy (kept in the
-   phone's own store once opened), and everything that is about the repository and not the app */
-const SKIP = [/^sw\.js$/, /^vendor\/LICENSE/, /\.apk$/, /^tiles\/.*\.pmtiles$/, /^guest\.enc$/, /^tools\//, /^README/i, /^HANDOVER/i, /^\.github\//, /^\.git\//, /^\.nojekyll$/, /^\.gitignore$/, /^node_modules\//];
+/* not part of the offline shell on purpose: the worker itself, map packs (fetched on demand), and everything that is
+   about the repository and not the app */
+const SKIP = [/^sw\.js$/, /^vendor\/LICENSE/, /\.apk$/, /^tiles\/.*\.pmtiles$/, /^tools\//, /^README/i, /^HANDOVER/i, /^\.github\//, /^\.git\//, /^\.nojekyll$/, /^\.gitignore$/, /^node_modules\//];
 const walk = (dir, out) => { for (const e of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) { const rel = (dir ? dir + '/' : '') + e.name; if (e.name === '.git' || e.name === 'node_modules') continue; if (e.isDirectory()) walk(rel, out); else out.push(rel); } return out; };
 const files = walk('', []).filter((f) => !SKIP.some((re) => re.test(f)));
 const listed = new Set(shell.map((s) => s.replace(/^\.\//, '')));
@@ -72,8 +72,8 @@ if (!errors.some((e) => /old tablet/.test(e))) ok('nothing the old tablet lacks'
 
 /* ---- 4. the data files and the public lists */
 for (const f of ['manifest.json', 'tiles/manifest.json']) { try { JSON.parse(read(f)); } catch (e) { fail(`${f} does not parse: ${e.message}`); } }
-for (const f of ['family.enc', 'vault.enc', 'guest.enc']) {
-  if (!fs.existsSync(path.join(root, f))) { if (f !== 'guest.enc') fail(`${f} is missing: the app cannot open without it`); continue; }
+for (const f of ['family.enc', 'vault.enc']) {
+  if (!fs.existsSync(path.join(root, f))) { fail(`${f} is missing: the app cannot open without it`); continue; }
   try { const e = JSON.parse(read(f)); if (!e.salt || !e.iv || !e.ct || !(e.iter > 0)) fail(`${f} is not a sealed file (salt, iv, ct, iter expected)`); } catch (e) { fail(`${f} does not parse: ${e.message}`); }
 }
 try {
